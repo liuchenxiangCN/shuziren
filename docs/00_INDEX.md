@@ -39,6 +39,7 @@
 | [11_POC_DEMO_SCRIPT.md](11_POC_DEMO_SCRIPT.md) | 演示脚本和演示话术 |
 | [12_CUSTOMER_HANDOFF.md](12_CUSTOMER_HANDOFF.md) | 客户移交、运维、常见问题 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
+| [14_ENHANCEMENT_ROADMAP.md](14_ENHANCEMENT_ROADMAP.md) | V0.8 功能增强、V0.9 交付优化、V1.0 验收交付路线 |
 
 ## 决策记录
 
@@ -49,6 +50,12 @@ ADR 位于 [decisions](decisions)。
 - [ADR-0003-screen-action-whitelist.md](decisions/ADR-0003-screen-action-whitelist.md)
 - [ADR-0004-adapter-provider-strategy.md](decisions/ADR-0004-adapter-provider-strategy.md)
 - [ADR-0005-package-management.md](decisions/ADR-0005-package-management.md)
+- [ADR-0006-fvs-web-frame-communication.md](decisions/ADR-0006-fvs-web-frame-communication.md)
+- [ADR-0007-fvs-iframe-host.md](decisions/ADR-0007-fvs-iframe-host.md)
+- [ADR-0008-fvs-same-origin-proxy.md](decisions/ADR-0008-fvs-same-origin-proxy.md)
+- [ADR-0009-fvs-floating-voice-overlay.md](decisions/ADR-0009-fvs-floating-voice-overlay.md)
+- [ADR-0010-local-excel-ask-metrics-adapter.md](decisions/ADR-0010-local-excel-ask-metrics-adapter.md)
+- [ADR-0011-enhancement-before-handoff.md](decisions/ADR-0011-enhancement-before-handoff.md)
 
 ## 外部集成
 

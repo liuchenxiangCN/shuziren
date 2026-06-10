@@ -1,0 +1,16 @@
+[project]
+name = "zt-digital-human-api"
+version = "0.1.0"
+description = "Mock gateway API for the local digital human POC."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "httpx>=0.28.0",
+    "pydantic-settings>=2.6.0",
+    "pyyaml>=6.0.2",
+    "uvicorn[standard]>=0.32.0",
+    "websockets>=14.2",
+]
+
+[tool.uv]
+package = false

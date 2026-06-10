@@ -4,6 +4,8 @@ mock_rules:
   - id: mock-screen-org
     match_keywords:
       - 组织建设
+      - 成品库存
+      - 库存页面
     response_type: screen_control
     action_id: SWITCH_TAB_ORG
 
@@ -11,13 +13,25 @@ mock_rules:
     match_keywords:
       - 党员学习
       - 学习页面
+      - 生产管理
+      - 生产页面
     response_type: screen_control
     action_id: SWITCH_TAB_STUDY
+
+  - id: mock-screen-activity
+    match_keywords:
+      - 党建活动
+      - 设备分析
+      - 设备页面
+    response_type: screen_control
+    action_id: SWITCH_TAB_ACTIVITY
 
   - id: mock-screen-home
     match_keywords:
       - 返回首页
       - 回到首页
+      - 总览
+      - 返回总览
     response_type: screen_control
     action_id: SWITCH_HOME
 
@@ -90,11 +104,10 @@ demo_questions:
     category: data
     expected: 返回学习完成率
   - id: Q-005
-    text: 请切换到组织建设页面
+    text: 请切换到成品库存页面
     category: screen_control
     expected: 返回 SWITCH_TAB_ORG 并执行
   - id: Q-006
-    text: 返回首页
+    text: 返回总览
     category: screen_control
     expected: 返回 SWITCH_HOME 并执行
-

@@ -17,7 +17,7 @@
 │  - 语义唤醒 / VAD                          │
 │  - 语音球 / 声波 / 字幕                     │
 │  - 回复窗口                                │
-│  - FVS iframe / FVS JS Adapter             │
+│  - FVS 网页框 / postMessage Adapter        │
 └────────────────────────────────────────────┘
                     │
                     │ HTTP / SSE / WebSocket
@@ -57,8 +57,9 @@
 ┌────────────────────────────────────────────┐
 │ FVS 看板                                   │
 │ - 已部署看板                              │
+│ - 网页框嵌入数字人前端                     │
 │ - 页面 / Tab 切换 JS                       │
-│ - 后续正式集成                             │
+│ - duchamp 通信监听                         │
 └────────────────────────────────────────────┘
 ```
 
@@ -68,12 +69,12 @@
 
 负责用户可见体验:
 
-- 页面布局和 FVS iframe / Mock 大屏。
+- 页面布局、FVS 网页框嵌入模式和 Mock 大屏。
 - 文本输入和后续语音输入。
 - 语音球、声波、字幕、状态动效。
 - 回复窗口和 ECharts 渲染。
 - TTS 音频播放。
-- FVS Adapter 动作执行。
+- FVS Adapter 动作消息发送。
 
 不负责:
 
@@ -122,7 +123,9 @@
 
 - 大屏内容展示。
 - 页面或 Tab 切换能力。
-- 与数字人前端通过 iframe、postMessage 或预埋 Adapter 集成。
+- 通过网页框嵌入数字人前端。
+- 通过 `duchamp.onlyCommunicateWithOrigins` 和 `duchamp.addPostMessageListener` 接收数字人动作消息。
+- 按 `action_id` 固定映射真实控制 API。
 
 ## 推荐仓库结构
 
@@ -156,7 +159,7 @@ zt-digital-human/
 | digital-human-api | 18080 | 后端 API |
 | reverse-proxy HTTP | 18081 | 本地统一入口 |
 | reverse-proxy HTTPS | 18443 | 本地 HTTPS 入口 |
-| RAGFlow Web | 9380 | RAGFlow 页面 |
-| RAGFlow MCP | 9382 | MCP Server |
+| RAGFlow Web | 18089 | 当前本地 RAGFlow 页面; 容器内官方服务仍为 9380 |
+| RAGFlow API | 19380 | 当前本地 RAGFlow API 映射 |
+| RAGFlow MCP | 19382 | 当前本地 MCP Server 映射; 容器内官方服务仍为 9382 |
 | SQLite | 文件型 | 本地开发 |
-

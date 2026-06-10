@@ -49,15 +49,25 @@ docs/demo_knowledge/
 2. 创建 dataset。
 3. 上传测试资料。
 4. 等待解析完成。
-5. 创建 chat / assistant。
-6. 启用 MCP Server。
-7. 在 Dora 配置外接 MCP。
-8. 使用测试问题验证回答。
+5. 启用 MCP Server。
+6. 在 Dora 配置外接 MCP。
+7. Dora 调用 `ragflow_retrieval(keyword=false)` 获取知识库片段。
+8. Dora 根据片段生成最终回答, 并使用测试问题验证。
 
-## 待准备资料
+## 当前资料状态
 
-- 至少 3 位测试领导。
-- 至少 2 篇新闻资料。
-- 至少 3 份党建制度文档。
-- 不包含敏感或未授权信息。
+- 已在 `docs/demo_knowledge/` 准备 8 份 V0.5 最小测试资料。
+- 已覆盖 3 位测试领导、2 篇新闻资料、3 份党建制度 / 流程文档。
+- 内容均为脱敏演示样例, 不包含真实敏感或未授权信息。
+- 已在 RAGFlow 中创建 `zt_party_building_demo` dataset。
+- 已上传 8 份测试 Markdown 并解析完成, 全部为 `DONE`。
+- 已通过公网 MCP `ragflow_retrieval` 验证可检索 `join_party_process.md` 等知识库片段。
+- 已通过 Dora Agent + 公网 MCP 验证知识库问答, 覆盖张书记近期调研、入党流程、党员学习制度、党支部组织建设规范。
 
+## 待验证问题
+
+- 我是张书记, 请给我欢迎语。
+- 张书记最近调研了什么?
+- 入党流程是什么?
+- 党员学习制度有哪些要求?
+- 党支部组织建设规范是什么?

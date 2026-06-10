@@ -1,0 +1,70 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: zt-digital-human-api:0.1.0
+    container_name: zt-digital-human-api
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_NAME: ${APP_NAME:-zt-digital-human-api}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Asia/Shanghai}
+      DORA_BASE_URL: ${DORA_BASE_URL:-}
+      DORA_API_KEY: ${DORA_API_KEY:-}
+      DORA_AGENT_ID: ${DORA_AGENT_ID:-}
+      DORA_AGENT_NAME: ${DORA_AGENT_NAME:-}
+      DORA_CHANNEL_TYPE: ${DORA_CHANNEL_TYPE:-feishu}
+      DORA_CHAT_MODE: ${DORA_CHAT_MODE:-sse}
+      DORA_TIMEOUT_SECONDS: ${DORA_TIMEOUT_SECONDS:-60}
+      ASR_PROVIDER: ${ASR_PROVIDER:-aliyun}
+      ASR_API_KEY: ${ASR_API_KEY:-}
+      ASR_MODEL: ${ASR_MODEL:-fun-asr-realtime}
+      ASR_REGION: ${ASR_REGION:-cn-beijing}
+      ASR_WS_URL: ${ASR_WS_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/inference}
+      ASR_AUDIO_FORMAT: ${ASR_AUDIO_FORMAT:-wav}
+      ASR_SAMPLE_RATE: ${ASR_SAMPLE_RATE:-16000}
+      ASR_TIMEOUT_SECONDS: ${ASR_TIMEOUT_SECONDS:-30}
+      TTS_PROVIDER: ${TTS_PROVIDER:-aliyun}
+      TTS_API_KEY: ${TTS_API_KEY:-}
+      TTS_MODEL: ${TTS_MODEL:-cosyvoice-v3-flash}
+      TTS_VOICE: ${TTS_VOICE:-longanyang}
+      TTS_AUDIO_FORMAT: ${TTS_AUDIO_FORMAT:-mp3}
+      TTS_WS_URL: ${TTS_WS_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/inference}
+      TTS_SAMPLE_RATE: ${TTS_SAMPLE_RATE:-22050}
+      TTS_TIMEOUT_SECONDS: ${TTS_TIMEOUT_SECONDS:-30}
+      ACTION_WHITELIST_PATH: /app/config/screen-actions.yaml
+      DEMO_CASES_PATH: /app/config/demo-cases.yaml
+      WAKE_WORDS_PATH: /app/config/wake-words.yaml
+      ASK_METRICS_DATA_DIR: /app/docs/demo_data/ask_metrics
+      ASK_METRICS_CONFIG_PATH: /app/config/ask-metrics.yaml
+      SQLITE_PATH: /app/data/sessions.db
+      TTS_CACHE_DIR: /app/data/tts-cache
+      ENABLE_MOCK_DORA: ${ENABLE_MOCK_DORA:-true}
+      ENABLE_MOCK_ASR: ${ENABLE_MOCK_ASR:-true}
+      ENABLE_MOCK_TTS: ${ENABLE_MOCK_TTS:-true}
+      ENABLE_MOCK_FVS: ${ENABLE_MOCK_FVS:-true}
+    ports:
+      - "${API_PORT:-18080}:18080"
+    volumes:
+      - ./config:/app/config:ro
+      - ./docs/demo_data:/app/docs/demo_data:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:18080}
+        VITE_FVS_URL: ${VITE_FVS_URL:-}
+        VITE_FVS_INTEGRATION_MODE: ${VITE_FVS_INTEGRATION_MODE:-mock}
+        VITE_FVS_TARGET_ORIGIN: ${VITE_FVS_TARGET_ORIGIN:-}
+    image: zt-digital-human-web:0.1.0
+    container_name: zt-digital-human-web
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-18000}:80"
