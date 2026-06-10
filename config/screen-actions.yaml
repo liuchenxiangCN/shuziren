@@ -1,0 +1,39 @@
+version: 0.1.0
+customer: zt-securities
+actions:
+  SWITCH_HOME:
+    label: 首页
+    type: page
+    description: 返回党建大屏首页
+    fvs_function: switchPage
+    params:
+      pageId: home
+    speak_text: 已为您返回首页。
+
+  SWITCH_TAB_ORG:
+    label: 组织建设
+    type: tab
+    description: 切换到组织建设模块
+    fvs_function: switchTab
+    params:
+      tabId: organization_building
+    speak_text: 已为您切换到组织建设页面。
+
+  SWITCH_TAB_STUDY:
+    label: 党员学习
+    type: tab
+    description: 切换到党员学习模块
+    fvs_function: switchTab
+    params:
+      tabId: party_study
+    speak_text: 已为您打开党员学习页面。
+
+  SWITCH_TAB_ACTIVITY:
+    label: 党建活动
+    type: tab
+    description: 切换到党建活动模块
+    fvs_function: switchTab
+    params:
+      tabId: party_activity
+    speak_text: 已为您切换到党建活动页面。
+

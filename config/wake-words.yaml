@@ -1,0 +1,15 @@
+version: 0.1.0
+mode: semantic
+wake_words:
+  - 小天小天
+  - 中天小天
+  - 你好小天
+settings:
+  min_audio_ms: 800
+  max_audio_ms: 5000
+  cooldown_ms: 1500
+  require_exact_phrase: false
+notes:
+  - 第一阶段使用 VAD + ASR 语义唤醒, 不是严格本地 KWS。
+  - 正式 POC 前需要确认云 ASR 调用和语音数据合规边界。
+

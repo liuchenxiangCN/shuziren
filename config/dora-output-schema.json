@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/dora-output.schema.json",
+  "title": "DoraOutput",
+  "description": "Normalized output contract for Dora or Mock Dora responses.",
+  "oneOf": [
+    { "$ref": "#/$defs/answer" },
+    { "$ref": "#/$defs/screenControl" },
+    { "$ref": "#/$defs/clarify" },
+    { "$ref": "#/$defs/fallback" }
+  ],
+  "$defs": {
+    "answer": {
+      "type": "object",
+      "required": ["type", "speak_text", "display"],
+      "properties": {
+        "type": { "const": "answer" },
+        "title": { "type": "string" },
+        "speak_text": { "type": "string", "minLength": 1 },
+        "display": {
+          "oneOf": [
+            { "$ref": "#/$defs/textDisplay" },
+            { "$ref": "#/$defs/echartsDisplay" }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "screenControl": {
+      "type": "object",
+      "required": ["type", "speak_text", "action"],
+      "properties": {
+        "type": { "const": "screen_control" },
+        "speak_text": { "type": "string", "minLength": 1 },
+        "action": {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "target": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "clarify": {
+      "type": "object",
+      "required": ["type", "speak_text", "options"],
+      "properties": {
+        "type": { "const": "clarify" },
+        "speak_text": { "type": "string", "minLength": 1 },
+        "options": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "fallback": {
+      "type": "object",
+      "required": ["type", "speak_text"],
+      "properties": {
+        "type": { "const": "fallback" },
+        "speak_text": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "textDisplay": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "const": "text" },
+        "summary": { "type": "string" },
+        "bullets": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "echartsDisplay": {
+      "type": "object",
+      "required": ["mode", "chart_config"],
+      "properties": {
+        "mode": { "const": "echarts" },
+        "chart_config": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
+

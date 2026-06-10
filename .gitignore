@@ -1,0 +1,48 @@
+# Environment
+.env
+.env.*
+!.env.example
+*.local
+
+# Runtime data
+data/*
+!data/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# Node / frontend
+node_modules/
+.pnpm-store/
+dist/
+build/
+.vite/
+coverage/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python / backend
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker / local certs
+*.pem
+*.key
+*.crt
+
