@@ -20,6 +20,7 @@
 - 能调用 Dora Agent 获取问数、知识库问答和大屏控制结果。
 - 能通过白名单动作控制大屏切换。
 - 能记录会话日志、错误日志和关键链路耗时。
+- 能通过脚本进行预检、启停、演示 smoke 和日志包导出。
 
 ## 客户化边界
 
@@ -33,4 +34,6 @@
 - 演示问题。
 - Dora Agent Prompt 细节。
 - 问数指标和口径。
+- 现场演示是否开启 `DEMO_STABLE_MODE`。
 
+V0.8 起非敏感客户配置样例位于 `config/customers/zt-securities/`; API Key、Token、密码仍只放本地 `.env` 或部署环境变量。

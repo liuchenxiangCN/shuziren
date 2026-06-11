@@ -40,6 +40,16 @@
 | ZT-S-002 | 打开生产管理 | 执行 `SWITCH_TAB_STUDY` |
 | ZT-S-003 | 返回总览 | 执行 `SWITCH_HOME` |
 
-## V0.7 说明
+## V0.8 说明
 
-当前问数问题由 Gateway 本地 Excel Adapter 承接, 数据来自 `docs/demo_data/ask_metrics/` 下脱敏样例。正式客户数据源和口径确认后, 可替换为 Dora 问数、FineBI / FVS 数据源或数据库 Provider。
+当前默认 `ASK_METRICS_MODE=excel`, 问数问题由 Gateway 本地 Excel Adapter 承接, 数据来自 `docs/demo_data/ask_metrics/` 下脱敏样例。V0.8 第一阶段已支持:
+
+- `ASK_METRICS_MODE=excel`: 保持当前 11 个固定问数稳定演示。
+- `ASK_METRICS_MODE=dora`: Excel Adapter 不抢答, 由 Dora / Mock Dora 承接。
+- `ASK_METRICS_MODE=auto`: 优先 Dora / Mock Dora, 失败或兜底时回退 Excel。
+
+正式客户数据源和口径确认后, 可替换为 Dora 问数、FineBI / FVS 数据源或数据库 Provider。
+
+## V0.9 说明
+
+`scripts/smoke-demo.ps1` 会复用固定演示问题集做 API smoke。演示稳态可通过 `DEMO_STABLE_MODE=true` 开启; Dora 请求失败时优先回退 Excel 问数或 Mock Dora, 但正式验收仍需单独确认真实外部依赖状态。

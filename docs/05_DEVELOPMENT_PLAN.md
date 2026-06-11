@@ -317,7 +317,7 @@ API Key 不出现在前端和运维页面
 
 ### Status
 
-Planned。第一推荐 goal 是客户私有配置目录 + `ASK_METRICS_MODE=dora|excel|auto`。
+Done for V0.8 scope。第一阶段已完成客户私有配置目录 + `ASK_METRICS_MODE=dora|excel|auto`: 后端可加载 `config/customers/zt-securities/` 覆盖层, `excel` 模式 11 个问数 smoke 通过, `dora` 模式不让 Excel 抢答, `auto` 模式可在 Dora / Mock Dora 失败或兜底时回退 Excel。第二阶段已完成 TTS 字节级真流式: 新增 `POST /api/tts/stream`、后端 `TtsProvider.stream_synthesize`、Mock / 阿里云流式 chunk、前端 PCM Web Audio 播放和分段 TTS fallback。第三阶段已完成运维监控 / 日志看板: 新增只读脱敏 Ops API、前端“演示 / 运维”视图切换、依赖状态、最近会话、错误列表、耗时指标和 Markdown 日志导出。
 
 ## V0.9 交付优化版
 
@@ -336,6 +336,8 @@ Planned。第一推荐 goal 是客户私有配置目录 + `ASK_METRICS_MODE=dora
   - `scripts/start-poc.ps1`。
   - `scripts/stop-poc.ps1`。
   - `scripts/check-poc.ps1`。
+  - `scripts/export-logs.ps1`。
+  - `scripts/smoke-demo.ps1`。
 - 日志导出:
   - 最近会话。
   - 验收问题结果。
@@ -361,7 +363,7 @@ Planned。第一推荐 goal 是客户私有配置目录 + `ASK_METRICS_MODE=dora
 
 ### Status
 
-Planned。
+Done for V0.9 scope。已新增 PowerShell 预检、启停、日志导出和演示 smoke 脚本; 新增 `DEMO_STABLE_MODE` / `VITE_DEMO_STABLE_MODE` 演示稳态开关和 `GET /api/demo/config`; Dora 失败、Excel 问数缺文件、TTS 分段失败、FVS iframe 加载失败和麦克风权限失败均有安全兜底提示。V0.9 未进入正式验收报告、部署方案或用户手册输出, 下一阶段进入 V1.0。
 
 ## V1.0 POC 验收交付版
 
@@ -393,4 +395,4 @@ Planned。
 
 ### Status
 
-Planned。
+Done for V1.0 delivery package scope。已输出 `docs/delivery/v1.0/` 验收交付包, 包含验收报告、部署方案、用户手册、运维手册、配置手册、测试报告和客户移交清单。现场截图、真实客户网络 / 外部依赖、麦克风 / 播放权限和客户签字仍需在客户现场验收复演时补齐。

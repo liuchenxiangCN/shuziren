@@ -2,13 +2,93 @@
 
 ## Unreleased
 
+### Added
+
+- 新增 V1.0 验收交付包目录 `docs/delivery/v1.0/`。
+- 新增 V1.0 交付包索引、验收报告、部署方案、用户手册、运维手册、配置手册、测试报告和客户移交清单。
+- 新增 V0.9 PowerShell 交付脚本: `scripts/check-poc.ps1`、`scripts/start-poc.ps1`、`scripts/stop-poc.ps1`、`scripts/export-logs.ps1`、`scripts/smoke-demo.ps1` 和公共 helper `scripts/poc-common.ps1`。
+- 新增 `DEMO_STABLE_MODE` / `VITE_DEMO_STABLE_MODE` 演示稳态开关。
+- 新增 `GET /api/demo/config`, 返回演示稳态、客户 ID、问数模式、Mock 开关和固定演示问题。
+- 新增前端“演示稳态”状态标识、FVS iframe 加载超时 / 失败提示和动态演示题按钮。
+- 新增 ADR-0015, 记录 V0.9 交付脚本、日志包和演示稳态模式决策。
+- 新增 FVS 唤醒成功语音反馈: 命中唤醒词后立即播报“您好。”。
+- 新增前端独立运维路径 `/ops`, 复用现有 Ops API 和前端服务。
+- 新增 ADR-0016, 记录 FVS 极简悬浮层、独立运维路径和唤醒成功语音反馈决策。
+- 新增客户私有配置目录 `config/customers/zt-securities/`, 包含 `runtime.yaml`、`screen-actions.yaml`、`ask-metrics.yaml`、`demo-cases.yaml`、`wake-words.yaml`、`dora.yaml`、`ragflow.yaml`、`voice.yaml`、`fvs.yaml` 和 `customer.env.example`。
+- 新增 `CUSTOMER_ID`、`CUSTOMER_CONFIG_DIR` 和 `ASK_METRICS_MODE=excel|dora|auto` 后端配置。
+- 新增 ADR-0012, 记录客户配置覆盖层和问数模式路由决策。
+- 新增 `TTS_STREAMING_ENABLED`、`TTS_STREAMING_FALLBACK` 和 `TTS_STREAMING_AUDIO_FORMAT` 配置。
+- 新增 `POST /api/tts/stream`, 通过 SSE 返回 TTS `audio_chunk`。
+- 新增 `TtsProvider.stream_synthesize`, Mock TTS 可输出 PCM chunk, 阿里云 CosyVoice 可逐块转发 WebSocket 二进制音频帧。
+- 新增前端 PCM Web Audio 真流式播放器, 支持 AI 音频打断等待提示音并在失败时回退分段 TTS。
+- 新增 ADR-0013, 记录 TTS 字节级真流式采用 PCM chunk + Web Audio 的决策。
+- 新增只读脱敏 Ops API: `/api/ops/health`、`/api/ops/dependencies`、`/api/ops/sessions`、`/api/ops/session/{session_id}`、`/api/ops/errors`、`/api/ops/metrics`、`/api/ops/export`。
+- 新增前端“演示 / 运维”视图切换, 运维看板覆盖依赖状态、最近会话、错误列表、耗时指标和 Markdown 日志导出。
+- 新增 ADR-0014, 记录只读脱敏运维监控和日志看板决策。
+
 ### Changed
 
+- `docs/00_INDEX.md` 增加 V1.0 验收交付包入口。
+- `NEXT_ACTIONS` 当前阶段更新为 V1.0 POC 验收交付包已输出, 下一推荐 goal 改为客户现场验收复演、补齐截图附件、确认真实依赖并完成签收。
+- `docs/12_CUSTOMER_HANDOFF.md` 补充 V1.0 交付包路径和现场签收建议。
+- `docs/13_RISKS_AND_TODO.md` 增加 V1.0 现场截图、真实依赖和签字待补齐风险。
+- `DEMO_STABLE_MODE=true` 时, Dora 请求失败会优先尝试本地 Excel 问数和 Mock Dora 演示兜底; 未命中时仍返回安全 fallback。
+- Excel 问数数据缺失、Dora 流式异常和 TTS 分段异常不再向前端暴露系统堆栈或供应商异常原文。
+- 现场日志包导出流程固化为 `scripts/export-logs.ps1`, 默认只导出脱敏 Ops Markdown / JSON 和 Compose 状态; Docker 原生日志需显式 `-IncludeDockerLogs`。
+- FVS iframe host 默认语音入口改为小型低透明 icon; 唤醒词判定中、未命中和冷却状态不展开对话浮层。
+- FVS iframe host 展开态改为半透明评论流, 仅显示最近用户识别文本和数字人回复文本。
+- FVS iframe host 不再显示右上角“运维”悬浮入口; 运维看板通过 `/ops` 访问。
 - 调整 V0.7 之后路线: 先 V0.8 功能增强, 再 V0.9 交付优化, 最后 V1.0 验收交付。
 - 新增 `docs/14_ENHANCEMENT_ROADMAP.md`, 记录 Dora 通用问数、TTS 字节级真流式、运维监控 / 日志看板、客户私有配置目录和交付材料路线。
 - 新增 ADR-0011, 记录“先功能增强再交付优化”的阶段决策。
-- `NEXT_ACTIONS` 当前阶段更新为 V0.8 功能增强版准备, 第一推荐 goal 为客户私有配置目录 + `ASK_METRICS_MODE=dora|excel|auto`。
+- 先前 `NEXT_ACTIONS` 已进入 V1.0 准备阶段; 本轮已进一步更新为 V1.0 交付包已输出。
 - API / 数据 / 配置 / 测试 / 风险 / 客户移交文档补充 V0.8 Draft 和 V0.9 / V1.0 草案。
+- 后端启动时会加载客户目录覆盖层; 旧 `.env` 中等于根目录默认路径的配置项不再阻止客户目录覆盖, 真正自定义路径仍优先。
+- `/api/chat` 和 `/api/chat/stream` 的问数链路改为按 `ASK_METRICS_MODE` 路由: `excel` 保持 V0.7 行为, `dora` 不让 Excel 抢答, `auto` 在 Dora 失败或兜底时回退 Excel。
+- Docker Compose 不再硬编码根目录 YAML 路径, 由后端配置解析器选择默认配置或客户配置。
+- 前端播报按钮和语音自动播报路径优先尝试 `/api/tts/stream`; 真流式失败后继续使用 `/api/chat/stream` 的 `tts_ready` 分段音频或完整 `/api/tts` 文件。
+- `SessionLogStore` 新增最近会话、单会话明细、错误列表和耗时聚合查询, 并对导出摘要做截断和常见密钥模式脱敏。
+
+### Verified
+
+- V1.0 交付包引用 `logs/smoke/smoke-demo-20260611-011803.md`, 5 条固定演示题均为 `True`。
+- V1.0 交付包引用 `logs/exports/zt-poc-logs-20260611-011813.zip` 作为最近日志包证据。
+- `python -m compileall apps/api/app` 通过。
+- `corepack pnpm --dir apps/web build` 通过。
+- `docker compose config --services` 返回 `api`、`web`。
+- `git diff --check` 通过。
+- `scripts/check-poc.ps1 -SkipExternal -Json` 可输出预检 JSON。
+- `scripts/start-poc.ps1 -Build -DemoStable` 成功重建并启动 API / Web。
+- `GET /api/health` 返回 `status=ok`; `GET /api/demo/config` 返回 `stable_mode=true`。
+- `scripts/smoke-demo.ps1 -ExecuteScreenActions` 通过, 固定演示题和白名单控屏执行成功。
+- `scripts/export-logs.ps1 -Zip` 生成日志包。
+- `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json` 通过。
+- Codex Browser 验证前端“演示稳态”、动态演示题和 FVS iframe 超时兜底。
+- `python -m compileall apps/api/app` 通过。
+- `docker compose config --services` 返回 `api`、`web`。
+- `docker compose up -d --build api` 成功。
+- API 容器内确认有效配置指向 `/app/config/customers/zt-securities/*.yaml`。
+- `GET /api/health` 返回 `status=ok`。
+- `ASK_METRICS_MODE=excel` 下 `/api/chat` 11 个问数 smoke 均通过, 且回答包含 Excel 来源。
+- `ASK_METRICS_MODE=excel` 下 `入党流程是什么?` 未被问数 Adapter 抢占。
+- `/api/chat/stream` 问数返回 `metadata -> dora_delta -> answer -> tts_ready -> end`。
+- 容器内函数级验证 `ASK_METRICS_MODE=dora` 不使用 Excel 来源。
+- 容器内函数级验证 `ASK_METRICS_MODE=auto` 在 Mock Dora 兜底时回退 Excel。
+- `corepack pnpm --dir apps/web build` 通过。
+- `git diff --check` 通过。
+- `docker compose up -d --build api web` 成功。
+- `POST /api/tts/stream` 在真实 TTS 配置下返回 `metadata -> audio_chunk* -> end`; 抽样首个 PCM chunk 约 567ms 到达, `end.duration_ms=3387`, 共 33 个 chunk。
+- `TTS_STREAMING_ENABLED=false` 时 `/api/tts/stream` 返回 `TTS_STREAMING_DISABLED` 和 `end.ok=false`, `fallback=segment`。
+- `/api/chat/stream` 问数链路仍返回 `tts_ready`, 分段 TTS fallback 未退化。
+- `GET http://127.0.0.1:18000` 和前端 JS / CSS 资源均返回 HTTP 200。
+- `GET /api/ops/health`、`/api/ops/dependencies`、`/api/ops/sessions`、`/api/ops/errors`、`/api/ops/metrics`、`/api/ops/export` 返回成功。
+- `/api/ops/export` 密钥模式扫描未命中 `api_key` 明文、`Bearer ...`、`sk-*` 或 `ak-*`。
+- Codex Browser 验证 FVS iframe host 模式和 `?fvs_mode=mock` 模式均可进入运维看板, 依赖状态、最近会话、错误列表和耗时指标可见。
+
+### Not Done
+
+- 现场截图、真实客户网络、麦克风 / 播放权限、Dora / RAGFlow 连通性和客户签字仍需在客户现场补齐。
+- Dora 通用问数质量仍需结合客户真实数据源和 Dora 工具能力继续验证。
 
 ## 0.7.0 - 2026-06-10
 

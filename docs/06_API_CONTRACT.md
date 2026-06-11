@@ -31,9 +31,10 @@
 ### Runtime Mode
 
 - V0.7 问数优先级: 后端会先用本地 Excel Adapter 匹配问数意图; 命中后直接返回 `type=answer`, 不调用 Dora, 避免模型编造 Excel 查询结果。
-- V0.8 Draft: 新增 `ASK_METRICS_MODE=excel|dora|auto`。`excel` 保持 V0.7 行为; `dora` 由 Dora 承接通用问数; `auto` 优先 Dora, Dora 失败 / 超时 / 兜底时回退 Excel。
+- V0.8 已实现 `ASK_METRICS_MODE=excel|dora|auto`。`excel` 保持 V0.7 行为; `dora` 不让 Excel Adapter 抢答, 由 Dora / Mock Dora 承接; `auto` 优先 Dora / Mock Dora, Dora 请求失败或返回 `fallback` 时回退 Excel。
 - `ENABLE_MOCK_DORA=true`: 继续使用 V0.1 Mock Dora, 不依赖外部 Dora。
 - `ENABLE_MOCK_DORA=false`: 后端使用 `.env` 中的 `DORA_BASE_URL`、`DORA_API_KEY`、`DORA_AGENT_ID` / `DORA_AGENT_NAME`、`DORA_CHANNEL_TYPE` 调用 Dora OpenClaw SSE。
+- `DEMO_STABLE_MODE=true`: Dora 请求失败时优先尝试本地 Excel 问数和 Mock Dora 演示兜底; 未命中时仍返回安全 `fallback`。该模式只用于演示稳态, 不能替代真实外部依赖验收。
 - 前端接口契约不变, Dora 原始输出由后端归一为 `answer` / `screen_control` / `fallback`。
 - Dora 请求失败、超时、Agent 未找到或输出无法解析时, 返回 `type=fallback`, 不暴露 API Key、底层堆栈或供应商错误细节。
 
@@ -129,7 +130,7 @@
 
 ## POST /api/chat/stream
 
-流式对话接口。V0.5 当前用于真实 Dora + RAGFlow MCP 问答时降低感知等待: 后端透传 Dora SSE 中的最终回答增量, 并把 `speak_text` 拆成短段并发调用 TTS。若 Dora 某次只返回最终 answer, 后端仍会对最终 `speak_text` 做分段 TTS, 不再等待整段文本一次性合成。V0.7 问数命中本地 Excel Adapter 时, 该接口会直接返回 `metadata`、`dora_delta` 和 `answer`, 同样复用分段 TTS。
+流式对话接口。V0.5 当前用于真实 Dora + RAGFlow MCP 问答时降低感知等待: 后端透传 Dora SSE 中的最终回答增量, 并把 `speak_text` 拆成短段并发调用 TTS。若 Dora 某次只返回最终 answer, 后端仍会对最终 `speak_text` 做分段 TTS, 不再等待整段文本一次性合成。V0.7 问数命中本地 Excel Adapter 时, 该接口会直接返回 `metadata`、`dora_delta` 和 `answer`, 同样复用分段 TTS。V0.8 已同步 `ASK_METRICS_MODE`: `excel` 先走 Excel, `dora` 直接走 Dora / Mock Dora, `auto` 在 Dora / Mock Dora 失败或 `fallback` 时回退 Excel。
 
 ### Request
 
@@ -180,7 +181,7 @@ data: {"ok":true}
 
 ### Frontend Rule
 
-前端按 `tts_ready.index` 顺序播放分段音频。若浏览器自动播放被拦截, 仍保留文字回答和原生音频控件。该接口不改变 `POST /api/chat` 的兼容性; 流式接口失败时前端可回退到普通 `/api/chat` + `/api/tts`。
+前端按 `tts_ready.index` 顺序播放分段音频。V0.8 第二阶段起, 前端在收到最终 `answer` 后会优先调用 `POST /api/tts/stream` 做字节级真流式播报; 若真流式失败, 再回退到本接口返回的 `tts_ready` 分段音频。若浏览器自动播放被拦截, 仍保留文字回答和原生音频控件。该接口不改变 `POST /api/chat` 的兼容性; 流式接口失败时前端可回退到普通 `/api/chat` + `/api/tts`。
 
 ## POST /api/asr/transcribe
 
@@ -276,6 +277,35 @@ ASR WebSocket。后续流式 ASR 阶段实现; V0.3 最小闭环先使用 `POST 
 }
 ```
 
+## GET /api/demo/config
+
+V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演示按钮和交付 smoke 脚本使用。该接口只返回非敏感运行信息, 不返回 API Key、Token、供应商原始响应或客户敏感数据。
+
+### Response
+
+```json
+{
+  "stable_mode": true,
+  "customer_id": "zt-securities",
+  "ask_metrics_mode": "excel",
+  "mock": {
+    "dora": false,
+    "asr": false,
+    "tts": false,
+    "fvs": true
+  },
+  "questions": [
+    {
+      "id": "Q-003",
+      "text": "入党流程是什么？",
+      "category": "knowledge",
+      "expected": "返回入党流程摘要"
+    }
+  ],
+  "notice": "演示稳态模式已开启，外部 Dora 失败时会优先使用本地演示兜底。"
+}
+```
+
 ## POST /api/tts
 
 TTS 合成。V0.3 最小实现使用 Mock TTS 生成完整 WAV 文件并返回音频 URL。
@@ -295,50 +325,6 @@ TTS 合成。V0.3 最小实现使用 Mock TTS 生成完整 WAV 文件并返回�
   "format": "mp3"
 }
 ```
-
-## POST /api/tts/stream
-
-V0.8 Draft。TTS 字节级真流式接口, 用于替代或增强当前“分段 TTS 文件播放”方案。实现前该接口可以不存在; 当前分段 TTS fallback 仍以 `/api/chat/stream` 的 `tts_ready` 事件为准。
-
-### Request
-
-```json
-{
-  "text": "当前党员学习完成率为87.5%。",
-  "voice": "longanyang",
-  "format": "mp3"
-}
-```
-
-### Response
-
-响应为 `text/event-stream` 或音频流。若采用 SSE, 推荐事件如下:
-
-```text
-event: metadata
-data: {"provider":"aliyun","voice":"longanyang","format":"mp3"}
-
-event: audio_chunk
-data: {"index":0,"audio_base64":"...","mime_type":"audio/mpeg"}
-
-event: end
-data: {"ok":true,"chunks":12}
-```
-
-### Event Types
-
-| Event | 用途 |
-| --- | --- |
-| metadata | 流式 TTS 元数据 |
-| audio_chunk | 一段可播放音频字节, `index` 表示顺序 |
-| tts_error | 流式 TTS 合成失败 |
-| end | 结束 |
-
-### Fallback Rule
-
-- `TTS_STREAMING_ENABLED=false`: 不使用真流式, 继续走分段 TTS 文件播放。
-- `TTS_STREAMING_FALLBACK=segment`: 真流式失败时回退当前 `/api/chat/stream` + `tts_ready` 分段方案。
-- 前端不得直接调用 TTS 供应商 API。
 
 ### Response
 
@@ -374,6 +360,51 @@ V0.3 Mock TTS 不生成 mp3, 即使请求 `format=mp3`, 响应中的 `format` �
 }
 ```
 
+## POST /api/tts/stream
+
+V0.8 第二阶段已实现。TTS 字节级真流式接口, 用于增强当前“分段 TTS 文件播放”方案。前端默认请求 `format=pcm`, 后端通过 SSE 逐块返回音频字节; 浏览器使用 Web Audio API 按 chunk 调度播放。当前分段 TTS fallback 仍以 `/api/chat/stream` 的 `tts_ready` 事件为准。
+
+### Request
+
+```json
+{
+  "text": "当前党员学习完成率为87.5%。",
+  "voice": "longanyang",
+  "format": "pcm"
+}
+```
+
+### Response
+
+响应为 `text/event-stream`:
+
+```text
+event: metadata
+data: {"provider":"aliyun","voice":"longanyang","format":"pcm","mime_type":"audio/L16","sample_rate":22050,"mock":false,"fallback":"segment"}
+
+event: audio_chunk
+data: {"index":0,"audio_base64":"...","mime_type":"audio/L16","provider":"aliyun","format":"pcm","sample_rate":22050,"duration_ms":180,"mock":false}
+
+event: end
+data: {"ok":true,"chunks":12,"duration_ms":900,"fallback":"segment"}
+```
+
+### Event Types
+
+| Event | 用途 |
+| --- | --- |
+| metadata | 流式 TTS 元数据 |
+| audio_chunk | 一段可播放音频字节, `index` 表示顺序 |
+| tts_error | 流式 TTS 合成失败 |
+| end | 结束 |
+
+### Fallback Rule
+
+- `TTS_STREAMING_ENABLED=false`: 不使用真流式, 继续走分段 TTS 文件播放。
+- `TTS_STREAMING_FALLBACK=segment`: 真流式失败时回退当前 `/api/chat/stream` + `tts_ready` 分段方案。
+- `TTS_STREAMING_AUDIO_FORMAT=pcm`: 前端默认使用 PCM chunk + Web Audio 播放, 避免浏览器对 MP3 / Opus 流式容器支持不一致。
+- 前端不得直接调用 TTS 供应商 API。
+
 ## GET /api/tts/audio/{audio_id}
 
 读取 V0.3 Mock TTS 生成的音频文件。
@@ -385,7 +416,7 @@ V0.3 Mock TTS 不生成 mp3, 即使请求 `format=mp3`, 响应中的 `format` �
 
 ## Ops APIs
 
-V0.8 Draft。运维监控和日志看板接口。所有 Ops 接口不得返回 API Key、完整密钥、供应商敏感原始响应或未脱敏客户数据。
+V0.8 第三阶段已实现。运维监控和日志看板接口。所有 Ops 接口不得返回 API Key、完整密钥、供应商敏感原始响应或未脱敏客户数据; 会话文本、错误消息和导出摘要会做长度截断和常见密钥模式脱敏。
 
 ### GET /api/ops/health
 
@@ -397,7 +428,7 @@ V0.8 Draft。运维监控和日志看板接口。所有 Ops 接口不得返回 A
   "app": "zt-digital-human-api",
   "version": "0.1.0",
   "customer_id": "zt-securities",
-  "time": "2026-06-10T20:00:00+08:00"
+  "time": "2026-06-11T20:00:00+08:00"
 }
 ```
 
@@ -407,15 +438,38 @@ V0.8 Draft。运维监控和日志看板接口。所有 Ops 接口不得返回 A
 
 ```json
 {
+  "status": "warning",
   "dependencies": [
-    {"name": "dora", "status": "ok", "latency_ms": 320},
-    {"name": "ragflow_mcp", "status": "ok", "latency_ms": 80},
-    {"name": "fvs", "status": "warning", "message": "iframe not checked"},
-    {"name": "asr", "status": "unknown"},
-    {"name": "tts", "status": "ok", "latency_ms": 900}
+    {
+      "name": "dora",
+      "label": "Dora Agent",
+      "status": "ok",
+      "latency_ms": 320,
+      "message": "HTTP 200",
+      "checked_at": "2026-06-11T20:00:00+08:00",
+      "details": {
+        "mode": "real",
+        "agent_configured": true,
+        "channel_type": "feishu"
+      }
+    },
+    {
+      "name": "fvs",
+      "label": "FVS",
+      "status": "warning",
+      "latency_ms": null,
+      "message": "FVS 使用相对路径，需由前端同源代理验证",
+      "checked_at": "2026-06-11T20:00:00+08:00",
+      "details": {
+        "mode": "iframe",
+        "relative_url": true
+      }
+    }
   ]
 }
 ```
+
+当前依赖项包括 `session_log`、`screen_actions`、`dora`、`ragflow`、`asr`、`tts`、`fvs`。Mock 开启时会返回对应 Mock 状态; ASR / TTS 真实模式只做配置就绪检查, 不主动上传音频或触发合成。
 
 ### GET /api/ops/sessions
 
@@ -426,10 +480,12 @@ V0.8 Draft。运维监控和日志看板接口。所有 Ops 接口不得返回 A
   "sessions": [
     {
       "session_id": "demo-session-001",
-      "last_message_at": "2026-06-10T20:00:00+08:00",
+      "last_message_at": "2026-06-11T20:00:00+08:00",
       "turns": 6,
       "last_intent_type": "answer",
-      "last_error": null
+      "last_user_text": "当前党员学习完成率是多少?",
+      "last_error": null,
+      "last_latency_ms": 1200
     }
   ]
 }
@@ -439,13 +495,84 @@ V0.8 Draft。运维监控和日志看板接口。所有 Ops 接口不得返回 A
 
 返回单个会话的最近对话明细。
 
+```json
+{
+  "session_id": "demo-session-001",
+  "events": [
+    {
+      "id": 12,
+      "session_id": "demo-session-001",
+      "message_id": "msg-001",
+      "created_at": "2026-06-11T20:00:00+08:00",
+      "user_text": "当前党员学习完成率是多少?",
+      "intent_type": "answer",
+      "response_summary": "当前党员学习完成率为87.5%。",
+      "screen_action": null,
+      "error": null,
+      "latency_total_ms": 1200
+    }
+  ]
+}
+```
+
+### GET /api/ops/errors
+
+返回最近错误和 `fallback` 摘要。
+
+```json
+{
+  "errors": [
+    {
+      "id": 18,
+      "session_id": "demo-session-001",
+      "message_id": "msg-err",
+      "created_at": "2026-06-11T20:05:00+08:00",
+      "intent_type": "fallback",
+      "code": "DORA_REQUEST_ERROR",
+      "message": "Dora 服务暂时不可用，请稍后再试。",
+      "user_text": "入党流程是什么?",
+      "latency_total_ms": 60123
+    }
+  ]
+}
+```
+
 ### GET /api/ops/metrics
 
 返回聚合耗时和错误指标。
 
+```json
+{
+  "total_events": 120,
+  "total_sessions": 12,
+  "error_events": 3,
+  "avg_latency_ms": 1800,
+  "p50_latency_ms": 900,
+  "p95_latency_ms": 6200,
+  "max_latency_ms": 12000,
+  "by_intent": [
+    {
+      "name": "answer",
+      "count": 90,
+      "avg_latency_ms": 1600,
+      "max_latency_ms": 9000,
+      "error_count": 0
+    }
+  ],
+  "recent_latency": [
+    {
+      "created_at": "2026-06-11T20:00:00+08:00",
+      "session_id": "demo-session-001",
+      "intent_type": "answer",
+      "latency_total_ms": 1200
+    }
+  ]
+}
+```
+
 ### GET /api/ops/export
 
-导出验收日志摘要。V0.9 可进一步固化为文件下载或 Markdown / CSV。
+导出 Markdown 格式的运维日志摘要, 内容包含依赖状态、聚合耗时、最近会话和最近错误。响应头包含 `Content-Disposition: attachment; filename="zt-ops-log-export.md"`。
 
 ## GET /api/screen/actions
 

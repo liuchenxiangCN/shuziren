@@ -55,9 +55,9 @@
 | --- | --- | --- |
 | W-001 | `GET /api/wake/config` | 返回 `小天小天`、`中天小天`、`你好小天` 和 VAD 设置 |
 | W-002 | 点击“后台监听” | 浏览器请求麦克风授权, 前端进入 `monitoring` |
-| W-003 | 说“小天小天” | ASR 命中唤醒词, 前端进入 `recording` 等待正式指令 |
-| W-004 | 说“你好小天” | ASR 命中唤醒词, 前端进入 `recording` 等待正式指令 |
-| W-005 | 说“小天小天, 请切换到成品库存页面” | 去掉唤醒词后自动进入 `/api/chat` -> TTS, 不需要点击“识别并发送” |
+| W-003 | 说“小天小天” | ASR 命中唤醒词, 前端立即播报“您好。”, 并进入 `recording` 等待正式指令 |
+| W-004 | 说“你好小天” | ASR 命中唤醒词, 前端立即播报“您好。”, 并进入 `recording` 等待正式指令 |
+| W-005 | 说“小天小天, 请切换到成品库存页面” | 前端先播报“您好。”, 再播报“收到, 正在为您查找信息。”, 去掉唤醒词后自动进入 `/api/chat` -> TTS |
 | W-006 | 普通闲聊无唤醒词 | 短片段进入 `cooldown`, 不进入 `/api/chat` |
 | W-007 | 唤醒后超过 `command_timeout_ms` 无指令 | 回到监听冷却, 不报错 |
 | W-008 | 关闭“后台监听” | 释放麦克风, 回到 `idle`, 手动录音按钮可继续使用 |
@@ -141,8 +141,10 @@ V0.7 已实现 Gateway 本地 Excel 问数 Adapter。以上问题命中后应直
 | FVS-005 | 输入“打开生产管理” | 前端将 FVS iframe URL 切到 `page_number=3`, 且动作只在 Gateway 白名单校验成功后执行 |
 | FVS-006 | 输入“打开不存在页面” | Gateway 返回 fallback 或 `ACTION_NOT_ALLOWED`, 前端不发送可执行动作 |
 | FVS-007 | 点击直接控屏按钮 `总览`、`成品库存`、`生产管理`、`设备分析` | FVS iframe URL 分别切到 `page_number=1/2/3/4` |
-| FVS-008 | `iframe` 模式打开主页面且未唤醒 | FVS 看板铺满视口, 页面上层仅显示角落语音交互图标, 不显示文本表单、Demo 按钮或调试控屏栏 |
-| FVS-009 | 语音唤醒、连续追问、思考或播报中 | 角落图标展开为悬浮语音面板, 显示监听状态、波形动画和对话文字记录 |
+| FVS-008 | `iframe` 模式打开主页面且未唤醒 | FVS 看板铺满视口, 页面上层仅显示小型低透明语音 icon, 不显示文本表单、Demo 按钮、调试控屏栏或运维入口 |
+| FVS-009 | 唤醒词判定中或未命中唤醒词 | 右下角保持小型 icon, 不展开悬浮对话层, 不播报“您好。” |
+| FVS-010 | 命中唤醒词、连续追问、思考或播报中 | 角落 icon 展开为半透明评论流, 只显示最近用户识别文本和数字人回复文本 |
+| FVS-011 | 打开 `http://localhost:18000/ops` | 可直接进入运维看板; FVS 主画布不提供悬浮运维入口 |
 
 ## POC 准备验收
 
@@ -173,30 +175,97 @@ V0.7 已实现 Gateway 本地 Excel 问数 Adapter。以上问题命中后应直
 | --- | --- | --- |
 | V08-CONFIG-001 | 设置 `CUSTOMER_ID=zt-securities` | 后端加载客户私有配置目录 |
 | V08-CONFIG-002 | 客户级 `screen-actions.yaml` 覆盖默认配置 | `/api/screen/actions` 返回客户级动作 |
-| V08-CONFIG-003 | 客户级 `fvs.yaml` 配置 FVS 地址 | 前端可从安全配置或构建参数获得正确 FVS 地址 |
+| V08-CONFIG-003 | 客户级 `fvs.yaml` 配置 FVS 地址 | 客户目录提供 FVS 地址样例; 前端仍通过 `VITE_FVS_*` 或 URL 参数获得安全配置 |
 | V08-CONFIG-004 | 客户级 `ask-metrics.yaml` 覆盖默认问数映射 | Excel Adapter 使用客户级工作簿映射 |
 | V08-ASK-001 | `ASK_METRICS_MODE=excel` 后运行 11 个问数 smoke | 结果与 V0.7 一致 |
-| V08-ASK-002 | `ASK_METRICS_MODE=dora` 后输入非固定模板问数 | 由 Dora 返回归一化 `answer` |
-| V08-ASK-003 | `ASK_METRICS_MODE=auto` 且 Dora 可用 | 优先返回 Dora 问数结果 |
+| V08-ASK-002 | `ASK_METRICS_MODE=dora` 后输入问数 | 不使用 Excel 来源, 由 Dora / Mock Dora 链路承接 |
+| V08-ASK-003 | `ASK_METRICS_MODE=auto` 且 Dora 可用 | 优先返回 Dora / Mock Dora 结果 |
 | V08-ASK-004 | `ASK_METRICS_MODE=auto` 且 Dora 超时 / 兜底 | 回退 Excel Adapter |
 | V08-ASK-005 | Dora 输出模型生成 SQL / JS / Python | Gateway 不执行, 返回安全兜底或仅作为文本处理 |
 | V08-TTS-001 | `TTS_STREAMING_ENABLED=true` | 首个音频 chunk 早于完整 TTS 文件生成 |
 | V08-TTS-002 | 流式 TTS Provider 失败 | 自动回退分段 TTS 文件播放 |
 | V08-TTS-003 | AI 结果音频到达时等待提示仍在播放 | AI 音频打断等待提示 |
+| V08-TTS-004 | `POST /api/tts/stream` 请求 `format=pcm` | 返回 `metadata -> audio_chunk* -> end`, 前端 Web Audio 可播放 PCM chunk |
+| V08-TTS-005 | `TTS_STREAMING_ENABLED=false` | `/api/tts/stream` 返回 `tts_error`, 前端回退已有分段 TTS |
 | V08-OPS-001 | 打开运维看板 | 能看到服务状态、依赖状态、最近会话、错误和耗时 |
 | V08-OPS-002 | `GET /api/ops/dependencies` | 不返回 API Key 或敏感供应商响应 |
 | V08-OPS-003 | 导出最近会话摘要 | 可用于验收记录 |
 
-## V0.9 交付优化测试草案
+### V0.8 第一阶段已验证
+
+- `python -m compileall apps/api/app` 通过。
+- `docker compose config --services` 返回 `api`、`web`。
+- `docker compose up -d --build api` 成功。
+- API 容器内 `get_settings()` 确认客户目录覆盖层生效:
+  - `action_whitelist_path=/app/config/customers/zt-securities/screen-actions.yaml`
+  - `demo_cases_path=/app/config/customers/zt-securities/demo-cases.yaml`
+  - `wake_words_path=/app/config/customers/zt-securities/wake-words.yaml`
+  - `ask_metrics_config_path=/app/config/customers/zt-securities/ask-metrics.yaml`
+- `ASK_METRICS_MODE=excel` 下 11 个问数 smoke 全部返回 `answer` 和 Excel 来源。
+- `ASK_METRICS_MODE=excel` 下 `入党流程是什么?` 未被问数 Adapter 拦截。
+- `/api/chat/stream` 问数返回 `metadata -> dora_delta -> answer -> tts_ready -> end`。
+- 容器内函数级验证 `ASK_METRICS_MODE=dora` 不使用 Excel 来源。
+- 容器内函数级验证 `ASK_METRICS_MODE=auto` 可在 Mock Dora 兜底时回退 Excel。
+
+### V0.8 第二阶段已验证
+
+- `python -m compileall apps/api/app` 通过。
+- `corepack pnpm --dir apps/web build` 通过。
+- `docker compose config --services` 返回 `api`、`web`。
+- `git diff --check` 通过。
+- `docker compose up -d --build api web` 成功。
+- `GET /api/health` 返回 `status=ok`。
+- `POST /api/tts/stream` 在真实 TTS 配置下返回 `metadata -> audio_chunk* -> end`; 抽样首个 PCM chunk 约 567ms 到达, `end.duration_ms=3387`, 共 33 个 chunk。
+- `TTS_STREAMING_ENABLED=false` 时 `/api/tts/stream` 返回 `tts_error` code=`TTS_STREAMING_DISABLED` 和 `end.ok=false`, `fallback=segment`; 验证后已恢复默认开启。
+- `/api/chat/stream` 输入 `当前党员学习完成率是多少?` 仍返回 4 个 `tts_ready`, 分段 TTS fallback 未退化。
+- `GET http://127.0.0.1:18000` 和前端 JS / CSS 资源均返回 HTTP 200。
+- 本轮 Codex Browser 控制工具未暴露, 未做截图级浏览器交互验证。
+
+### V0.8 第三阶段已验证
+
+- `python -m compileall apps/api/app` 通过。
+- `corepack pnpm --dir apps/web build` 通过。
+- Ops API smoke 范围:
+  - `GET /api/ops/health`
+  - `GET /api/ops/dependencies`
+  - `GET /api/ops/sessions`
+  - `GET /api/ops/errors`
+  - `GET /api/ops/metrics`
+  - `GET /api/ops/export`
+- 前端运维看板入口: 访问 `/ops` 或在非 FVS 主画布模式使用顶部“演示 / 运维”切换后, 可查看依赖状态、最近会话、错误列表、耗时指标和日志导出按钮; FVS iframe host 模式不显示运维悬浮入口。
+- Ops 接口和导出摘要不得返回 API Key、完整密钥或供应商敏感原始响应。
+- 当前运行态 `GET /api/ops/dependencies` 聚合状态为 `error`, 原因为 Dora 探测超时、RAGFlow 探测失败; Ops API 本身返回正常。
+
+## V0.9 交付优化测试
 
 | 编号 | 项目 | 期望 |
 | --- | --- | --- |
 | V09-001 | 运行 `scripts/check-poc.ps1` | 检查 Docker、端口、API、Web 和外部依赖 |
-| V09-002 | 运行 `scripts/start-poc.ps1` | 可启动 API / Web |
-| V09-003 | 运行 `scripts/stop-poc.ps1` | 可停止 API / Web |
-| V09-004 | `DEMO_STABLE_MODE=true` | 外部服务失败时提示 fallback 路径 |
-| V09-005 | FVS iframe 加载失败 | 前端给出可理解提示 |
-| V09-006 | 麦克风权限失败 | 前端给出权限 / 设备排查提示 |
+| V09-002 | 运行 `scripts/check-poc.ps1 -RequireServices` | API / Web 未启动时返回 error, 已启动时返回 ok |
+| V09-003 | 运行 `scripts/start-poc.ps1 -Build` | 可启动 API / Web |
+| V09-004 | 运行 `scripts/start-poc.ps1 -Build -DemoStable` | API 启动时 `DEMO_STABLE_MODE=true`, 前端显示演示稳态 |
+| V09-005 | 运行 `scripts/stop-poc.ps1` | 可停止 API / Web |
+| V09-006 | 运行 `scripts/smoke-demo.ps1` | 固定演示问题集可返回预期 `answer` / `screen_control` |
+| V09-007 | 运行 `scripts/export-logs.ps1 -Zip` | 生成包含 Ops Markdown / JSON 的日志包 |
+| V09-008 | `GET /api/demo/config` | 返回演示稳态、客户 ID、问数模式、Mock 开关和固定问题 |
+| V09-009 | `DEMO_STABLE_MODE=true` 且 Dora 超时 / 请求失败 | 优先回退 Excel 问数或 Mock Dora, 未命中时返回安全 fallback |
+| V09-010 | Excel 问数文件缺失 | 返回 `ASK_METRICS_DATA_UNAVAILABLE` 一类安全兜底, 不暴露堆栈 |
+| V09-011 | FVS iframe 加载失败或超时 | 前端给出可理解提示 |
+| V09-012 | 麦克风权限失败 | 前端给出权限 / 设备排查提示 |
+
+### V0.9 已验证
+
+- `python -m compileall apps/api/app` 通过。
+- `corepack pnpm --dir apps/web build` 通过。
+- `docker compose config --services` 返回 `api`、`web`。
+- `git diff --check` 通过。
+- `scripts/check-poc.ps1 -SkipExternal -Json` 可输出预检 JSON, 当前 Docker daemon、Compose、API / Web 端口、`.env`、客户配置和问数数据检查通过。
+- `scripts/start-poc.ps1 -Build -DemoStable` 成功重建并启动 API / Web。
+- `GET /api/health` 返回 `status=ok`; `GET /api/demo/config` 返回 `stable_mode=true` 和固定演示题。
+- `scripts/smoke-demo.ps1 -ExecuteScreenActions` 通过, 固定演示题和白名单控屏执行通过。
+- `scripts/export-logs.ps1 -Zip` 生成 `logs/exports/zt-poc-logs-20260611-011813.zip`。
+- `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json` 通过。
+- Codex Browser 验证 Mock 大屏模式可见“演示稳态”和动态演示题; iframe 模式无效 FVS URL 可显示超时兜底。
 
 ## V1.0 验收交付测试草案
 
@@ -207,3 +276,17 @@ V0.7 已实现 Gateway 本地 Excel 问数 Adapter。以上问题命中后应直
 | V10-003 | 用户手册 | 覆盖唤醒、追问、问答、问数、大屏切换和兜底 |
 | V10-004 | 运维手册 | 覆盖启停、预检、日志、故障排查和配置更换 |
 | V10-005 | 配置手册 | 覆盖客户私有配置和 `.env` 密钥边界 |
+| V10-006 | 测试报告 | 覆盖 V0.7 / V0.8 / V0.9 已验证项和客户现场待确认项 |
+| V10-007 | 客户移交清单 | 覆盖交付物、环境、密钥、操作、验收场景、风险和签收 |
+
+### V1.0 已输出
+
+- `docs/delivery/v1.0/01_ACCEPTANCE_REPORT.md`
+- `docs/delivery/v1.0/02_DEPLOYMENT_PLAN.md`
+- `docs/delivery/v1.0/03_USER_MANUAL.md`
+- `docs/delivery/v1.0/04_OPERATIONS_MANUAL.md`
+- `docs/delivery/v1.0/05_CONFIGURATION_MANUAL.md`
+- `docs/delivery/v1.0/06_TEST_REPORT.md`
+- `docs/delivery/v1.0/07_CUSTOMER_HANDOFF_CHECKLIST.md`
+
+当前 V1.0 文档测试通过标准: 交付包文件存在, `docs/00_INDEX.md` 已加入入口, `NEXT_ACTIONS` 已切换到现场验收复演, 并在验收报告中明确标注截图和真实依赖仍需客户现场补齐。

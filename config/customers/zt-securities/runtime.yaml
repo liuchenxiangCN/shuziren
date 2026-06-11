@@ -1,0 +1,18 @@
+version: 0.9.0
+customer_id: zt-securities
+description: 中天证券党建大屏数字人 POC 客户运行时配置。
+
+demo_stable_mode: false
+demo:
+  stable_mode: false
+
+ask_metrics_mode: excel
+ask_metrics:
+  mode: excel
+  data_dir: docs/demo_data/ask_metrics
+
+notes:
+  - API Key 只放 .env 或部署环境变量。
+  - DEMO_STABLE_MODE=true 时, Dora 失败会优先使用本地演示兜底。
+  - ASK_METRICS_MODE 环境变量可覆盖本文件中的问数模式。
+  - 可选值为 excel、dora、auto。

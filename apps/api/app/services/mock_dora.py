@@ -25,6 +25,12 @@ class MockDoraService:
 
         return self._fallback(request, reason=f"Unsupported mock response type: {response_type}")
 
+    def list_demo_questions(self) -> list[dict]:
+        questions = self.config.get("demo_questions", [])
+        if not isinstance(questions, list):
+            return []
+        return [question for question in questions if isinstance(question, dict)]
+
     def _match_rule(self, text: str) -> dict | None:
         for rule in self.config.get("mock_rules", []):
             keywords = rule.get("match_keywords", [])
@@ -85,4 +91,3 @@ class MockDoraService:
     @staticmethod
     def _message_id() -> str:
         return f"msg-{uuid4().hex[:12]}"
-

@@ -41,6 +41,19 @@
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 | [14_ENHANCEMENT_ROADMAP.md](14_ENHANCEMENT_ROADMAP.md) | V0.8 功能增强、V0.9 交付优化、V1.0 验收交付路线 |
 
+## V1.0 验收交付包
+
+| 文档 | 用途 |
+| --- | --- |
+| [delivery/v1.0/README.md](delivery/v1.0/README.md) | V1.0 验收交付包索引 |
+| [delivery/v1.0/01_ACCEPTANCE_REPORT.md](delivery/v1.0/01_ACCEPTANCE_REPORT.md) | 验收报告 |
+| [delivery/v1.0/02_DEPLOYMENT_PLAN.md](delivery/v1.0/02_DEPLOYMENT_PLAN.md) | 部署方案 |
+| [delivery/v1.0/03_USER_MANUAL.md](delivery/v1.0/03_USER_MANUAL.md) | 用户手册 |
+| [delivery/v1.0/04_OPERATIONS_MANUAL.md](delivery/v1.0/04_OPERATIONS_MANUAL.md) | 运维手册 |
+| [delivery/v1.0/05_CONFIGURATION_MANUAL.md](delivery/v1.0/05_CONFIGURATION_MANUAL.md) | 配置手册 |
+| [delivery/v1.0/06_TEST_REPORT.md](delivery/v1.0/06_TEST_REPORT.md) | 测试报告 |
+| [delivery/v1.0/07_CUSTOMER_HANDOFF_CHECKLIST.md](delivery/v1.0/07_CUSTOMER_HANDOFF_CHECKLIST.md) | 客户移交清单 |
+
 ## 决策记录
 
 ADR 位于 [decisions](decisions)。
@@ -56,6 +69,11 @@ ADR 位于 [decisions](decisions)。
 - [ADR-0009-fvs-floating-voice-overlay.md](decisions/ADR-0009-fvs-floating-voice-overlay.md)
 - [ADR-0010-local-excel-ask-metrics-adapter.md](decisions/ADR-0010-local-excel-ask-metrics-adapter.md)
 - [ADR-0011-enhancement-before-handoff.md](decisions/ADR-0011-enhancement-before-handoff.md)
+- [ADR-0012-customer-config-overlay-and-ask-metrics-mode.md](decisions/ADR-0012-customer-config-overlay-and-ask-metrics-mode.md)
+- [ADR-0013-tts-byte-streaming-with-pcm-web-audio.md](decisions/ADR-0013-tts-byte-streaming-with-pcm-web-audio.md)
+- [ADR-0014-readonly-sanitized-ops-dashboard.md](decisions/ADR-0014-readonly-sanitized-ops-dashboard.md)
+- [ADR-0015-v09-delivery-scripts-and-demo-stable-mode.md](decisions/ADR-0015-v09-delivery-scripts-and-demo-stable-mode.md)
+- [ADR-0016-fvs-minimal-overlay-and-ops-route.md](decisions/ADR-0016-fvs-minimal-overlay-and-ops-route.md)
 
 ## 外部集成
 

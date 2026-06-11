@@ -76,7 +76,7 @@ V0.7 本地 Excel 问数 Adapter 命中后仍返回标准 `answer`, 不新增前
 
 ## Ask Metrics Mode
 
-V0.8 Draft。问数模式由 `ASK_METRICS_MODE` 控制:
+V0.8 已实现。问数模式由 `ASK_METRICS_MODE` 控制:
 
 ```json
 {
@@ -89,9 +89,9 @@ V0.8 Draft。问数模式由 `ASK_METRICS_MODE` 控制:
 
 模式:
 
-- `excel`: 固定走 Gateway 本地 Excel Adapter。
-- `dora`: 由 Dora 承接通用问数, Gateway 只做归一化和安全兜底。
-- `auto`: 优先 Dora, Dora 失败 / 超时 / 兜底时回退 Excel。
+- `excel`: Gateway 本地 Excel Adapter 先匹配问数; 未命中继续 Dora / Mock Dora。
+- `dora`: Excel Adapter 不抢占, 由 Dora / Mock Dora 承接通用问数, Gateway 只做归一化和安全兜底。
+- `auto`: 优先 Dora / Mock Dora, Dora 请求失败或返回 `fallback` 时回退 Excel。
 
 规则:
 
@@ -99,6 +99,52 @@ V0.8 Draft。问数模式由 `ASK_METRICS_MODE` 控制:
 - `dora` / `auto` 模式下, Dora 输出仍归一为标准 `answer`。
 - Dora 问数回答应包含来源、口径、时间范围或无法确认说明。
 - Gateway 不执行 Dora 生成的 SQL、Python、JavaScript 或 shell。
+
+## Demo Stable Mode
+
+V0.9 已实现。演示稳态模式由 `DEMO_STABLE_MODE` 控制, 前端构建状态可由 `VITE_DEMO_STABLE_MODE` 显示:
+
+```json
+{
+  "stable_mode": true,
+  "fallback_order": ["ask_metrics_excel", "mock_dora", "safe_fallback"],
+  "allow_model_generated_code": false
+}
+```
+
+规则:
+
+- 仅当 `DEMO_STABLE_MODE=true` 时启用。
+- Dora 请求失败或流式 Dora 失败时, Gateway 优先尝试本地 Excel 问数和 Mock Dora 演示规则。
+- 演示兜底仍返回标准 `answer` / `screen_control` / `fallback` 类型, 不新增对话响应类型。
+- `screen_control` 仍必须通过 `action_id` 白名单校验。
+- 未命中本地演示规则时返回安全 `fallback`, 不暴露 API Key、供应商原始响应或堆栈。
+- 该模式只用于现场演示稳态, 正式验收应明确记录是否开启。
+
+演示配置接口结构:
+
+```json
+{
+  "stable_mode": true,
+  "customer_id": "zt-securities",
+  "ask_metrics_mode": "excel",
+  "mock": {
+    "dora": false,
+    "asr": false,
+    "tts": false,
+    "fvs": true
+  },
+  "questions": [
+    {
+      "id": "Q-004",
+      "text": "当前党员学习完成率是多少？",
+      "category": "data",
+      "expected": "返回学习完成率"
+    }
+  ],
+  "notice": "演示稳态模式已开启，外部 Dora 失败时会优先使用本地演示兜底。"
+}
+```
 
 ## Chart Answer
 
@@ -266,37 +312,46 @@ V0.5 `POST /api/chat/stream` 中, 后端会把最终 `speak_text` 拆成短段�
 
 ## Streamed Audio Chunk
 
-V0.8 Draft。TTS 字节级真流式音频片段:
+V0.8 第二阶段已实现。TTS 字节级真流式音频片段由 `POST /api/tts/stream` 通过 SSE 返回:
 
 ```json
 {
   "index": 0,
   "audio_base64": "...",
-  "mime_type": "audio/mpeg",
+  "mime_type": "audio/L16",
   "duration_ms": 160,
   "provider": "aliyun",
-  "format": "mp3"
+  "format": "pcm",
+  "sample_rate": 22050,
+  "mock": false
 }
 ```
 
 规则:
 
 - `index` 表示播放顺序。
-- 前端必须按顺序播放或缓冲。
+- 前端默认请求 `format=pcm`, 并用 Web Audio API 将每个 PCM chunk 解码为 `AudioBuffer` 后按时间轴排队播放。
+- `metadata.sample_rate` / `audio_chunk.sample_rate` 表示 PCM 采样率。
 - 流式失败时回退现有 `Streamed TTS Segment`。
+- Mock TTS 也支持输出 PCM chunk, 便于无外部 TTS Key 时验证前端真流式播放器、打断和 fallback。
 - 不在前端暴露 TTS API Key。
 
 ## Ops Status
 
-V0.8 Draft。运维看板使用的依赖状态结构:
+V0.8 第三阶段已实现。运维看板使用的依赖状态结构:
 
 ```json
 {
   "name": "dora",
+  "label": "Dora Agent",
   "status": "ok",
   "latency_ms": 320,
-  "message": "reachable",
-  "checked_at": "2026-06-10T20:00:00+08:00"
+  "message": "HTTP 200",
+  "checked_at": "2026-06-11T20:00:00+08:00",
+  "details": {
+    "mode": "real",
+    "agent_configured": true
+  }
 }
 ```
 
@@ -311,10 +366,92 @@ V0.8 Draft。运维看板使用的依赖状态结构:
 
 - 运维状态不得包含 API Key、完整密钥或供应商敏感原始响应。
 - 错误消息应面向排障, 不泄露底层堆栈。
+- 依赖探测只做轻量健康 / 配置检查, 不触发 Dora 对话、ASR 上传或 TTS 合成。
+- Mock 模式会明确返回 `mode=mock`, 避免把 Mock 状态误认为真实外部服务连通。
+
+## Ops Session Summary
+
+运维看板的最近会话摘要来自 `session_logs` SQLite 表:
+
+```json
+{
+  "session_id": "demo-session-001",
+  "last_message_at": "2026-06-11T20:00:00+08:00",
+  "turns": 6,
+  "last_intent_type": "answer",
+  "last_user_text": "当前党员学习完成率是多少?",
+  "last_error": null,
+  "last_latency_ms": 1200
+}
+```
+
+规则:
+
+- `turns` 表示该 session 在日志表中的事件数, 包含 chat 和 screen execute 事件。
+- `last_user_text` 只保留截断后的摘要。
+- `last_error` 仅包含脱敏后的 `code` 和 `message`。
+
+## Ops Error Item
+
+错误列表结构:
+
+```json
+{
+  "id": 18,
+  "session_id": "demo-session-001",
+  "message_id": "msg-err",
+  "created_at": "2026-06-11T20:05:00+08:00",
+  "intent_type": "fallback",
+  "code": "DORA_REQUEST_ERROR",
+  "message": "Dora 服务暂时不可用，请稍后再试。",
+  "user_text": "入党流程是什么?",
+  "latency_total_ms": 60123
+}
+```
+
+规则:
+
+- `fallback` 会纳入错误列表, 便于排查外部依赖或意图兜底。
+- 错误消息不得包含 API Key、完整密钥、供应商原始响应或堆栈。
+
+## Ops Metrics
+
+耗时指标结构:
+
+```json
+{
+  "total_events": 120,
+  "total_sessions": 12,
+  "error_events": 3,
+  "avg_latency_ms": 1800,
+  "p50_latency_ms": 900,
+  "p95_latency_ms": 6200,
+  "max_latency_ms": 12000,
+  "by_intent": [
+    {
+      "name": "answer",
+      "count": 90,
+      "avg_latency_ms": 1600,
+      "max_latency_ms": 9000,
+      "error_count": 0
+    }
+  ],
+  "recent_latency": [
+    {
+      "created_at": "2026-06-11T20:00:00+08:00",
+      "session_id": "demo-session-001",
+      "intent_type": "answer",
+      "latency_total_ms": 1200
+    }
+  ]
+}
+```
+
+当前耗时来自 `session_logs.latency_total_ms`, 覆盖 `/api/chat`、`/api/chat/stream` 和 `/api/screen/execute` 已写入的事件。更细的 ASR / Dora / RAGFlow / TTS 分段耗时可作为后续增强项, V0.9 已先通过预检和日志包固化现场排障流程。
 
 ## Customer Config Overlay
 
-V0.8 Draft。客户私有配置覆盖规则:
+V0.8 已实现第一阶段。客户私有配置覆盖规则:
 
 ```json
 {
@@ -337,9 +474,14 @@ V0.8 Draft。客户私有配置覆盖规则:
 
 - 根配置作为默认模板。
 - 客户目录配置作为覆盖层。
+- `.env` 和部署环境变量作为显式运行时覆盖。
+- 旧 `.env` 中等于根目录默认路径的配置项不阻止客户目录覆盖; 真正自定义路径仍优先。
 - `.env` 只放密钥、本机端口和部署参数。
 - YAML 放非敏感客户配置。
 - 前端只能获得后端透出的安全配置。
+- V0.8 第一阶段已接入后端覆盖的文件: `screen-actions.yaml`、`ask-metrics.yaml`、`demo-cases.yaml`、`wake-words.yaml`。
+- `dora.yaml`、`ragflow.yaml`、`voice.yaml` 提供后端可读取的非敏感参数; API Key 仍不从 YAML 读取。
+- `fvs.yaml` 是客户侧 FVS 配置样例; 当前前端运行时仍通过 `VITE_FVS_*` 构建参数或 URL 参数获取安全配置。
 
 ## ScreenAction
 

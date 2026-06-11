@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-V0.8 功能增强版准备。
+V1.0 POC 验收交付版已输出。
 
 ## Phase Status
 
@@ -14,25 +14,34 @@ V0.6 已完成人工验收。已完成数字人前端主页面 iframe 嵌入 FVS
 
 用户已决定调整后续顺序: 先做功能增强, 再做交付前优化, 最后输出验收报告、部署方案、用户手册等材料。路线已记录到 `docs/14_ENHANCEMENT_ROADMAP.md` 和 ADR-0011。
 
+V0.8 第一阶段已完成: 新增 `CUSTOMER_ID` / `CUSTOMER_CONFIG_DIR`, 建立 `config/customers/zt-securities/` 客户私有配置目录, 后端启动时加载客户级动作白名单、Demo、唤醒词和问数映射覆盖层; `dora.yaml`、`ragflow.yaml`、`voice.yaml`、`fvs.yaml` 提供非敏感客户配置样例。新增 `ASK_METRICS_MODE=excel|dora|auto`: `excel` 保持 V0.7 Excel 优先行为, `dora` 不让 Excel Adapter 抢答, `auto` 在 Dora / Mock Dora 失败或兜底时回退 Excel。已新增 ADR-0012。容器验证确认客户目录配置生效, `excel` 模式 11 个问数 smoke 通过, `/api/chat/stream` 问数事件顺序为 `metadata -> dora_delta -> answer -> tts_ready -> end`, `dora` / `auto` 路由完成函数级验证。
+
+V0.8 第二阶段已完成: 新增 TTS 字节级真流式接口 `POST /api/tts/stream`, 后端 `TtsProvider.stream_synthesize` 支持 Mock PCM chunk 和阿里云 CosyVoice WebSocket 二进制帧逐块转发; 新增 `TTS_STREAMING_ENABLED`、`TTS_STREAMING_FALLBACK`、`TTS_STREAMING_AUDIO_FORMAT`; 前端新增 PCM Web Audio 流式播放器, 自动播报和播报按钮优先真流式, 失败时回退 `/api/chat/stream` 的分段 `tts_ready` 或完整 `/api/tts`; 等待提示音仍会被 AI 结果音频打断。已新增 ADR-0013。验证通过: `python -m compileall apps/api/app`; `corepack pnpm --dir apps/web build`; `docker compose config --services`; `git diff --check`; `docker compose up -d --build api web`; `GET /api/health`; 真实 TTS 配置下 `/api/tts/stream` 首个 PCM `audio_chunk` 约 567ms 到达, `end.duration_ms=3387`, 共 33 个 chunk; 临时关闭 `TTS_STREAMING_ENABLED` 时返回 `TTS_STREAMING_DISABLED` 并指向 `fallback=segment`; `/api/chat/stream` 问数仍返回 4 个 `tts_ready`; `GET http://127.0.0.1:18000` 和 JS / CSS 资源均为 HTTP 200。Codex Browser 控制工具本轮未暴露, 未做截图级交互验证。
+
+V0.8 第三阶段已完成: 新增只读脱敏 Ops API: `GET /api/ops/health`、`/api/ops/dependencies`、`/api/ops/sessions`、`/api/ops/session/{session_id}`、`/api/ops/errors`、`/api/ops/metrics`、`/api/ops/export`。后端复用 SQLite `session_logs`, 新增最近会话、单会话明细、错误列表、聚合耗时和 Markdown 导出能力; 日志摘要会截断并脱敏常见 Key / Token / Bearer / `sk-*` / `ak-*` 模式。依赖状态覆盖 SQLite、动作白名单、Dora、RAGFlow、ASR、TTS、FVS; Dora / RAGFlow 只做轻量只读 HTTP 探测, ASR / TTS 不主动上传音频或触发合成。前端新增“演示 / 运维”视图切换, 运维看板可查看依赖状态、最近会话、错误列表、耗时指标并导出 Markdown 日志。新增 ADR-0014。后续 FVS 主画布运维入口已按用户要求拆出为 `/ops`。验证通过: `python -m compileall apps/api/app`; `corepack pnpm --dir apps/web build`; `docker compose config --services`; `git diff --check`; `docker compose up -d --build api web`; `GET /api/health`; Ops API smoke; `/api/ops/export` 密钥模式扫描未命中; Codex Browser 验证 FVS host 和 mock 模式均可进入运维看板。当前依赖聚合状态为 `error`, 原因为 Dora 探测超时、RAGFlow 探测失败, Ops API 本身返回正常。
+
+V0.9 已完成当前 scope: 新增 `scripts/check-poc.ps1`、`scripts/start-poc.ps1`、`scripts/stop-poc.ps1`、`scripts/export-logs.ps1`、`scripts/smoke-demo.ps1` 和 `scripts/poc-common.ps1`; 预检覆盖 Docker、端口、配置、API、Web、Ops 依赖和 RAGFlow; 启停脚本支持 `-Build`、`-DemoStable` 和可选本机 RAGFlow; 日志导出脚本复用脱敏 Ops API 生成现场日志包; smoke 脚本使用固定演示问题集, 可选执行白名单控屏动作。新增 `DEMO_STABLE_MODE` / `VITE_DEMO_STABLE_MODE` 和 `GET /api/demo/config`; Dora 失败时可在演示稳态下回退 Excel 问数或 Mock Dora; Excel 缺文件、Dora 流式异常、TTS 分段异常、FVS iframe 加载失败和麦克风权限失败均有安全提示。新增 ADR-0015。验证通过: `python -m compileall apps/api/app`; `corepack pnpm --dir apps/web build`; `docker compose config --services`; `git diff --check`; `scripts/check-poc.ps1 -SkipExternal -Json`; `scripts/start-poc.ps1 -Build -DemoStable`; `GET /api/demo/config` 返回 `stable_mode=true`; `scripts/smoke-demo.ps1 -ExecuteScreenActions`; `scripts/export-logs.ps1 -Zip`; `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`; Codex Browser 验证前端演示稳态标识、动态演示题和 FVS iframe 超时兜底。
+
+FVS 大屏交互已按用户要求进一步精简: FVS iframe host 默认态只保留小型低透明麦克风 icon, 唤醒词判定中、未命中和冷却状态不展开对话浮层; 展开态改为半透明评论流, 只显示最近用户识别文本和数字人回复文本; 运维看板从 FVS 主画布悬浮层拆出, 改为 `/ops` 独立路径; 命中唤醒词后会立即播报“您好。”, 再进入正式指令录音或处理。新增 ADR-0016。验证通过: `corepack pnpm --dir apps/web build`; `git diff --check`; 本地 Vite preview `/` 和 `/ops` HTTP 200; 源码断言确认无 FVS 运维悬浮按钮、存在唤醒提示、`/ops` 路由和评论流。当前工具环境未做截图级浏览器验证和真实麦克风音频顺序人工验证。
+
+V1.0 验收交付包已输出到 `docs/delivery/v1.0/`, 包含交付包索引、验收报告、部署方案、用户手册、运维手册、配置手册、测试报告和客户移交清单。验收报告引用最新 smoke 结果 `logs/smoke/smoke-demo-20260611-011803.md` 和日志包 `logs/exports/zt-poc-logs-20260611-011813.zip`, 并明确记录现场截图、真实客户网络、麦克风 / 播放权限、Dora / RAGFlow 连通性和客户签字仍需现场补齐。交付包未新增外部系统能力, 继续保留 Mock Dora / ASR / TTS / FVS 回退, 且继续坚持 `action_id` 白名单和不执行模型生成代码。
+
 ## Next Task
 
-进入 V0.8 功能增强版。第一推荐 goal:
+V1.0 验收交付包已完成。下一推荐 goal:
 
 ```text
-完成 V0.8 功能增强第一阶段: 重构客户私有配置目录, 并实现 ASK_METRICS_MODE=dora|excel|auto 的问数模式切换, 保留当前 Excel fallback, 更新相关文档和验证用例。
+执行客户现场验收复演: 按 V1.0 交付包启动环境、补齐截图附件、确认真实 Dora / RAGFlow / ASR / TTS / FVS 依赖、导出最终日志包并完成客户签字。
 ```
 
 本 goal 的边界:
 
-- 新增 `CUSTOMER_ID` 和 `CUSTOMER_CONFIG_DIR`。
-- 建立 `config/customers/zt-securities/` 客户私有配置目录。
-- 把 FVS 地址、Dora Agent、RAGFlow 地址、ASR/TTS 参数、问数模式、动作白名单、演示用例等尽量配置化。
-- 新增 `ASK_METRICS_MODE=excel|dora|auto`。
-- `excel` 模式保留当前 11 个固定 Excel 问数问题。
-- `dora` 模式让 Dora 承接通用问数。
-- `auto` 模式优先 Dora, Dora 失败 / 超时 / 兜底时回退 Excel。
-- 不执行 Dora 或模型生成的 SQL、Python、JavaScript 或 shell 命令。
-- 不进入 TTS 真流式、运维看板、预检脚本或验收报告, 除非当前 goal 完成后用户继续指定。
+- 使用 `docs/delivery/v1.0/` 中的正式交付包作为现场执行依据。
+- 如需证明真实依赖验收, 应记录 `DEMO_STABLE_MODE` 是否关闭。
+- 现场截图按 `01_ACCEPTANCE_REPORT.md` 的 S-001 到 S-007 附件位补齐。
+- 现场日志包用 `scripts/export-logs.ps1 -Zip` 导出并随验收归档。
+- 客户签字和待确认项按 `07_CUSTOMER_HANDOFF_CHECKLIST.md` 更新。
+- 继续不执行 Dora 或模型生成的 SQL、Python、JavaScript 或 shell 命令。
 
 继续保留 Mock Dora / ASR / TTS / FVS 回退。FVS 控制仍必须由后端白名单校验后的 `action_id` 驱动, 不允许执行模型生成 JavaScript。
 
@@ -68,14 +77,14 @@ V0.5 Dora MCP 问答验证已通过: 当前 `.env` 已切换 `ENABLE_MOCK_DORA=f
 
 V0.8 之后路线:
 
-- V0.8: 功能增强版, 覆盖 Dora 通用问数、TTS 字节级真流式、运维监控 / 日志看板、客户私有配置目录。
-- V0.9: 交付优化版, 覆盖预检脚本、一键启停、日志导出、演示模式和异常体验优化。
-- V1.0: POC 验收交付版, 输出验收报告、部署方案、用户手册、运维手册、配置手册和测试报告。
+- V0.8: 功能增强版, 覆盖 Dora 通用问数、TTS 字节级真流式、运维监控 / 日志看板、客户私有配置目录。已完成当前 scope。
+- V0.9: 交付优化版, 覆盖预检脚本、一键启停、日志导出、演示模式和异常体验优化。已完成当前 scope。
+- V1.0: POC 验收交付版, 输出验收报告、部署方案、用户手册、运维手册、配置手册、测试报告和客户移交清单。已完成交付包输出。
 
 ## Recommended Prompt
 
 ```text
-请先阅读 AGENTS.md、docs/CODEX_CONTEXT.md、docs/NEXT_ACTIONS.md、docs/05_DEVELOPMENT_PLAN.md、docs/14_ENHANCEMENT_ROADMAP.md、docs/06_API_CONTRACT.md、docs/07_DATA_CONTRACT.md 和 docs/13_RISKS_AND_TODO.md。当前 V0.5 RAGFlow MCP、V0.6 FVS 真实集成均已人工验收, V0.7 已完成本地 Excel 问数 Adapter 和 11 个问数 smoke。用户已决定先做功能增强, 再做交付优化, 最后输出验收报告 / 部署方案 / 用户手册。下一步进入 V0.8 第一阶段: 重构客户私有配置目录, 实现 `ASK_METRICS_MODE=dora|excel|auto`, 保留 Excel fallback, 不执行模型生成 SQL/Python/JavaScript, 不绕过 action_id 白名单。完成后更新 DEV_LOG、NEXT_ACTIONS、CHANGELOG、风险记录和相关契约文档。
+请先阅读 AGENTS.md、docs/CODEX_CONTEXT.md、docs/NEXT_ACTIONS.md、docs/05_DEVELOPMENT_PLAN.md、docs/delivery/v1.0/README.md、docs/06_API_CONTRACT.md、docs/07_DATA_CONTRACT.md 和 docs/13_RISKS_AND_TODO.md。当前 V0.5 RAGFlow MCP、V0.6 FVS 真实集成均已人工验收, V0.7 已完成本地 Excel 问数 Adapter 和 11 个问数 smoke。V0.8 已完成客户私有配置目录和 `ASK_METRICS_MODE=excel|dora|auto`、TTS 字节级真流式 `/api/tts/stream`、前端 PCM Web Audio 播放和分段 TTS fallback、只读脱敏 Ops API 与前端运维监控 / 日志看板。V0.9 已完成 `scripts/check-poc.ps1`、`start-poc.ps1`、`stop-poc.ps1`、`export-logs.ps1`、`smoke-demo.ps1`、`DEMO_STABLE_MODE`、`GET /api/demo/config`、日志包导出流程和关键异常兜底体验。V1.0 验收交付包已输出到 `docs/delivery/v1.0/`, 下一步执行客户现场验收复演、补齐截图附件、确认真实依赖、导出最终日志包并完成签字。继续不执行模型生成 SQL/Python/JavaScript/shell, 不绕过 action_id 白名单, 不在前端或运维页暴露 API Key。
 ```
 
 ## Already Done
@@ -135,10 +144,12 @@ V0.8 之后路线:
 - 已新增 V0.6 FVS iframe host 模式和运行时 `?fvs_url=` 配置。
 - 已将本机 FVS 测试看板映射为 `总览=1`、`成品库存=2`、`生产管理=3`、`设备分析=4`, 并按 `page_number` 进行 iframe URL 切页。
 - 已新增 Web Nginx `/webroot/` 同源代理, 本机 FVS 看板可在数字人主页面 iframe 中渲染。
-- 已实现 FVS 主画布悬浮语音层: 未唤醒时只显示角落麦克风入口, 唤醒 / 连续追问 / 思考 / 播报时展开语音状态、动画和文字记录。
+- 已实现 FVS 主画布悬浮语音层: 未唤醒时只显示角落小型低透明麦克风入口, 唤醒词判定中和未命中不展开; 正式录音 / 连续追问 / 思考 / 播报时展开半透明评论流, 只显示最近对话文本。
+- 已实现唤醒成功语音反馈: 命中唤醒词后立即播报“您好。”, 再进入正式指令录音或处理。
 - 已实现等待提示音策略: 正式指令或连续追问进入处理后立即播报“收到, 正在为您查找信息。”, AI 结果 TTS 开始时打断等待提示并优先播报最终回答。
 - 已完成人工验收: V0.6 FVS 真实集成通过。
 - 已实现 V0.7 Gateway 本地 Excel 问数 Adapter, 覆盖 11 个脱敏样例问数问题, 并已同步稳定演示脚本和客户验收清单。
+- 已实现 V0.9 交付脚本、演示稳态模式、日志包导出和关键异常兜底体验。
 
 ## V0.1 Acceptance
 
@@ -286,27 +297,20 @@ docs/CHANGELOG.md
 ## Files Likely To Touch Next
 
 ```text
-config/customers/zt-securities/
-config/README.md
-config/ask-metrics.yaml
-.env.example
-docker-compose.yml
-apps/api/app/config.py
-apps/api/app/main.py
-apps/api/app/services/ask_metrics.py
-apps/api/app/services/dora_client.py
-apps/api/app/services/yaml_loader.py
-docs/06_API_CONTRACT.md
-docs/07_DATA_CONTRACT.md
+docs/11_POC_DEMO_SCRIPT.md
+docs/12_CUSTOMER_HANDOFF.md
 docs/08_CONFIG_GUIDE.md
+docs/09_LOCAL_DEPLOY.md
 docs/10_TEST_PLAN.md
-docs/14_ENHANCEMENT_ROADMAP.md
+docs/customers/zt-securities/ACCEPTANCE_CHECKLIST.md
+docs/customers/zt-securities/DEMO_CASES.md
+docs/customers/zt-securities/SCREEN_ACTIONS.md
+docs/CODEX_CONTEXT.md
 docs/NEXT_ACTIONS.md
 docs/DEV_LOG.md
 docs/CHANGELOG.md
 docs/13_RISKS_AND_TODO.md
-docs/customers/zt-securities/
-docs/integrations/DORA_INTEGRATION.md
+docs/decisions/
 ```
 
 ## V0.6 Guardrails
@@ -330,12 +334,36 @@ docs/integrations/DORA_INTEGRATION.md
 
 ## V0.8 Acceptance Draft
 
-- [ ] 新增客户私有配置目录 `config/customers/zt-securities/`。
-- [ ] 新增 `CUSTOMER_ID` / `CUSTOMER_CONFIG_DIR` 配置并接入后端配置加载。
-- [ ] 客户级 FVS、Dora、RAGFlow、Voice、Screen Actions、Ask Metrics、Demo Cases 可覆盖默认配置。
-- [ ] 新增 `ASK_METRICS_MODE=excel|dora|auto`。
-- [ ] `ASK_METRICS_MODE=excel` 保持现有 11 个 Excel 问数 smoke 通过。
-- [ ] `ASK_METRICS_MODE=dora` 可由 Dora 承接通用问数。
-- [ ] `ASK_METRICS_MODE=auto` 可在 Dora 失败 / 超时 / 兜底时回退 Excel。
-- [ ] 问数链路不执行模型生成 SQL、Python、JavaScript 或 shell 命令。
-- [ ] API / 数据 / 配置 / 测试文档同步更新。
+- [x] 新增客户私有配置目录 `config/customers/zt-securities/`。
+- [x] 新增 `CUSTOMER_ID` / `CUSTOMER_CONFIG_DIR` 配置并接入后端配置加载。
+- [x] 客户级 Screen Actions、Ask Metrics、Demo Cases、Wake Words 已接入覆盖; Dora、RAGFlow、Voice、FVS 非敏感客户配置样例已落地。
+- [x] 新增 `ASK_METRICS_MODE=excel|dora|auto`。
+- [x] `ASK_METRICS_MODE=excel` 保持现有 11 个 Excel 问数 smoke 通过。
+- [x] `ASK_METRICS_MODE=dora` 不让 Excel Adapter 抢答, 问题进入 Dora / Mock Dora 链路。
+- [x] `ASK_METRICS_MODE=auto` 可在 Dora / Mock Dora 失败或兜底时回退 Excel。
+- [x] 问数链路不执行模型生成 SQL、Python、JavaScript 或 shell 命令。
+- [x] API / 数据 / 配置 / 测试文档同步更新。
+- [x] TTS 字节级真流式首个音频 chunk 早于完整文件合成。
+- [x] TTS 真流式失败时可回退分段 TTS。
+- [x] 运维看板可查看依赖状态、最近会话、错误和耗时。
+
+## V0.9 Acceptance
+
+- [x] 新增本地预检脚本, 覆盖 Docker、端口、API、Web、RAGFlow、Dora、FVS、ASR、TTS。
+- [x] 新增一键启停脚本 `scripts/start-poc.ps1` 和 `scripts/stop-poc.ps1`。
+- [x] 新增 `scripts/export-logs.ps1`, 复用脱敏 Ops API 固化现场日志包导出流程。
+- [x] 新增 `scripts/smoke-demo.ps1`, 固定演示问题集可一键 smoke。
+- [x] 新增 `DEMO_STABLE_MODE` / `VITE_DEMO_STABLE_MODE` 和 `GET /api/demo/config`。
+- [x] Dora 请求失败时, 演示稳态可回退本地 Excel 问数或 Mock Dora。
+- [x] Excel 缺文件、Dora 流式异常、TTS 分段失败、FVS iframe 加载失败和麦克风权限失败不出现裸堆栈。
+- [x] 保留对话、问数、TTS 真流式、分段 TTS fallback 和 FVS 控屏链路。
+
+## V1.0 Acceptance Draft
+
+- [x] 验收报告包含现场复演结果、截图附件位、耗时和客户确认项。
+- [x] 部署方案覆盖 Windows + Docker Desktop + RAGFlow + FVS + Dora + ASR/TTS。
+- [x] 用户手册覆盖唤醒、连续追问、问答、问数、大屏切换和兜底。
+- [x] 运维手册覆盖启停、预检、日志、故障排查和配置更换。
+- [x] 配置手册覆盖客户私有配置、Mock 开关、问数模式和密钥边界。
+- [x] 测试报告覆盖 V0.7 / V0.8 / V0.9 已验证项和客户现场待确认项。
+- [x] 客户移交清单覆盖交付物、环境、密钥、操作、验收场景、风险和签收。

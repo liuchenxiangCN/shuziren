@@ -2,7 +2,7 @@
 
 ## 配置目标
 
-核心代码保持通用, 客户差异通过配置和文档管理。后续建议增加:
+核心代码保持通用, 客户差异通过配置和文档管理。V0.8 第一阶段已新增客户私有配置覆盖层:
 
 ```text
 config/
@@ -24,7 +24,7 @@ config/
       └─ customer.env.example
 ```
 
-当前已生成第一版配置:
+通用配置仍保留为默认模板:
 
 ```text
 .env.example
@@ -34,7 +34,20 @@ config/
 ├─ wake-words.yaml
 ├─ demo-cases.yaml
 ├─ ask-metrics.yaml
-└─ dora-output-schema.json
+├─ dora-output-schema.json
+└─ customers/
+   └─ zt-securities/
+      ├─ README.md
+      ├─ customer.env.example
+      ├─ runtime.yaml
+      ├─ screen-actions.yaml
+      ├─ ask-metrics.yaml
+      ├─ dora.yaml
+      ├─ ragflow.yaml
+      ├─ voice.yaml
+      ├─ fvs.yaml
+      ├─ wake-words.yaml
+      └─ demo-cases.yaml
 ```
 
 ## .env.example
@@ -45,12 +58,14 @@ APP_ENV=local
 LOG_LEVEL=INFO
 CUSTOMER_ID=zt-securities
 CUSTOMER_CONFIG_DIR=/app/config/customers/zt-securities
+DEMO_STABLE_MODE=false
 
 # Frontend
 VITE_API_BASE_URL=http://localhost:18080
 VITE_FVS_URL=
 VITE_FVS_INTEGRATION_MODE=mock
 VITE_FVS_TARGET_ORIGIN=
+VITE_DEMO_STABLE_MODE=false
 
 # Dora
 DORA_BASE_URL=https://your-dora-host
@@ -82,6 +97,9 @@ TTS_API_KEY=replace_me
 TTS_MODEL=cosyvoice-v3-flash
 TTS_VOICE=longanyang
 TTS_AUDIO_FORMAT=mp3
+TTS_STREAMING_ENABLED=true
+TTS_STREAMING_FALLBACK=segment
+TTS_STREAMING_AUDIO_FORMAT=pcm
 TTS_WS_URL=wss://dashscope.aliyuncs.com/api-ws/v1/inference
 TTS_SAMPLE_RATE=22050
 TTS_TIMEOUT_SECONDS=30
@@ -94,23 +112,50 @@ LLM_MODEL=qwen-plus
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 
 # Screen Control
-ACTION_WHITELIST_PATH=/app/config/screen-actions.yaml
-DEMO_CASES_PATH=/app/config/demo-cases.yaml
-WAKE_WORDS_PATH=/app/config/wake-words.yaml
-ASK_METRICS_DATA_DIR=/app/docs/demo_data/ask_metrics
-ASK_METRICS_CONFIG_PATH=/app/config/ask-metrics.yaml
 ASK_METRICS_MODE=excel
+# Optional explicit path overrides. Leave commented to allow CUSTOMER_CONFIG_DIR overlays.
+# ACTION_WHITELIST_PATH=/app/config/screen-actions.yaml
+# DEMO_CASES_PATH=/app/config/demo-cases.yaml
+# WAKE_WORDS_PATH=/app/config/wake-words.yaml
+# ASK_METRICS_DATA_DIR=/app/docs/demo_data/ask_metrics
+# ASK_METRICS_CONFIG_PATH=/app/config/ask-metrics.yaml
 ENABLE_MOCK_FVS=true
 ENABLE_MOCK_DORA=true
 ENABLE_MOCK_ASR=true
 ENABLE_MOCK_TTS=true
-TTS_STREAMING_ENABLED=false
-TTS_STREAMING_FALLBACK=segment
 
 # Session
 SQLITE_PATH=/app/data/sessions.db
 SAVE_AUDIO=false
 ```
+
+## V0.9 演示稳态模式
+
+```env
+DEMO_STABLE_MODE=false
+VITE_DEMO_STABLE_MODE=false
+```
+
+- `DEMO_STABLE_MODE=true`: 后端在 Dora 请求失败时优先尝试本地 Excel 问数和 Mock Dora 演示兜底。
+- `VITE_DEMO_STABLE_MODE=true`: 前端显示“演示稳态”状态标识。
+- `scripts/start-poc.ps1 -DemoStable` 会在本次启动进程中同时设置上述两个变量。
+- 该模式只用于固定演示保底; 正式外部依赖验收仍应通过 `scripts/check-poc.ps1 -RequireServices` 和运维看板确认真实依赖状态。
+
+## V0.9 脚本入口
+
+脚本默认读取仓库根目录 `.env`:
+
+```powershell
+scripts\check-poc.ps1
+scripts\start-poc.ps1 -Build
+scripts\stop-poc.ps1
+scripts\smoke-demo.ps1
+scripts\export-logs.ps1 -Zip
+```
+
+- `check-poc.ps1` 覆盖 Docker、端口、配置、API、Web、Ops 依赖和 RAGFlow 检查。
+- `start-poc.ps1 -WithRagflow` 会额外尝试启动 `D:\Project\ragflow\docker` 下的本机 RAGFlow。
+- `export-logs.ps1` 默认只导出脱敏 Ops 摘要和 Compose 状态; Docker 原生日志需显式 `-IncludeDockerLogs`。
 
 ## Mock 开关
 
@@ -120,6 +165,8 @@ SAVE_AUDIO=false
 | `ENABLE_MOCK_ASR` | true | 使用 Mock ASR |
 | `ENABLE_MOCK_TTS` | true | 使用 Mock TTS |
 | `ENABLE_MOCK_FVS` | true | 只打印或模拟大屏动作 |
+
+> V0.8 之后, `ACTION_WHITELIST_PATH`、`DEMO_CASES_PATH`、`WAKE_WORDS_PATH`、`ASK_METRICS_DATA_DIR` 和 `ASK_METRICS_CONFIG_PATH` 建议只在确实需要强制指定路径时启用。保持注释时, 后端会按 `CUSTOMER_CONFIG_DIR` 自动加载客户目录覆盖层。
 
 ## 本地问数数据配置
 
@@ -137,31 +184,32 @@ Docker Compose 会把仓库中的 `./docs/demo_data` 只读挂载到 `/app/docs/
 - `zt_party_org_life_metrics_2026.xlsx`
 - `zt_party_development_metrics_2026.xlsx`
 
-该 Adapter 不需要额外 API Key, 不调用外部系统, 并在 `/api/chat` 调 Dora 前先匹配固定问数意图。若未命中问数意图, 继续走 Dora / Mock Dora 原链路。
+该 Adapter 不需要额外 API Key, 不调用外部系统。
 
 `ASK_METRICS_CONFIG_PATH` 指向工作簿和 sheet 映射配置, 便于后续替换演示数据文件名。
 
-V0.8 计划新增 `ASK_METRICS_MODE`:
+V0.8 已新增 `ASK_METRICS_MODE`:
 
 | 值 | 说明 |
 | --- | --- |
-| `excel` | 固定走 Gateway 本地 Excel Adapter, 保持 V0.7 稳定演示 |
-| `dora` | 由 Dora 承接通用问数, Gateway 做归一化和安全兜底 |
-| `auto` | 优先 Dora, Dora 失败 / 超时 / 兜底时回退 Excel |
+| `excel` | 先走 Gateway 本地 Excel Adapter, 命中后直接返回; 未命中继续 Dora / Mock Dora |
+| `dora` | Excel Adapter 不抢答, 由 Dora / Mock Dora 承接通用问数 |
+| `auto` | 优先 Dora / Mock Dora, Dora 请求失败或返回 `fallback` 时回退 Excel |
 
 ## 客户私有配置目录
 
-V0.8 计划新增客户私有配置覆盖层:
+V0.8 第一阶段已新增客户私有配置覆盖层:
 
 ```env
 CUSTOMER_ID=zt-securities
 CUSTOMER_CONFIG_DIR=/app/config/customers/zt-securities
 ```
 
-建议目录:
+当前目录:
 
 ```text
 config/customers/zt-securities/
+├─ README.md
 ├─ customer.env.example
 ├─ runtime.yaml
 ├─ screen-actions.yaml
@@ -173,13 +221,30 @@ config/customers/zt-securities/
 └─ demo-cases.yaml
 ```
 
-原则:
+加载规则:
 
 - 根目录配置作为默认模板。
 - 客户目录配置作为覆盖层。
+- `.env` 和容器环境变量作为显式运行时覆盖。
+- 旧 `.env` 中等于根目录默认路径的配置项不再阻止客户目录覆盖; 真正自定义路径仍优先。
 - `.env` 只放密钥、本机端口和部署参数。
 - YAML 放非敏感客户配置。
 - 前端只使用后端透出的安全配置。
+
+V0.8 第一阶段后端已接入:
+
+| 客户配置 | 作用 |
+| --- | --- |
+| `runtime.yaml` | 客户 ID、问数模式、问数数据目录 |
+| `screen-actions.yaml` | 后端动作白名单 |
+| `ask-metrics.yaml` | Excel 工作簿 / sheet 映射和默认问数模式 |
+| `demo-cases.yaml` | Mock Dora / 演示问题 |
+| `wake-words.yaml` | 唤醒词和连续追问参数 |
+| `dora.yaml` | Dora Agent 名称、渠道、超时等非敏感参数 |
+| `ragflow.yaml` | RAGFlow / MCP 地址等非敏感参数 |
+| `voice.yaml` | ASR / TTS 模型、格式、超时等非敏感参数 |
+
+`fvs.yaml` 已作为客户 FVS 地址和 page 参数样例落地。V0.8 第三阶段起, 后端 Ops API 会读取其中的非敏感 `integration_mode` / `url` / `target_origin` 用于依赖状态展示, 并兼容 `VITE_FVS_URL`、`VITE_FVS_INTEGRATION_MODE`、`VITE_FVS_TARGET_ORIGIN` 环境变量别名。前端实际 iframe 仍通过这些 `VITE_FVS_*` 构建参数或 `?fvs_url=` URL 参数使用安全配置。
 
 ## FVS iframe 配置
 
@@ -269,6 +334,9 @@ ENABLE_MOCK_DORA=false
 | `TTS_MODEL` | TTS 模型名, 当前使用 `cosyvoice-v3-flash` |
 | `TTS_VOICE` | 默认音色, 当前使用 CosyVoice 系统音色 `longanyang` |
 | `TTS_AUDIO_FORMAT` | 真实 TTS 输出格式, 当前使用 `mp3`; V0.3 Mock TTS 固定生成 `wav` |
+| `TTS_STREAMING_ENABLED` | 是否启用 V0.8 字节级真流式 TTS, 当前默认 `true` |
+| `TTS_STREAMING_FALLBACK` | 真流式失败时的回退策略, 当前使用 `segment` 回退分段 TTS |
+| `TTS_STREAMING_AUDIO_FORMAT` | 真流式播放格式, 当前使用 `pcm`, 前端用 Web Audio API 排队播放 chunk |
 | `TTS_WS_URL` | 阿里云百炼实时 TTS WebSocket URL |
 | `TTS_SAMPLE_RATE` | TTS 输出采样率, 当前使用 `22050` |
 | `TTS_TIMEOUT_SECONDS` | TTS 请求超时时间 |
@@ -278,14 +346,15 @@ V0.3 已支持阿里云百炼真实 ASR / TTS 最小 Provider。关闭 `ENABLE_M
 
 V0.5 新增 `POST /api/chat/stream` 后, 前端优先使用流式接口。TTS Provider 不需要新增供应商配置; 后端复用现有 `TTS_*` 配置, 将 Dora 最终 `speak_text` 拆成短段并发合成。
 
-V0.8 计划新增 TTS 字节级真流式配置:
+V0.8 第二阶段已新增 TTS 字节级真流式配置:
 
 ```env
 TTS_STREAMING_ENABLED=true
 TTS_STREAMING_FALLBACK=segment
+TTS_STREAMING_AUDIO_FORMAT=pcm
 ```
 
-`TTS_STREAMING_FALLBACK=segment` 表示真流式失败时回退当前分段 TTS 文件播放方案。
+`POST /api/tts/stream` 会以 SSE 返回 `metadata`、`audio_chunk` 和 `end`。前端默认请求 PCM chunk 并使用 Web Audio API 播放; `TTS_STREAMING_FALLBACK=segment` 表示真流式失败时回退当前分段 TTS 文件播放方案。
 
 ## RAGFlow 配置
 

@@ -27,6 +27,9 @@ TTS_API_KEY=replace_me
 TTS_MODEL=cosyvoice-v3-flash
 TTS_VOICE=longanyang
 TTS_AUDIO_FORMAT=mp3
+TTS_STREAMING_ENABLED=true
+TTS_STREAMING_FALLBACK=segment
+TTS_STREAMING_AUDIO_FORMAT=pcm
 TTS_WS_URL=wss://dashscope.aliyuncs.com/api-ws/v1/inference
 TTS_SAMPLE_RATE=22050
 TTS_TIMEOUT_SECONDS=30
@@ -53,6 +56,9 @@ ENABLE_MOCK_TTS=true
 - V0.5 新增 `POST /api/chat/stream`, 在 Dora + RAGFlow MCP 知识库问答路径中边接收 Dora SSE, 边从最终回答 JSON 的 `speak_text` 提取增量文本。
 - V0.5 流式路径会把 `speak_text` 拆成短段并发调用现有 TTS Provider, 通过 `tts_ready` SSE 事件返回分段音频 URL。
 - 如果 Dora 某次只返回最终 answer 而没有稳定增量, 后端仍会把最终 `speak_text` 分段合成, 避免退回整段 TTS。
+- V0.8 第二阶段新增 `POST /api/tts/stream`, 在 `TTS_STREAMING_ENABLED=true` 时通过 SSE 返回 `metadata`、`audio_chunk` 和 `end`。
+- `TtsProvider` 新增 `stream_synthesize`, Mock TTS 可输出 PCM chunk, 阿里云 CosyVoice Provider 会逐块转发 WebSocket 二进制音频帧。
+- 真流式默认使用 `TTS_STREAMING_AUDIO_FORMAT=pcm`; API Key 仍只在后端 `.env` / 环境变量中使用, 不透出到前端。
 
 前端:
 
@@ -60,7 +66,10 @@ ENABLE_MOCK_TTS=true
 - 支持直接提交 Mock ASR 文本。
 - ASR 文本自动进入现有 `/api/chat` 流程, `context.mode=voice`。
 - 数字人回答后后台准备 TTS 音频, 消息中展示“播报”按钮和原生音频控件。
-- 优先调用 `/api/chat/stream`; 收到分段 `tts_ready` 后按 `index` 顺序播放, 若流式失败则回退到原 `/api/chat` + `/api/tts`。
+- 优先调用 `/api/chat/stream`; 收到分段 `tts_ready` 后按 `index` 缓存分段音频, 若真流式失败则回退到分段播放, 若整个流式链路失败则回退到原 `/api/chat` + `/api/tts`。
+- V0.8 第二阶段起, 前端收到最终 `answer` 后优先调用 `/api/tts/stream` 播放 PCM chunk; 若真流式失败, 自动回退 `/api/chat/stream` 返回的分段 TTS 或完整 `/api/tts` 文件。
+- 前端流式播放器使用 Web Audio API, 将每个 PCM chunk 解码为 `AudioBuffer` 后按时间轴排队播放; AI 音频首个 chunk 到达时会打断等待提示音。
+- V0.9 起, TTS 分段合成失败会返回安全提示, 不把供应商异常原文或堆栈推给前端; 麦克风权限、设备缺失和 iframe 权限问题会显示面向现场排障的提示。
 - 使用 Web Audio API 对 JS 播放路径做能量分析; 浏览器拦截自动播放时, 保留原生音频控件和文字回复。
 - V0.4 增加“后台监听”显式开关, 用户授权后开启麦克风, 本地 RMS VAD 只截取短音频片段做唤醒判断。
 - V0.4 命中唤醒词后, 同句剩余文本可直接进入 `/api/chat`; 如果只有唤醒词, 前端进入一次正式指令录音。
@@ -77,7 +86,7 @@ ENABLE_MOCK_TTS=true
 - V0.6 已接入 FVS iframe host 主画布, 但语音权限仍由数字人主页面申请。
 - Mock TTS 固定生成 `wav`; CosyVoice 真实 TTS 当前按 `TTS_AUDIO_FORMAT` 输出 mp3 或其他格式。
 - V0.4 后台监听真实麦克风唤醒已完成人工验收。V0.4.1 连续对话窗口已通过构建、接口验证和浏览器人工验收。
-- 当前优化是“文本增量 + 分段 TTS 文件播放”, 不是供应商返回音频字节后立即边下边播的真音频流。真正音频流式仍留到后续优化。
+- 当前已具备 TTS 字节级真流式播放和分段 TTS fallback; `/api/chat/stream` 中的 `tts_ready` 仍保留为真流式失败时的稳定兜底。
 
 ## 第一阶段简化策略
 
@@ -100,7 +109,7 @@ TTS:
 - ASR 流式识别。
 - 将当前 VAD + 短片段 ASR 唤醒优化为更稳定的本地 KWS 或供应商热词方案。
 - Dora SSE 流式展示。V0.5 已在 `/api/chat/stream` 中实现基础增量展示。
-- TTS 流式合成与边播报。V0.5 已实现分段 TTS 预合成和按段播放; 后续再评估供应商级音频流式。
+- TTS 流式合成与边播报。V0.8 第二阶段已实现后端字节级流式接口和前端 PCM Web Audio 播放; 分段 TTS 文件播放继续作为 fallback。
 
 ## 异常兜底
 

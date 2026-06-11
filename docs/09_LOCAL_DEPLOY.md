@@ -29,6 +29,36 @@
 
 ## 启动流程
 
+V0.9 起推荐使用脚本启动:
+
+```powershell
+Copy-Item .env.example .env
+# 修改 .env
+
+scripts\check-poc.ps1
+scripts\start-poc.ps1 -Build
+```
+
+演示稳态启动:
+
+```powershell
+scripts\start-poc.ps1 -Build -DemoStable
+```
+
+如果需要同时启动当前本机 `D:\Project\ragflow\docker` 下的 RAGFlow:
+
+```powershell
+scripts\start-poc.ps1 -Build -WithRagflow
+```
+
+停止:
+
+```powershell
+scripts\stop-poc.ps1
+```
+
+原始 Docker Compose 命令仍可使用:
+
 ```powershell
 git clone <repo> zt-digital-human
 cd zt-digital-human
@@ -43,16 +73,39 @@ docker compose up -d --build
 
 ```text
 http://localhost:18000
+http://localhost:18000/ops
 http://localhost:18080/api/health
+```
+
+V0.9 常用脚本:
+
+```powershell
+scripts\check-poc.ps1 -RequireServices
+scripts\smoke-demo.ps1
+scripts\export-logs.ps1 -Zip
+```
+
+`export-logs.ps1` 默认只导出脱敏 Ops Markdown / JSON 和 Compose 状态。若现场明确需要 Docker 原生日志, 再使用:
+
+```powershell
+scripts\export-logs.ps1 -IncludeDockerLogs -Zip
 ```
 
 V0.7 本地问数 Adapter 需要读取仓库内脱敏 Excel, Docker Compose 已默认只读挂载:
 
 ```text
 ./docs/demo_data:/app/docs/demo_data:ro
-ASK_METRICS_DATA_DIR=/app/docs/demo_data/ask_metrics
-ASK_METRICS_CONFIG_PATH=/app/config/ask-metrics.yaml
 ```
+
+V0.8 起 Docker Compose 会传入:
+
+```env
+CUSTOMER_ID=zt-securities
+CUSTOMER_CONFIG_DIR=/app/config/customers/zt-securities
+ASK_METRICS_MODE=excel
+```
+
+后端默认加载 `config/customers/zt-securities/ask-metrics.yaml`, 其中 `data_dir` 指向 `/app/docs/demo_data/ask_metrics`。如需强制使用其他路径, 再显式设置 `ASK_METRICS_DATA_DIR` 或 `ASK_METRICS_CONFIG_PATH`。
 
 ## RAGFlow 启动策略
 
@@ -108,6 +161,28 @@ curl -Method POST http://localhost:18080/api/chat `
 ```
 
 期望返回 `type=answer`, 且 `speak_text` 包含 `87.5%`、`128人` 和 `112人`。
+
+## 问数模式切换
+
+V0.8 支持三种模式:
+
+```env
+ASK_METRICS_MODE=excel
+ASK_METRICS_MODE=dora
+ASK_METRICS_MODE=auto
+```
+
+- `excel`: 保持 V0.7 稳定演示, Excel Adapter 先匹配问数。
+- `dora`: Excel Adapter 不抢答, 问数进入 Dora / Mock Dora。
+- `auto`: 优先 Dora / Mock Dora, 请求失败或返回 `fallback` 时回退 Excel。
+
+临时切换示例:
+
+```powershell
+$env:ASK_METRICS_MODE = 'auto'
+docker compose up -d --force-recreate api
+Remove-Item Env:\ASK_METRICS_MODE
+```
 
 ## Dora 模式切换
 

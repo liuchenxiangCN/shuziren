@@ -6,9 +6,9 @@
 
 | 阶段 | 名称 | 目标 | 状态 |
 | --- | --- | --- | --- |
-| V0.8 | 功能增强版 | Dora 通用问数、TTS 字节级真流式、运维监控 / 日志看板、客户私有配置目录 | Planned |
-| V0.9 | 交付优化版 | 预检脚本、一键启停、日志导出、演示模式、异常体验优化 | Planned |
-| V1.0 | POC 验收交付版 | 验收报告、部署方案、用户手册、运维手册、配置手册、测试报告 | Planned |
+| V0.8 | 功能增强版 | Dora 通用问数、TTS 字节级真流式、运维监控 / 日志看板、客户私有配置目录 | Done for current scope |
+| V0.9 | 交付优化版 | 预检脚本、一键启停、日志导出、演示模式、异常体验优化 | Done for current scope |
+| V1.0 | POC 验收交付版 | 验收报告、部署方案、用户手册、运维手册、配置手册、测试报告、客户移交清单 | Done for delivery package scope |
 
 ## 总体原则
 
@@ -24,6 +24,8 @@
 ### 1. 客户私有配置目录
 
 目标: 把 env、大屏地址、动作映射、Dora Agent、问数模式、RAGFlow 地址、ASR/TTS 参数等客户化。
+
+状态: Done for V0.8 第一阶段。已建立 `config/customers/zt-securities/`, 后端已接入客户级 Screen Actions、Ask Metrics、Demo Cases、Wake Words 覆盖, 并提供 Dora、RAGFlow、Voice、FVS 非敏感配置样例。
 
 建议目录:
 
@@ -60,6 +62,8 @@ config/customers/zt-securities/
 
 目标: 让 Dora 承接真正通用问数, Gateway 保留固定 Excel 指标匹配作为稳定兜底。
 
+状态: Done for V0.8 第一阶段。已实现 `ASK_METRICS_MODE=excel|dora|auto`; `excel` 11 个问数 smoke 通过, `dora` 不让 Excel Adapter 抢答, `auto` 可在 Dora / Mock Dora 失败或兜底时回退 Excel。真实 Dora 通用问数质量仍需后续结合客户数据源验证。
+
 建议配置:
 
 ```env
@@ -93,11 +97,14 @@ ASK_METRICS_MODE=auto
 
 目标: 从“Dora 文本增量 + 分段 TTS 文件播放”升级为真正边合成边播放。
 
+状态: Done for V0.8 第二阶段。已新增 `POST /api/tts/stream`, 后端 `TtsProvider.stream_synthesize` 支持 Mock PCM chunk 和阿里云 CosyVoice WebSocket 二进制帧逐块转发; 前端使用 PCM Web Audio 播放 chunk, 并在失败时回退现有分段 TTS 文件播放。
+
 建议配置:
 
 ```env
 TTS_STREAMING_ENABLED=true
 TTS_STREAMING_FALLBACK=segment
+TTS_STREAMING_AUDIO_FORMAT=pcm
 ```
 
 建议实现:
@@ -117,6 +124,8 @@ TTS_STREAMING_FALLBACK=segment
 ### 4. 运维监控和日志看板
 
 目标: 客户或实施人员能看到服务状态、会话日志、错误和耗时。
+
+状态: Done for V0.8 第三阶段。已新增只读脱敏 Ops API, 前端新增“演示 / 运维”视图切换, 看板可查看依赖状态、最近会话、错误列表、耗时指标并导出 Markdown 日志摘要。
 
 建议后端接口:
 
@@ -147,6 +156,8 @@ TTS_STREAMING_FALLBACK=segment
 
 目标: 把 V0.8 能力整理成现场更稳、更易排障的交付形态。
 
+状态: Done for V0.9 scope。已新增 `scripts/check-poc.ps1`、`start-poc.ps1`、`stop-poc.ps1`、`export-logs.ps1`、`smoke-demo.ps1`; 新增 `DEMO_STABLE_MODE` / `VITE_DEMO_STABLE_MODE` 和 `GET /api/demo/config`; 固化 Ops 日志包导出流程; 前端补充 FVS iframe 加载失败提示; 后端补充 Dora、Excel 问数、TTS 分段等关键异常安全兜底。
+
 范围:
 
 - 预检脚本: Docker、端口、API、Web、RAGFlow、Dora、FVS、ASR、TTS。
@@ -165,6 +176,8 @@ TTS_STREAMING_FALLBACK=segment
 ## V1.0 POC 验收交付版
 
 目标: 输出客户可签收和可移交的完整交付包。
+
+状态: Done for delivery package scope。已输出 `docs/delivery/v1.0/` 交付包; 现场截图、真实依赖确认和客户签字仍需按交付包在现场补齐。
 
 交付物:
 
@@ -192,11 +205,15 @@ TTS_STREAMING_FALLBACK=segment
 完成 V0.8 功能增强第一阶段: 重构客户私有配置目录, 并实现 ASK_METRICS_MODE=dora|excel|auto 的问数模式切换, 保留当前 Excel fallback, 更新相关文档和验证用例。
 ```
 
+Status: Done。
+
 ### Goal 2
 
 ```text
 完成 V0.8 功能增强第二阶段: 实现 TTS 字节级真流式播放, 保留分段 TTS fallback, 更新 `/api/chat/stream` 或新增 `/api/tts/stream`, 并完成前端播放、打断和回退验证。
 ```
+
+Status: Done。
 
 ### Goal 3
 
@@ -204,14 +221,20 @@ TTS_STREAMING_FALLBACK=segment
 完成 V0.8 功能增强第三阶段: 新增运维监控和日志看板, 覆盖依赖健康、最近会话、错误列表、耗时指标和日志导出。
 ```
 
+Status: Done。
+
 ### Goal 4
 
 ```text
 完成 V0.9 交付优化: 新增预检脚本、一键启停脚本、演示模式、日志导出和关键异常兜底体验。
 ```
 
+Status: Done。
+
 ### Goal 5
 
 ```text
 完成 V1.0 POC 验收交付包: 输出验收报告、部署方案、用户手册、运维手册、配置手册、测试报告和客户移交清单。
 ```
+
+Status: Done for delivery package scope。

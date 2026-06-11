@@ -14,7 +14,31 @@
 - TTS 语音播报。
 - 字幕、状态动效、回复窗口。
 - 会话日志和耗时记录。
+- 运维监控和日志看板。
+- 预检、启停、演示 smoke 和日志包导出脚本。
+- 演示稳态模式和关键异常兜底提示。
 - 本地脱敏 Excel 问数演示。
+- 客户私有配置目录和问数模式切换。
+
+## V1.0 验收交付包
+
+正式交付包位于:
+
+```text
+docs/delivery/v1.0/
+```
+
+包含:
+
+- `01_ACCEPTANCE_REPORT.md`: 验收报告。
+- `02_DEPLOYMENT_PLAN.md`: 部署方案。
+- `03_USER_MANUAL.md`: 用户手册。
+- `04_OPERATIONS_MANUAL.md`: 运维手册。
+- `05_CONFIGURATION_MANUAL.md`: 配置手册。
+- `06_TEST_REPORT.md`: 测试报告。
+- `07_CUSTOMER_HANDOFF_CHECKLIST.md`: 客户移交清单。
+
+现场签收时, 建议按验收报告中的截图附件位补齐主页面、FVS 主画布、唤醒、问数、控屏、Ops 看板和日志包截图; 按客户移交清单确认真实 Dora / RAGFlow / ASR / TTS / FVS 依赖、`DEMO_STABLE_MODE` 状态、密钥移交和运维责任人。
 
 ## 部署方式
 
@@ -26,8 +50,26 @@
 - Dora、ASR、TTS 使用客户确认的外部服务。
 - FVS 优先由数字人前端主页面 iframe 嵌入客户现有大屏, 数字人前端负责语音、字幕、浮层和白名单动作消息发送。
 - V0.7 问数默认由 Gateway 本地 Excel Adapter 读取 `docs/demo_data/ask_metrics/` 下三份脱敏样例, Docker 中路径为 `/app/docs/demo_data/ask_metrics`。
+- V0.8 第一阶段新增客户私有配置目录 `config/customers/zt-securities/`; Docker 中默认 `CUSTOMER_CONFIG_DIR=/app/config/customers/zt-securities`。
+- 问数模式可用 `ASK_METRICS_MODE=excel|dora|auto` 切换, 当前默认 `excel` 保持稳定演示。
 
 ## 启动命令
+
+V0.9 推荐:
+
+```powershell
+Copy-Item .env.example .env
+scripts\check-poc.ps1
+scripts\start-poc.ps1 -Build
+```
+
+演示稳态:
+
+```powershell
+scripts\start-poc.ps1 -Build -DemoStable
+```
+
+原始 Docker Compose 方式仍可用:
 
 ```powershell
 Copy-Item .env.example .env
@@ -44,7 +86,7 @@ http://localhost:18080/api/health
 ## 停止命令
 
 ```powershell
-docker compose down
+scripts\stop-poc.ps1
 ```
 
 ## 日志位置
@@ -54,6 +96,22 @@ docker compose down
 ```text
 logs/
 data/sessions.db
+```
+
+V0.8 第三阶段已提供前端“运维”看板和后端 Ops API, 可查看依赖状态、最近会话、错误列表、耗时指标, 并导出 Markdown 日志摘要。当前运维看板入口为 `http://localhost:18000/ops`; FVS 大屏画布不显示运维悬浮入口。Ops 接口和导出内容会做摘要截断和常见密钥模式脱敏。
+
+V0.9 固化日志包导出:
+
+```powershell
+scripts\export-logs.ps1 -Zip
+```
+
+默认只打包脱敏 Ops Markdown / JSON 和 Compose 状态。如需 Docker 原生日志, 须显式使用 `-IncludeDockerLogs`。
+
+演示 smoke:
+
+```powershell
+scripts\smoke-demo.ps1
 ```
 
 ## 外部依赖
@@ -80,9 +138,10 @@ data/sessions.db
 - 当前真实 Dora Agent `中天证券党建大屏语音助手` 已可返回 `screen_control` 控屏动作, 并通过后端白名单校验。
 - 语义唤醒不是严格本地 KWS。
 - RAGFlow 检索质量需要结合真实文档调优。
-- 当前 TTS 低延迟优化为分段 TTS 文件播放, 不是供应商音频字节级真流式; 真实演示仍需确认浏览器自动播放权限。
+- 当前已实现 TTS 字节级真流式和分段 TTS fallback; 真实演示仍需确认浏览器自动播放权限和现场音频设备。
 - FVS iframe host、同源代理和 `page_number=1/2/3/4` 四页切换已通过 V0.6 人工验收; 分页以外的组件级控制 API 仍需等待后续接口确认。
 - V0.7 已完成本地脱敏 Excel 问数链路, 但正式客户问数仍需要确认真实数据源、指标口径和授权范围。
+- V0.8 已完成运维监控 / 日志看板, 当前入口为 `/ops`, 但尚未接入登录鉴权; 正式交付前需确认仅内网访问、反向代理鉴权或登录控制。
 
 ## 常见问题
 
@@ -91,6 +150,24 @@ data/sessions.db
 V0.7 本地 POC 的问数结果来自 `docs/demo_data/ask_metrics/` 下三份脱敏 Excel。Gateway 在调用 Dora 前先匹配固定问数意图, 命中后直接读 Excel 返回, 并在回答中标明数据来源。
 
 这不是通用 BI 问数引擎, 也不会执行模型生成的 SQL / Python / JavaScript。正式客户数据可在后续切换为 Dora 问数、FineBI / FVS 数据源或数据库查询 Provider。
+
+V0.8 起可以切换问数模式:
+
+- `excel`: 保持 V0.7 稳定演示, Excel Adapter 先回答固定指标。
+- `dora`: Excel Adapter 不抢答, 问题进入 Dora / Mock Dora。
+- `auto`: 优先 Dora / Mock Dora, Dora 失败或返回兜底时回退 Excel。
+
+当前 `auto` 仍以 Excel 作为稳定 fallback, 不会执行 Dora 或模型生成的 SQL、Python、JavaScript 或 shell。
+
+### 客户配置放在哪里
+
+非敏感客户配置位于:
+
+```text
+config/customers/zt-securities/
+```
+
+已包含动作白名单、问数映射、Demo、唤醒词、Dora Agent、RAGFlow 地址、ASR/TTS 参数和 FVS 地址样例。API Key、Token、密码仍只允许放本地 `.env` 或部署环境变量。
 
 ### Dora 无法访问本地 RAGFlow MCP
 
@@ -120,8 +197,9 @@ V0.6 已验收的推荐方式是打开数字人前端主页面, 由主页面 ifr
 
 ## 后续建议
 
-- V0.8 下一步: 先完成 Dora 通用问数 + Excel fallback、TTS 字节级真流式、运维监控 / 日志看板、客户私有配置目录。
-- V0.9 再做交付前优化: 预检脚本、一键启停、日志导出、演示模式和异常体验优化。
-- V1.0 最后输出正式验收报告、部署方案、用户手册、运维手册、配置手册和测试报告。
+- V0.8 已完成: 客户私有配置目录、`ASK_METRICS_MODE`、TTS 字节级真流式和运维监控 / 日志看板。
+- V0.9 已完成: 预检脚本、一键启停、日志导出流程固化、演示模式和异常体验优化。
+- V1.0 已完成: 正式验收报告、部署方案、用户手册、运维手册、配置手册、测试报告和客户移交清单已输出到 `docs/delivery/v1.0/`。
+- 下一步建议执行客户现场验收复演, 补齐截图附件、真实依赖确认和签字。
 - 分页以外的 FVS `postMessage` / FVS Adapter 控制能力作为后续增强项, 不影响当前 V0.6 验收结论。
 - 正式上线前进行合规、安全、网络和运维评审。

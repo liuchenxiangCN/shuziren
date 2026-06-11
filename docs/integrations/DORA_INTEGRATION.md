@@ -34,6 +34,8 @@ V0.2:
 
 - `ENABLE_MOCK_DORA=true`: `/api/chat` 继续走 V0.1 Mock Dora。
 - `ENABLE_MOCK_DORA=false`: `/api/chat` 调用 Dora OpenClaw SSE。
+- V0.8 已新增 `ASK_METRICS_MODE=excel|dora|auto`: `excel` 保持 Gateway Excel Adapter 优先, `dora` 让 Dora / Mock Dora 承接问数, `auto` 在 Dora / Mock Dora 失败或返回 `fallback` 时回退 Excel。
+- V0.9 已新增 `DEMO_STABLE_MODE=true`: Dora 请求失败时, Gateway 会优先尝试本地 Excel 问数和 Mock Dora 演示兜底; 未命中时仍返回安全 `fallback`。
 - `POST /api/chat/stream`: V0.5 新增流式路径, 直接消费 Dora OpenClaw SSE, 向前端输出 `dora_delta`、最终 `answer` 和分段 `tts_ready`。
 - Dora Client 位于 `apps/api/app/services/dora_client.py`。
 - Dora 输出归一化位于 `apps/api/app/services/dora_normalizer.py`。
@@ -147,6 +149,7 @@ POST ${DORA_BASE_URL}/external/api/openclaw/history
 - `screen_control` 必须校验动作白名单。
 - 非法 action 返回兜底话术。
 - Dora 超时返回服务不可用话术。
+- 演示稳态只用于固定演示保底, 不能替代真实 Dora 依赖验收。
 
 ## 已验证
 

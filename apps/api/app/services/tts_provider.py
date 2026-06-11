@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from time import perf_counter
-from typing import Protocol
+from typing import AsyncIterator, Protocol
 from uuid import uuid4
 
 import websockets
@@ -32,11 +32,28 @@ class TtsSynthesis:
     mock: bool
 
 
+@dataclass(frozen=True)
+class TtsAudioChunk:
+    index: int
+    audio: bytes
+    provider: str
+    voice: str
+    format: str
+    mime_type: str
+    sample_rate: int
+    mock: bool
+
+
 class TtsProvider(Protocol):
     provider_name: str
     is_mock: bool
 
     def synthesize(self, *, text: str, voice: str | None, audio_format: str | None) -> TtsSynthesis:
+        ...
+
+    def stream_synthesize(
+        self, *, text: str, voice: str | None, audio_format: str | None
+    ) -> AsyncIterator[TtsAudioChunk]:
         ...
 
     def get_audio_path(self, audio_id: str) -> Path | None:
@@ -71,6 +88,26 @@ class MockTtsProvider:
             mock=self.is_mock,
         )
 
+    async def stream_synthesize(
+        self, *, text: str, voice: str | None, audio_format: str | None
+    ) -> AsyncIterator[TtsAudioChunk]:
+        selected_voice = (voice or self.default_voice).strip() or self.default_voice
+        duration_ms = _estimate_duration_ms(text)
+        audio = _build_mock_pcm(text=text, duration_ms=duration_ms)
+        bytes_per_chunk = 16_000 * 2 // 5
+        for index, offset in enumerate(range(0, len(audio), bytes_per_chunk)):
+            await asyncio.sleep(0.02)
+            yield TtsAudioChunk(
+                index=index,
+                audio=audio[offset : offset + bytes_per_chunk],
+                provider=self.provider_name,
+                voice=selected_voice,
+                format="pcm",
+                mime_type="audio/L16",
+                sample_rate=16_000,
+                mock=self.is_mock,
+            )
+
     def get_audio_path(self, audio_id: str) -> Path | None:
         if not _is_safe_audio_id(audio_id):
             return None
@@ -91,6 +128,15 @@ class UnsupportedTtsProvider:
             code="TTS_PROVIDER_NOT_CONFIGURED",
             user_message="TTS 服务尚未配置真实供应商，请先使用 Mock TTS。",
         )
+
+    async def stream_synthesize(
+        self, *, text: str, voice: str | None, audio_format: str | None
+    ) -> AsyncIterator[TtsAudioChunk]:
+        raise TtsProviderError(
+            code="TTS_PROVIDER_NOT_CONFIGURED",
+            user_message="TTS 服务尚未配置真实供应商，请先使用 Mock TTS。",
+        )
+        yield  # pragma: no cover
 
     def get_audio_path(self, audio_id: str) -> Path | None:
         return None
@@ -161,6 +207,41 @@ class AliyunCosyVoiceTtsProvider:
             mock=self.is_mock,
         )
 
+    async def stream_synthesize(
+        self, *, text: str, voice: str | None, audio_format: str | None
+    ) -> AsyncIterator[TtsAudioChunk]:
+        if not self.api_key:
+            raise TtsProviderError(
+                code="TTS_API_KEY_MISSING",
+                user_message="TTS API Key 未配置，请检查本地 .env。",
+            )
+
+        selected_voice = (voice or self.default_voice).strip() or self.default_voice
+        selected_format = _normalize_audio_format(audio_format or "pcm")
+        if selected_format not in {"mp3", "wav", "pcm", "opus"}:
+            selected_format = "pcm"
+
+        async for chunk in _stream_cosyvoice_tts(
+            api_key=self.api_key,
+            ws_url=self.ws_url,
+            model=self.model,
+            text=text,
+            voice=selected_voice,
+            audio_format=selected_format,
+            sample_rate=self.sample_rate,
+            timeout_seconds=self.timeout_seconds,
+        ):
+            yield TtsAudioChunk(
+                index=chunk.index,
+                audio=chunk.audio,
+                provider=self.provider_name,
+                voice=selected_voice,
+                format=selected_format,
+                mime_type=_audio_mime_type(selected_format),
+                sample_rate=self.sample_rate,
+                mock=self.is_mock,
+            )
+
     def get_audio_path(self, audio_id: str) -> Path | None:
         if not _is_safe_audio_id(audio_id):
             return None
@@ -223,6 +304,20 @@ def _build_mock_wav(*, text: str, duration_ms: int) -> bytes:
     return buffer.getvalue()
 
 
+def _build_mock_pcm(*, text: str, duration_ms: int) -> bytes:
+    sample_rate = 16_000
+    total_frames = int(sample_rate * duration_ms / 1000)
+    seed = sum(ord(char) for char in text) % 97
+    frames = bytearray()
+    for index in range(total_frames):
+        progress = index / max(1, total_frames)
+        envelope = min(1.0, progress * 8) * min(1.0, (1 - progress) * 8)
+        frequency = 180 + seed + 35 * math.sin(progress * math.tau * 3)
+        sample = int(0.22 * envelope * 32767 * math.sin(math.tau * frequency * index / sample_rate))
+        frames.extend(struct.pack("<h", sample))
+    return bytes(frames)
+
+
 def _is_safe_audio_id(audio_id: str) -> bool:
     allowed_suffixes = (".wav", ".mp3", ".pcm", ".opus")
     if not audio_id.startswith("tts-") or not audio_id.endswith(allowed_suffixes):
@@ -254,6 +349,39 @@ async def _run_cosyvoice_tts(
     sample_rate: int,
     timeout_seconds: int,
 ) -> bytes:
+    audio_parts: list[bytes] = []
+    async for chunk in _stream_cosyvoice_tts(
+        api_key=api_key,
+        ws_url=ws_url,
+        model=model,
+        text=text,
+        voice=voice,
+        audio_format=audio_format,
+        sample_rate=sample_rate,
+        timeout_seconds=timeout_seconds,
+    ):
+        audio_parts.append(chunk.audio)
+
+    audio_bytes = b"".join(audio_parts)
+    if not audio_bytes:
+        raise TtsProviderError(
+            code="TTS_EMPTY_AUDIO",
+            user_message="TTS 未返回音频，请稍后重试。",
+        )
+    return audio_bytes
+
+
+async def _stream_cosyvoice_tts(
+    *,
+    api_key: str,
+    ws_url: str,
+    model: str,
+    text: str,
+    voice: str,
+    audio_format: str,
+    sample_rate: int,
+    timeout_seconds: int,
+) -> AsyncIterator[TtsAudioChunk]:
     task_id = str(uuid4())
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -300,7 +428,7 @@ async def _run_cosyvoice_tts(
         "payload": {"input": {}},
     }
 
-    audio_parts: list[bytes] = []
+    chunk_index = 0
     try:
         async with asyncio.timeout(timeout_seconds):
             async with websockets.connect(ws_url, additional_headers=headers) as websocket:
@@ -311,7 +439,17 @@ async def _run_cosyvoice_tts(
 
                 async for message in websocket:
                     if isinstance(message, bytes):
-                        audio_parts.append(message)
+                        yield TtsAudioChunk(
+                            index=chunk_index,
+                            audio=message,
+                            provider="aliyun",
+                            voice=voice,
+                            format=audio_format,
+                            mime_type=_audio_mime_type(audio_format),
+                            sample_rate=sample_rate,
+                            mock=False,
+                        )
+                        chunk_index += 1
                         continue
                     payload = json.loads(message)
                     header = payload.get("header", {})
@@ -336,13 +474,11 @@ async def _run_cosyvoice_tts(
             user_message="TTS 服务暂时不可用，请稍后再试。",
         ) from exc
 
-    audio_bytes = b"".join(audio_parts)
-    if not audio_bytes:
+    if chunk_index == 0:
         raise TtsProviderError(
             code="TTS_EMPTY_AUDIO",
             user_message="TTS 未返回音频，请稍后重试。",
         )
-    return audio_bytes
 
 
 async def _wait_for_tts_event(websocket, expected_event: str) -> None:
@@ -359,3 +495,12 @@ async def _wait_for_tts_event(websocket, expected_event: str) -> None:
                 code=str(header.get("error_code") or "TTS_TASK_FAILED"),
                 user_message="TTS 任务启动失败，请检查百炼配置。",
             )
+
+
+def _audio_mime_type(audio_format: str) -> str:
+    return {
+        "mp3": "audio/mpeg",
+        "wav": "audio/wav",
+        "pcm": "audio/L16",
+        "opus": "audio/opus",
+    }.get(audio_format.lower(), "application/octet-stream")

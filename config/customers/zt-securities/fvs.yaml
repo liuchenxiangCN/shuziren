@@ -1,0 +1,17 @@
+version: 0.8.0
+integration_mode: iframe
+url: /webroot/decision/view/duchamp?viewlet=your-dashboard.fvs&page_number=1
+target_origin: ""
+page_param: page_number
+same_origin_proxy:
+  enabled: true
+  public_prefix: /webroot/
+  upstream: http://host.docker.internal:8075/webroot/
+pages:
+  overview: 1
+  finished_goods_inventory: 2
+  production_management: 3
+  equipment_analysis: 4
+notes:
+  - 前端构建仍通过 VITE_FVS_URL / VITE_FVS_INTEGRATION_MODE 注入安全配置。
+  - FVS 侧如需监听消息, 必须按 action_id 固定映射, 不执行模型生成 JavaScript。

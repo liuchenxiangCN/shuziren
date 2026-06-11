@@ -1,0 +1,38 @@
+version: 0.8.0
+customer: zt-securities
+actions:
+  SWITCH_HOME:
+    label: 总览
+    type: page
+    description: 切换到总览页
+    fvs_function: gotoPage
+    params:
+      pageNumber: 1
+    speak_text: 已为您切换到总览页面。
+
+  SWITCH_TAB_ORG:
+    label: 成品库存
+    type: page
+    description: 切换到成品库存页
+    fvs_function: gotoPage
+    params:
+      pageNumber: 2
+    speak_text: 已为您切换到成品库存页面。
+
+  SWITCH_TAB_STUDY:
+    label: 生产管理
+    type: page
+    description: 切换到生产管理页
+    fvs_function: gotoPage
+    params:
+      pageNumber: 3
+    speak_text: 已为您切换到生产管理页面。
+
+  SWITCH_TAB_ACTIVITY:
+    label: 设备分析
+    type: page
+    description: 切换到设备分析页
+    fvs_function: gotoPage
+    params:
+      pageNumber: 4
+    speak_text: 已为您切换到设备分析页面。

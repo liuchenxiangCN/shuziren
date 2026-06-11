@@ -1,15 +1,20 @@
+import base64
 import json
 import logging
 from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import datetime
 from time import sleep
 from time import perf_counter
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, Request
+import httpx
+from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
+from fastapi.responses import PlainTextResponse
 from fastapi.responses import StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -19,8 +24,16 @@ from app.models import (
     AsrTranscribeResponse,
     ChatRequest,
     ChatResponse,
+    DemoConfigResponse,
     ErrorDetail,
     HealthResponse,
+    OpsDependenciesResponse,
+    OpsDependencyStatus,
+    OpsErrorsResponse,
+    OpsHealthResponse,
+    OpsMetricsResponse,
+    OpsSessionDetailResponse,
+    OpsSessionsResponse,
     ScreenActionsResponse,
     ScreenExecuteRequest,
     ScreenExecuteResponse,
@@ -128,12 +141,83 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled request failure")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "服务临时不可用，请稍后再试。",
+            },
+            "request_id": _request_id(request),
+        },
+    )
+
+
 @app.get("/api/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         app=settings.app_name,
         version=settings.app_version,
+    )
+
+
+@app.get("/api/ops/health", response_model=OpsHealthResponse)
+def ops_health() -> OpsHealthResponse:
+    return OpsHealthResponse(
+        status="ok" if session_logs.is_available() else "error",
+        app=settings.app_name,
+        version=settings.app_version,
+        customer_id=settings.customer_id,
+        time=_now_iso(),
+    )
+
+
+@app.get("/api/ops/dependencies", response_model=OpsDependenciesResponse)
+def ops_dependencies() -> OpsDependenciesResponse:
+    dependencies = _ops_dependency_statuses()
+    return OpsDependenciesResponse(
+        status=_overall_ops_status(dependencies),
+        dependencies=dependencies,
+    )
+
+
+@app.get("/api/ops/sessions", response_model=OpsSessionsResponse)
+def ops_sessions(limit: int = Query(default=20, ge=1, le=100)) -> OpsSessionsResponse:
+    return OpsSessionsResponse(sessions=session_logs.list_sessions(limit=limit))
+
+
+@app.get("/api/ops/session/{session_id}", response_model=OpsSessionDetailResponse)
+def ops_session_detail(
+    session_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> OpsSessionDetailResponse:
+    return OpsSessionDetailResponse(
+        session_id=session_id,
+        events=session_logs.list_session_events(session_id, limit=limit),
+    )
+
+
+@app.get("/api/ops/errors", response_model=OpsErrorsResponse)
+def ops_errors(limit: int = Query(default=30, ge=1, le=100)) -> OpsErrorsResponse:
+    return OpsErrorsResponse(errors=session_logs.list_errors(limit=limit))
+
+
+@app.get("/api/ops/metrics", response_model=OpsMetricsResponse)
+def ops_metrics(recent_limit: int = Query(default=30, ge=1, le=100)) -> OpsMetricsResponse:
+    return OpsMetricsResponse(**session_logs.metrics(recent_limit=recent_limit))
+
+
+@app.get("/api/ops/export")
+def ops_export(limit: int = Query(default=50, ge=1, le=200)) -> PlainTextResponse:
+    content = _ops_export_markdown(limit=limit)
+    return PlainTextResponse(
+        content,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="zt-ops-log-export.md"'},
     )
 
 
@@ -200,6 +284,27 @@ def get_wake_config() -> WakeConfigResponse:
     return wake_words.get_config()
 
 
+@app.get("/api/demo/config", response_model=DemoConfigResponse)
+def get_demo_config() -> DemoConfigResponse:
+    return DemoConfigResponse(
+        stable_mode=settings.demo_stable_mode,
+        customer_id=settings.customer_id,
+        ask_metrics_mode=_ask_metrics_mode(),
+        mock={
+            "dora": settings.enable_mock_dora,
+            "asr": settings.enable_mock_asr,
+            "tts": settings.enable_mock_tts,
+            "fvs": settings.enable_mock_fvs,
+        },
+        questions=mock_dora.list_demo_questions(),
+        notice=(
+            "演示稳态模式已开启，外部 Dora 失败时会优先使用本地演示兜底。"
+            if settings.demo_stable_mode
+            else "演示稳态模式未开启，系统按当前真实/Mock 开关运行。"
+        ),
+    )
+
+
 @app.post("/api/tts", response_model=TtsSynthesizeResponse)
 def synthesize_tts(request: TtsSynthesizeRequest) -> TtsSynthesizeResponse:
     voice = request.voice or settings.tts_voice
@@ -232,6 +337,15 @@ def synthesize_tts(request: TtsSynthesizeRequest) -> TtsSynthesizeResponse:
         )
 
 
+@app.post("/api/tts/stream")
+def stream_tts(request: TtsSynthesizeRequest) -> StreamingResponse:
+    return StreamingResponse(
+        _tts_stream_events(request),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 @app.get("/api/tts/audio/{audio_id}")
 def get_tts_audio(audio_id: str) -> FileResponse:
     audio_path = tts_provider.get_audio_path(audio_id)
@@ -240,17 +354,118 @@ def get_tts_audio(audio_id: str) -> FileResponse:
     return FileResponse(path=audio_path, media_type=_audio_media_type(audio_path.suffix), filename=audio_id)
 
 
-def _chat_response(request: ChatRequest) -> ChatResponse:
-    metrics_response = ask_metrics.respond(request)
-    if metrics_response is not None:
-        return metrics_response
+async def _tts_stream_events(request: TtsSynthesizeRequest):
+    voice = request.voice or settings.tts_voice
+    audio_format = request.format or settings.tts_streaming_audio_format or settings.tts_audio_format
+    if not settings.tts_streaming_enabled:
+        yield _sse(
+            "tts_error",
+            {
+                "code": "TTS_STREAMING_DISABLED",
+                "message": "TTS 真流式未启用，已回退到分段播报。",
+                "fallback": settings.tts_streaming_fallback,
+            },
+        )
+        yield _sse("end", {"ok": False, "chunks": 0, "fallback": settings.tts_streaming_fallback})
+        return
 
-    if settings.enable_mock_dora:
-        return mock_dora.respond(request)
-
-    message_id = f"msg-{uuid4().hex[:12]}"
+    started_at = perf_counter()
+    chunk_count = 0
+    metadata_sent = False
     try:
-        result = dora_client.sse_chat(request, message_id=message_id)
+        async for chunk in tts_provider.stream_synthesize(
+            text=request.text,
+            voice=voice,
+            audio_format=audio_format,
+        ):
+            if not metadata_sent:
+                yield _sse(
+                    "metadata",
+                    {
+                        "provider": chunk.provider,
+                        "voice": chunk.voice,
+                        "format": chunk.format,
+                        "mime_type": chunk.mime_type,
+                        "sample_rate": chunk.sample_rate,
+                        "mock": chunk.mock,
+                        "fallback": settings.tts_streaming_fallback,
+                    },
+                )
+                metadata_sent = True
+            chunk_count += 1
+            yield _sse(
+                "audio_chunk",
+                {
+                    "index": chunk.index,
+                    "audio_base64": base64.b64encode(chunk.audio).decode("ascii"),
+                    "mime_type": chunk.mime_type,
+                    "provider": chunk.provider,
+                    "format": chunk.format,
+                    "sample_rate": chunk.sample_rate,
+                    "duration_ms": int((perf_counter() - started_at) * 1000),
+                    "mock": chunk.mock,
+                },
+            )
+        yield _sse(
+            "end",
+            {
+                "ok": True,
+                "chunks": chunk_count,
+                "duration_ms": int((perf_counter() - started_at) * 1000),
+                "fallback": settings.tts_streaming_fallback,
+            },
+        )
+    except TtsProviderError as exc:
+        logger.warning("TTS stream failed with code %s", exc.code)
+        yield _sse(
+            "tts_error",
+            {
+                "code": exc.code,
+                "message": exc.user_message,
+                "fallback": settings.tts_streaming_fallback,
+            },
+        )
+        yield _sse("end", {"ok": False, "chunks": chunk_count, "fallback": settings.tts_streaming_fallback})
+    except Exception:
+        logger.exception("Unexpected TTS stream failure")
+        yield _sse(
+            "tts_error",
+            {
+                "code": "TTS_STREAM_ERROR",
+                "message": "TTS 真流式播放失败，已回退到分段播报。",
+                "fallback": settings.tts_streaming_fallback,
+            },
+        )
+        yield _sse("end", {"ok": False, "chunks": chunk_count, "fallback": settings.tts_streaming_fallback})
+
+
+def _chat_response(request: ChatRequest) -> ChatResponse:
+    metrics_mode = _ask_metrics_mode()
+
+    if metrics_mode == "excel":
+        metrics_response = _safe_ask_metrics_response(request)
+        if metrics_response is not None:
+            return metrics_response
+        return _dora_or_mock_response(request)
+
+    if metrics_mode == "dora":
+        return _dora_or_mock_response(request)
+
+    response = _dora_or_mock_response(request)
+    if response.type == "fallback":
+        metrics_response = _safe_ask_metrics_response(request, message_id=response.message_id)
+        if metrics_response is not None:
+            return metrics_response
+    return response
+
+
+def _dora_or_mock_response(request: ChatRequest, *, message_id: str | None = None) -> ChatResponse:
+    if settings.enable_mock_dora:
+        return _with_message_id(mock_dora.respond(request), message_id)
+
+    response_message_id = message_id or f"msg-{uuid4().hex[:12]}"
+    try:
+        result = dora_client.sse_chat(request, message_id=response_message_id)
         return normalize_dora_output(
             raw_output=result.raw_output,
             request=request,
@@ -259,13 +474,61 @@ def _chat_response(request: ChatRequest) -> ChatResponse:
         )
     except DoraClientError as exc:
         logger.warning("Dora chat failed with code %s", exc.code)
+        if settings.demo_stable_mode:
+            return _demo_stable_response(request, message_id=response_message_id, cause_code=exc.code)
         return dora_error_response(
             request=request,
-            message_id=message_id,
+            message_id=response_message_id,
             code=exc.code,
             speak_text=exc.user_message,
             reason=exc.code,
         )
+
+
+def _safe_ask_metrics_response(request: ChatRequest, *, message_id: str | None = None) -> ChatResponse | None:
+    try:
+        return ask_metrics.respond(request, message_id=message_id)
+    except Exception:
+        logger.warning("Ask metrics adapter failed", exc_info=True)
+        return dora_error_response(
+            request=request,
+            message_id=message_id or f"msg-{uuid4().hex[:12]}",
+            code="ASK_METRICS_DATA_UNAVAILABLE",
+            speak_text="问数演示数据暂不可用，请检查 Excel 数据文件后重试。",
+            reason="ASK_METRICS_DATA_UNAVAILABLE",
+        )
+
+
+def _demo_stable_response(request: ChatRequest, *, message_id: str, cause_code: str) -> ChatResponse:
+    metrics_response = _safe_ask_metrics_response(request, message_id=message_id)
+    if metrics_response is not None and metrics_response.type != "fallback":
+        return metrics_response
+
+    mock_response = _with_message_id(mock_dora.respond(request), message_id)
+    if mock_response.type != "fallback":
+        return mock_response
+
+    return dora_error_response(
+        request=request,
+        message_id=message_id,
+        code="DEMO_STABLE_FALLBACK",
+        speak_text="演示模式下外部服务暂不可用，当前问题未命中本地演示兜底，请换一个演示问题或稍后重试。",
+        reason=cause_code,
+    )
+
+
+def _with_message_id(response: ChatResponse, message_id: str | None) -> ChatResponse:
+    if not message_id or response.message_id == message_id:
+        return response
+    return response.model_copy(update={"message_id": message_id})
+
+
+def _ask_metrics_mode() -> str:
+    mode = settings.ask_metrics_mode.strip().lower()
+    if mode not in {"excel", "dora", "auto"}:
+        logger.warning("Unsupported ASK_METRICS_MODE=%s, fallback to excel", settings.ask_metrics_mode)
+        return "excel"
+    return mode
 
 
 def _chat_stream_events(request: ChatRequest):
@@ -323,12 +586,17 @@ def _chat_stream_events(request: ChatRequest):
                             },
                         )
                     except Exception as exc:  # pragma: no cover - external TTS failures are runtime dependent.
+                        message = (
+                            exc.user_message
+                            if isinstance(exc, TtsProviderError)
+                            else "TTS 分段合成失败，已保留文字回答。"
+                        )
                         yield _sse(
                             "tts_error",
                             {
                                 "index": job["index"],
                                 "text": job["text"],
-                                "message": str(exc),
+                                "message": message,
                             },
                         )
                 if not block or not tts_jobs or all(job["emitted"] for job in tts_jobs):
@@ -337,12 +605,20 @@ def _chat_stream_events(request: ChatRequest):
                     sleep(0.05)
 
         try:
-            metrics_response = ask_metrics.respond(request, message_id=message_id)
+            metrics_mode = _ask_metrics_mode()
+            metrics_response = None
+            if metrics_mode == "excel":
+                metrics_response = _safe_ask_metrics_response(request, message_id=message_id)
+
             if metrics_response is not None:
                 response = metrics_response
                 yield _sse("dora_delta", {"text": response.speak_text})
+            elif metrics_mode == "auto":
+                response = _chat_response(request).model_copy(update={"message_id": message_id})
+                if response.type in {"answer", "screen_control"}:
+                    yield _sse("dora_delta", {"text": response.speak_text})
             elif settings.enable_mock_dora:
-                response = mock_dora.respond(request)
+                response = _with_message_id(mock_dora.respond(request), message_id)
             else:
                 for event in dora_client.stream_sse_chat(request, message_id=message_id):
                     sse_events.append(event)
@@ -363,12 +639,26 @@ def _chat_stream_events(request: ChatRequest):
                 )
         except DoraClientError as exc:
             logger.warning("Dora stream failed with code %s", exc.code)
+            if settings.demo_stable_mode:
+                response = _demo_stable_response(request, message_id=message_id, cause_code=exc.code)
+                if response.type in {"answer", "screen_control"}:
+                    yield _sse("dora_delta", {"text": response.speak_text})
+            else:
+                response = dora_error_response(
+                    request=request,
+                    message_id=message_id,
+                    code=exc.code,
+                    speak_text=exc.user_message,
+                    reason=exc.code,
+                )
+        except Exception:
+            logger.exception("Chat stream failed unexpectedly")
             response = dora_error_response(
                 request=request,
                 message_id=message_id,
-                code=exc.code,
-                speak_text=exc.user_message,
-                reason=exc.code,
+                code="CHAT_STREAM_ERROR",
+                speak_text="服务临时不可用，已保留文字回答入口，请稍后重试。",
+                reason="CHAT_STREAM_ERROR",
             )
 
         for segment in segmenter.flush():
@@ -402,6 +692,377 @@ def _chat_stream_events(request: ChatRequest):
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _ops_dependency_statuses() -> list[OpsDependencyStatus]:
+    dependencies = [
+        _database_dependency_status(),
+        _screen_actions_dependency_status(),
+        _dora_dependency_status(),
+        _ragflow_dependency_status(),
+        _asr_dependency_status(),
+        _tts_dependency_status(),
+        _fvs_dependency_status(),
+    ]
+    return dependencies
+
+
+def _database_dependency_status() -> OpsDependencyStatus:
+    started_at = perf_counter()
+    ok = session_logs.is_available()
+    return _dependency_status(
+        name="session_log",
+        label="SQLite 会话日志",
+        status="ok" if ok else "error",
+        latency_ms=int((perf_counter() - started_at) * 1000),
+        message="sessions.db 可读写" if ok else "sessions.db 不可访问",
+        details={"path_configured": bool(settings.sqlite_path)},
+    )
+
+
+def _screen_actions_dependency_status() -> OpsDependencyStatus:
+    started_at = perf_counter()
+    try:
+        actions_count = len(action_service.list_actions())
+        return _dependency_status(
+            name="screen_actions",
+            label="大屏动作白名单",
+            status="ok" if actions_count > 0 else "warning",
+            latency_ms=int((perf_counter() - started_at) * 1000),
+            message=f"已加载 {actions_count} 个 action_id",
+            details={"action_count": actions_count},
+        )
+    except Exception:
+        logger.warning("Ops screen actions check failed", exc_info=True)
+        return _dependency_status(
+            name="screen_actions",
+            label="大屏动作白名单",
+            status="error",
+            latency_ms=int((perf_counter() - started_at) * 1000),
+            message="动作白名单读取失败",
+        )
+
+
+def _dora_dependency_status() -> OpsDependencyStatus:
+    if settings.enable_mock_dora:
+        return _dependency_status(
+            name="dora",
+            label="Dora Agent",
+            status="ok",
+            message="Mock Dora 已启用",
+            details={"mode": "mock"},
+        )
+    if not settings.dora_base_url.strip():
+        return _dependency_status(
+            name="dora",
+            label="Dora Agent",
+            status="error",
+            message="未配置 Dora 地址",
+            details={"mode": "real"},
+        )
+    if not settings.dora_api_key.strip():
+        return _dependency_status(
+            name="dora",
+            label="Dora Agent",
+            status="error",
+            message="未配置 Dora API Key",
+            details={"mode": "real"},
+        )
+
+    status, latency_ms, message = _probe_http(
+        _join_url(settings.dora_base_url, "/external/api/openclaw/agents"),
+        headers={"Authorization": "Bearer ***"},
+        actual_headers={"Authorization": f"Bearer {settings.dora_api_key}"},
+        ok_statuses={200},
+    )
+    return _dependency_status(
+        name="dora",
+        label="Dora Agent",
+        status=status,
+        latency_ms=latency_ms,
+        message=message,
+        details={
+            "mode": "real",
+            "agent_configured": bool(settings.dora_agent_id or settings.dora_agent_name),
+            "channel_type": settings.dora_channel_type,
+        },
+    )
+
+
+def _ragflow_dependency_status() -> OpsDependencyStatus:
+    if settings.ragflow_base_url.strip():
+        status, latency_ms, message = _probe_http(
+            _join_url(settings.ragflow_base_url, "/api/v1/system/healthz"),
+            ok_statuses={200},
+        )
+        return _dependency_status(
+            name="ragflow",
+            label="RAGFlow",
+            status=status,
+            latency_ms=latency_ms,
+            message=message,
+            details={"health_endpoint": "base_url", "mcp_configured": bool(settings.ragflow_mcp_url)},
+        )
+    if settings.ragflow_mcp_url.strip():
+        status, latency_ms, message = _probe_http(
+            settings.ragflow_mcp_url,
+            headers={"Accept": "application/json, text/event-stream"},
+            ok_statuses={200, 202, 406},
+        )
+        return _dependency_status(
+            name="ragflow",
+            label="RAGFlow",
+            status=status,
+            latency_ms=latency_ms,
+            message=message,
+            details={"health_endpoint": "mcp"},
+        )
+    return _dependency_status(
+        name="ragflow",
+        label="RAGFlow",
+        status="warning",
+        message="未配置 RAGFlow 地址",
+        details={"mcp_configured": False},
+    )
+
+
+def _asr_dependency_status() -> OpsDependencyStatus:
+    if settings.enable_mock_asr:
+        return _dependency_status(
+            name="asr",
+            label="ASR",
+            status="ok",
+            message="Mock ASR 已启用",
+            details={"mode": "mock", "provider": settings.asr_provider},
+        )
+    if not settings.asr_api_key.strip():
+        return _dependency_status(
+            name="asr",
+            label="ASR",
+            status="error",
+            message="未配置 ASR API Key",
+            details={"mode": "real", "provider": settings.asr_provider},
+        )
+    return _dependency_status(
+        name="asr",
+        label="ASR",
+        status="ok",
+        message="真实 ASR 配置已就绪",
+        details={"mode": "real", "provider": settings.asr_provider, "model": settings.asr_model},
+    )
+
+
+def _tts_dependency_status() -> OpsDependencyStatus:
+    if settings.enable_mock_tts:
+        return _dependency_status(
+            name="tts",
+            label="TTS",
+            status="ok",
+            message="Mock TTS 已启用",
+            details={"mode": "mock", "provider": settings.tts_provider},
+        )
+    if not settings.tts_api_key.strip():
+        return _dependency_status(
+            name="tts",
+            label="TTS",
+            status="error",
+            message="未配置 TTS API Key",
+            details={"mode": "real", "provider": settings.tts_provider},
+        )
+    return _dependency_status(
+        name="tts",
+        label="TTS",
+        status="ok",
+        message="真实 TTS 配置已就绪",
+        details={
+            "mode": "real",
+            "provider": settings.tts_provider,
+            "model": settings.tts_model,
+            "streaming_enabled": settings.tts_streaming_enabled,
+            "streaming_format": settings.tts_streaming_audio_format,
+        },
+    )
+
+
+def _fvs_dependency_status() -> OpsDependencyStatus:
+    if settings.enable_mock_fvs:
+        return _dependency_status(
+            name="fvs",
+            label="FVS",
+            status="ok",
+            message="Mock FVS 已启用",
+            details={"mode": "mock"},
+        )
+    if not settings.fvs_url.strip():
+        return _dependency_status(
+            name="fvs",
+            label="FVS",
+            status="warning",
+            message="未配置 FVS iframe 地址",
+            details={"mode": settings.fvs_integration_mode},
+        )
+    if settings.fvs_url.startswith(("http://", "https://")):
+        status, latency_ms, message = _probe_http(settings.fvs_url, ok_statuses={200, 204, 301, 302})
+        return _dependency_status(
+            name="fvs",
+            label="FVS",
+            status=status,
+            latency_ms=latency_ms,
+            message=message,
+            details={"mode": settings.fvs_integration_mode},
+        )
+    return _dependency_status(
+        name="fvs",
+        label="FVS",
+        status="warning",
+        message="FVS 使用相对路径，需由前端同源代理验证",
+        details={"mode": settings.fvs_integration_mode, "relative_url": True},
+    )
+
+
+def _probe_http(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    actual_headers: dict[str, str] | None = None,
+    ok_statuses: set[int],
+) -> tuple[str, int | None, str]:
+    request_headers = actual_headers if actual_headers is not None else headers
+    started_at = perf_counter()
+    try:
+        with httpx.Client(timeout=2.5, follow_redirects=True) as client:
+            response = client.get(url, headers=request_headers)
+        latency_ms = int((perf_counter() - started_at) * 1000)
+        if response.status_code in ok_statuses:
+            return "ok", latency_ms, f"HTTP {response.status_code}"
+        if response.status_code < 500:
+            return "warning", latency_ms, f"HTTP {response.status_code}"
+        return "error", latency_ms, f"HTTP {response.status_code}"
+    except httpx.TimeoutException:
+        return "error", int((perf_counter() - started_at) * 1000), "请求超时"
+    except httpx.HTTPError:
+        return "error", int((perf_counter() - started_at) * 1000), "请求失败"
+
+
+def _dependency_status(
+    *,
+    name: str,
+    label: str,
+    status: str,
+    message: str,
+    latency_ms: int | None = None,
+    details: dict | None = None,
+) -> OpsDependencyStatus:
+    return OpsDependencyStatus(
+        name=name,
+        label=label,
+        status=status,
+        latency_ms=latency_ms,
+        message=message,
+        checked_at=_now_iso(),
+        details=details or {},
+    )
+
+
+def _overall_ops_status(dependencies: list[OpsDependencyStatus]) -> str:
+    statuses = {dependency.status for dependency in dependencies}
+    if "error" in statuses:
+        return "error"
+    if "warning" in statuses:
+        return "warning"
+    if "unknown" in statuses:
+        return "unknown"
+    return "ok"
+
+
+def _ops_export_markdown(*, limit: int) -> str:
+    dependencies = _ops_dependency_statuses()
+    metrics = session_logs.metrics(recent_limit=20)
+    sessions = session_logs.list_sessions(limit=limit)
+    errors = session_logs.list_errors(limit=20)
+
+    lines = [
+        "# 中天证券数字人 POC 运维日志导出",
+        "",
+        f"- 导出时间: {_now_iso()}",
+        f"- 应用: {settings.app_name} {settings.app_version}",
+        f"- 客户: {settings.customer_id}",
+        f"- 总体状态: {_overall_ops_status(dependencies)}",
+        "",
+        "## 依赖状态",
+        "",
+        "| 依赖 | 状态 | 延迟 | 摘要 |",
+        "| --- | --- | ---: | --- |",
+    ]
+    for dependency in dependencies:
+        latency = "-" if dependency.latency_ms is None else f"{dependency.latency_ms} ms"
+        lines.append(
+            f"| {_md_escape(dependency.label)} | {dependency.status} | {latency} | "
+            f"{_md_escape(dependency.message)} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## 耗时指标",
+            "",
+            f"- 日志事件数: {metrics['total_events']}",
+            f"- 会话数: {metrics['total_sessions']}",
+            f"- 错误事件数: {metrics['error_events']}",
+            f"- 平均耗时: {_format_ms(metrics['avg_latency_ms'])}",
+            f"- P50 耗时: {_format_ms(metrics['p50_latency_ms'])}",
+            f"- P95 耗时: {_format_ms(metrics['p95_latency_ms'])}",
+            f"- 最大耗时: {_format_ms(metrics['max_latency_ms'])}",
+            "",
+            "## 最近会话",
+            "",
+            "| 时间 | 会话 | 事件 | 最近意图 | 最近耗时 | 最近输入 |",
+            "| --- | --- | ---: | --- | ---: | --- |",
+        ]
+    )
+    for session in sessions:
+        lines.append(
+            f"| {_md_escape(session['last_message_at'])} | {_md_escape(session['session_id'])} | "
+            f"{session['turns']} | {_md_escape(session['last_intent_type'])} | "
+            f"{_format_ms(session.get('last_latency_ms'))} | {_md_escape(session.get('last_user_text') or '-')} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## 最近错误",
+            "",
+            "| 时间 | 会话 | 类型 | 代码 | 摘要 |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    for error in errors:
+        lines.append(
+            f"| {_md_escape(error['created_at'])} | {_md_escape(error['session_id'])} | "
+            f"{_md_escape(error['intent_type'])} | {_md_escape(error['code'])} | "
+            f"{_md_escape(error['message'])} |"
+        )
+    if not errors:
+        lines.append("| - | - | - | - | 暂无错误 |")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _join_url(base_url: str, path: str) -> str:
+    return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _now_iso() -> str:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds")
+
+
+def _format_ms(value: int | None) -> str:
+    return "-" if value is None else f"{value} ms"
+
+
+def _md_escape(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
 
 
 def _extract_ai_message_chunks(event) -> list[str]:

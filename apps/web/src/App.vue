@@ -2,10 +2,18 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
   executeScreenAction,
+  fetchDemoConfig,
+  fetchOpsDependencies,
+  fetchOpsErrors,
+  fetchOpsExport,
+  fetchOpsHealth,
+  fetchOpsMetrics,
+  fetchOpsSessions,
   fetchWakeConfig,
   fetchScreenActions,
   sendChat,
   streamChat,
+  streamSpeech,
   synthesizeSpeech,
   toApiUrl,
   transcribeAudio,
@@ -14,8 +22,17 @@ import { executeFvsAction as executeFvsAdapterAction, getFvsConfig } from './fvs
 import type {
   ChatResponse,
   ChatStreamTtsReady,
+  DemoConfigResponse,
+  DemoQuestion,
+  OpsDependenciesResponse,
+  OpsErrorItem,
+  OpsHealthResponse,
+  OpsMetricsResponse,
+  OpsSessionSummary,
+  OpsStatus,
   ScreenAction,
   ScreenExecuteResponse,
+  TtsStreamAudioChunk,
   WakeConfigResponse,
 } from './types';
 import type { FvsActionResult } from './fvsAdapter';
@@ -53,7 +70,9 @@ interface FvsEvent {
 }
 
 type InputMode = 'text' | 'voice';
+type MainView = 'chat' | 'ops';
 type TtsPlaybackState = 'idle' | 'loading' | 'playing' | 'error';
+type FvsLoadState = 'idle' | 'loading' | 'ready' | 'error';
 type ListeningState =
   | 'idle'
   | 'monitoring'
@@ -71,6 +90,7 @@ interface SubmitQuestionOptions {
 
 interface PlaybackOptions {
   monitorPlayback?: boolean;
+  preferStreaming?: boolean;
 }
 
 interface MonitorCommandOptions {
@@ -79,7 +99,19 @@ interface MonitorCommandOptions {
 
 type AudioPlaybackResult = 'ended' | 'blocked' | 'error' | 'interrupted';
 
+interface PcmStreamPlayback {
+  id: string;
+  audioContext: AudioContext;
+  analyser: AnalyserNode;
+  activeSources: Set<AudioBufferSourceNode>;
+  stopped: boolean;
+  nextStartTime: number;
+  stop: () => void;
+}
+
+const WAKE_GREETING_TEXT = '您好。';
 const ACKNOWLEDGEMENT_TEXT = '收到，正在为您查找信息。';
+const FVS_LOAD_TIMEOUT_MS = 10000;
 
 const DEFAULT_WAKE_CONFIG: WakeConfigResponse = {
   version: '0.1.0',
@@ -99,7 +131,18 @@ const DEFAULT_WAKE_CONFIG: WakeConfigResponse = {
   },
 };
 
+const FALLBACK_DEMO_QUESTIONS: DemoQuestion[] = [
+  { id: 'local-1', text: '我是张书记', category: 'leader' },
+  { id: 'local-2', text: '入党流程是什么？', category: 'knowledge' },
+  { id: 'local-3', text: '当前党员学习完成率是多少？', category: 'data' },
+  { id: 'local-4', text: '请切换到成品库存页面', category: 'screen_control' },
+  { id: 'local-5', text: '返回总览', category: 'screen_control' },
+];
+
 const sessionId = `demo-session-${Date.now()}`;
+const runtimeDemoStableMode = getRuntimeDemoStableMode();
+const buildDemoStableMode = isTruthyEnv(import.meta.env.VITE_DEMO_STABLE_MODE);
+const activeView = ref<MainView>(getInitialMainView());
 const inputText = ref('请切换到成品库存页面');
 const asrMockText = ref('请切换到成品库存页面');
 const asrText = ref('');
@@ -128,6 +171,19 @@ const commandText = ref('');
 const wakeMissCount = ref(0);
 const followupTurnsUsed = ref(0);
 const monitorEnergy = ref(0);
+const opsHealth = ref<OpsHealthResponse | null>(null);
+const opsDependencies = ref<OpsDependenciesResponse | null>(null);
+const opsMetrics = ref<OpsMetricsResponse | null>(null);
+const opsSessions = ref<OpsSessionSummary[]>([]);
+const opsErrors = ref<OpsErrorItem[]>([]);
+const opsLoading = ref(false);
+const opsExporting = ref(false);
+const opsErrorText = ref('');
+const opsLastUpdated = ref('');
+const demoConfig = ref<DemoConfigResponse | null>(null);
+const demoConfigError = ref('');
+const fvsLoadState = ref<FvsLoadState>(fvsConfig.enabled && fvsConfig.mode === 'iframe' ? 'loading' : 'idle');
+const fvsLoadText = ref('FVS iframe 加载中。');
 
 let mediaStream: MediaStream | null = null;
 let recorderAudioContext: AudioContext | null = null;
@@ -152,9 +208,14 @@ let monitorFinalizing = false;
 let monitorCommandTimer: number | null = null;
 let monitorCooldownTimer: number | null = null;
 let activeSegmentPlaybackItemId: string | null = null;
+let wakeGreetingAudioUrl: string | null = null;
+let wakeGreetingAudioPromise: Promise<string | null> | null = null;
 let acknowledgementAudioUrl: string | null = null;
 let acknowledgementAudioPromise: Promise<string | null> | null = null;
+let promptPlaybackQueue: Promise<void> = Promise.resolve();
 let activeSpeechUtterance: SpeechSynthesisUtterance | null = null;
+let activeStreamPlayback: PcmStreamPlayback | null = null;
+let fvsLoadTimer: number | null = null;
 
 const activeAction = computed(() => {
   return actions.value.find((action) => action.id === activeActionId.value) ?? actions.value[0];
@@ -163,14 +224,24 @@ const activeAction = computed(() => {
 const latestFvsEvent = computed(() => fvsEvents.value[0]);
 const isFvsHost = computed(() => fvsConfig.enabled && fvsConfig.mode === 'iframe');
 const isFvsWebFrame = computed(() => fvsConfig.enabled && fvsConfig.mode === 'parent');
+const isOpsView = computed(() => activeView.value === 'ops');
+const isDemoStableMode = computed(
+  () => runtimeDemoStableMode || buildDemoStableMode || Boolean(demoConfig.value?.stable_mode),
+);
+const demoQuestions = computed(() => {
+  const questions = demoConfig.value?.questions?.filter((item) => item.text) ?? [];
+  return (questions.length ? questions : FALLBACK_DEMO_QUESTIONS).slice(0, 6);
+});
+const fvsConversationItems = computed(() => {
+  return conversation.value.filter((item) => item.role === 'user' || item.role === 'assistant').slice(0, 5);
+});
 const isVoicePanelExpanded = computed(() => {
   if (!isFvsHost.value) return true;
   return (
     isSending.value ||
-    isAsrProcessing.value ||
     ttsPlayback.value === 'loading' ||
     ttsPlayback.value === 'playing' ||
-    ['wake_checking', 'recording', 'followup_listening', 'thinking', 'speaking'].includes(listeningState.value)
+    ['recording', 'followup_listening', 'thinking', 'speaking'].includes(listeningState.value)
   );
 });
 
@@ -213,6 +284,11 @@ const listeningStateLabel = computed(() => {
 
 const wakeWordsLabel = computed(() => wakeConfig.value.wake_words.join(' / '));
 
+const opsOverallStatus = computed<OpsStatus>(() => {
+  if (opsDependencies.value?.status) return opsDependencies.value.status;
+  return opsHealth.value?.status ?? 'unknown';
+});
+
 const followupLabel = computed(() => {
   const maxTurns = wakeConfig.value.settings.max_followup_turns;
   if (!wakeConfig.value.settings.followup_enabled || maxTurns <= 0) return '连续对话关闭';
@@ -224,7 +300,12 @@ const canUseManualVoice = computed(
 );
 
 onMounted(async () => {
+  window.addEventListener('popstate', syncMainViewFromLocation);
+  void getWakeGreetingAudioUrl();
   void getAcknowledgementAudioUrl();
+  if (fvsConfig.enabled && fvsConfig.mode === 'iframe') {
+    markFvsFrameLoading('FVS iframe 加载中。');
+  }
 
   try {
     const response = await fetchScreenActions();
@@ -243,14 +324,84 @@ onMounted(async () => {
     wakeConfig.value = DEFAULT_WAKE_CONFIG;
     pushSystemMessage('唤醒词配置读取失败，已使用本地默认配置。');
   }
+
+  try {
+    demoConfig.value = await fetchDemoConfig();
+  } catch (error) {
+    demoConfigError.value = error instanceof Error ? error.message : '演示配置读取失败';
+  }
+
+  if (activeView.value === 'ops') {
+    await loadOpsDashboard();
+  }
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('popstate', syncMainViewFromLocation);
+  clearFvsLoadTimer();
   stopBackgroundListening();
   stopRecording();
   stopMediaStream();
   cleanupAudio();
 });
+
+async function setMainView(view: MainView, updateUrl = true) {
+  activeView.value = view;
+  if (updateUrl) {
+    const nextPath = view === 'ops' ? '/ops' : '/';
+    const nextUrl = `${nextPath}${window.location.search}${window.location.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) {
+      window.history.pushState({}, '', nextUrl);
+    }
+  }
+  if (view === 'ops' && !opsHealth.value && !opsLoading.value) {
+    await loadOpsDashboard();
+  }
+}
+
+async function loadOpsDashboard() {
+  opsLoading.value = true;
+  opsErrorText.value = '';
+  try {
+    const [health, dependencies, sessions, errors, metrics] = await Promise.all([
+      fetchOpsHealth(),
+      fetchOpsDependencies(),
+      fetchOpsSessions(20),
+      fetchOpsErrors(30),
+      fetchOpsMetrics(),
+    ]);
+    opsHealth.value = health;
+    opsDependencies.value = dependencies;
+    opsSessions.value = sessions.sessions;
+    opsErrors.value = errors.errors;
+    opsMetrics.value = metrics;
+    opsLastUpdated.value = formatOpsTime(new Date().toISOString());
+  } catch (error) {
+    opsErrorText.value = error instanceof Error ? error.message : '运维数据读取失败';
+  } finally {
+    opsLoading.value = false;
+  }
+}
+
+async function exportOpsLogs() {
+  opsExporting.value = true;
+  opsErrorText.value = '';
+  try {
+    const content = await fetchOpsExport(80);
+    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `zt-ops-log-${new Date().toISOString().replace(/[:.]/g, '-')}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    opsErrorText.value = error instanceof Error ? error.message : '日志导出失败';
+  } finally {
+    opsExporting.value = false;
+  }
+}
 
 async function submitQuestion(
   textOverride?: string,
@@ -285,6 +436,7 @@ async function submitQuestion(
     conversation.value.unshift(assistantItem);
 
     let response: ChatResponse | null = null;
+    let earlyStreamingPlayback: Promise<AudioPlaybackResult> | null = null;
     try {
       await streamChat(requestPayload, {
         onDelta(delta) {
@@ -294,9 +446,6 @@ async function submitQuestion(
         },
         onTtsReady(segment) {
           addTtsSegment(assistantItem, segment);
-          if (options.awaitTts) {
-            void playConversationTts(assistantItem, { monitorPlayback: true });
-          }
         },
         onTtsError(payload) {
           assistantItem.tts = {
@@ -314,6 +463,13 @@ async function submitQuestion(
             ...(assistantItem.tts ?? { status: 'loading' }),
             streamEnded: true,
           };
+          if (options.awaitTts && !earlyStreamingPlayback) {
+            earlyStreamingPlayback = playStreamingTtsText(
+              streamResponse.speak_text,
+              '真流式 TTS',
+              true,
+            );
+          }
         },
       });
     } catch (streamError) {
@@ -338,12 +494,34 @@ async function submitQuestion(
       await applyFvsAction(executeResponse);
     }
 
+    if (options.awaitTts && earlyStreamingPlayback) {
+      const streamResult = await earlyStreamingPlayback;
+      if (streamResult === 'ended') {
+        assistantItem.tts = {
+          ...(assistantItem.tts ?? { status: 'ready' }),
+          status: 'ready',
+          label: '真流式 TTS',
+        };
+        finishMonitorTurn('播报完成，等待继续提问。');
+        if (!textOverride) {
+          inputText.value = '';
+        }
+        return assistantItem;
+      }
+      if (streamResult === 'interrupted') {
+        return assistantItem;
+      }
+    }
+
     if (assistantItem.tts?.segments?.length) {
       assistantItem.tts.streamEnded = true;
       assistantItem.tts.status = 'ready';
       assistantItem.tts.label = '分段 TTS';
       if (options.awaitTts) {
-        await playConversationTts(assistantItem, { monitorPlayback: true });
+        await playConversationTts(assistantItem, {
+          monitorPlayback: true,
+          preferStreaming: !earlyStreamingPlayback,
+        });
       }
     } else if (options.awaitTts) {
       await prepareTtsForItem(assistantItem);
@@ -605,6 +783,7 @@ async function processWakeSegment(audioBlob: Blob) {
       return;
     }
 
+    playWakeGreetingPrompt();
     startFollowupSession();
     const inlineCommand = stripWakeWord(response.text, matchedWakeWord);
     if (inlineCommand) {
@@ -844,6 +1023,26 @@ function normalizeWakeConfig(config: WakeConfigResponse): WakeConfigResponse {
   };
 }
 
+function getWakeGreetingAudioUrl(): Promise<string | null> {
+  if (wakeGreetingAudioUrl) return Promise.resolve(wakeGreetingAudioUrl);
+  if (wakeGreetingAudioPromise) return wakeGreetingAudioPromise;
+
+  wakeGreetingAudioPromise = synthesizeSpeech({
+    text: WAKE_GREETING_TEXT,
+    voice: 'longanyang',
+    format: 'mp3',
+  })
+    .then((response) => {
+      wakeGreetingAudioUrl = response.success && response.audio_url ? response.audio_url : null;
+      return wakeGreetingAudioUrl;
+    })
+    .catch(() => null)
+    .finally(() => {
+      wakeGreetingAudioPromise = null;
+    });
+  return wakeGreetingAudioPromise;
+}
+
 function getAcknowledgementAudioUrl(): Promise<string | null> {
   if (acknowledgementAudioUrl) return Promise.resolve(acknowledgementAudioUrl);
   if (acknowledgementAudioPromise) return acknowledgementAudioPromise;
@@ -864,30 +1063,42 @@ function getAcknowledgementAudioUrl(): Promise<string | null> {
   return acknowledgementAudioPromise;
 }
 
+function playWakeGreetingPrompt() {
+  ttsStatusText.value = WAKE_GREETING_TEXT;
+  enqueuePromptPlayback(WAKE_GREETING_TEXT, '唤醒提示', getWakeGreetingAudioUrl, () => listenerEnabled.value);
+}
+
 function playAcknowledgementPrompt() {
   setListeningState('thinking', '已收到，正在查找信息。');
   ttsStatusText.value = ACKNOWLEDGEMENT_TEXT;
-
-  if (acknowledgementAudioUrl) {
-    void playAudioUrl(acknowledgementAudioUrl, '等待提示');
-    return;
-  }
-
-  if (speakLocalAcknowledgement(ACKNOWLEDGEMENT_TEXT)) {
-    void getAcknowledgementAudioUrl();
-    return;
-  }
-
-  void getAcknowledgementAudioUrl().then((audioUrl) => {
-    if (audioUrl && isSending.value && !activeAudio && !activeSpeechUtterance) {
-      void playAudioUrl(audioUrl, '等待提示');
-    }
-  });
+  enqueuePromptPlayback(ACKNOWLEDGEMENT_TEXT, '等待提示', getAcknowledgementAudioUrl, () => !activeStreamPlayback);
 }
 
-function speakLocalAcknowledgement(text: string): boolean {
+function enqueuePromptPlayback(
+  text: string,
+  label: string,
+  getAudioUrl: () => Promise<string | null>,
+  shouldPlay: () => boolean,
+) {
+  promptPlaybackQueue = promptPlaybackQueue
+    .catch(() => undefined)
+    .then(async () => {
+      if (!shouldPlay() || activeAudio || activeSpeechUtterance || activeStreamPlayback) return;
+
+      const cachedAudioUrl = text === WAKE_GREETING_TEXT ? wakeGreetingAudioUrl : acknowledgementAudioUrl;
+      if (cachedAudioUrl) {
+        await playAudioUrl(cachedAudioUrl, label);
+        return;
+      }
+
+      void getAudioUrl();
+      await playLocalPrompt(text, label);
+    });
+}
+
+async function playLocalPrompt(text: string, label: string): Promise<AudioPlaybackResult> {
   if (!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') {
-    return false;
+    return 'blocked';
   }
 
   cleanupAudio();
@@ -895,24 +1106,49 @@ function speakLocalAcknowledgement(text: string): boolean {
   utterance.lang = 'zh-CN';
   activeSpeechUtterance = utterance;
   ttsPlayback.value = 'playing';
-  ttsStatusText.value = '等待提示播报中';
+  ttsStatusText.value = `${label}播报中`;
   voiceEnergy.value = 0.42;
-  utterance.onend = () => {
-    if (activeSpeechUtterance !== utterance) return;
-    activeSpeechUtterance = null;
-    voiceEnergy.value = 0;
-    ttsPlayback.value = 'idle';
-    ttsStatusText.value = '等待提示播报完成';
-  };
-  utterance.onerror = () => {
-    if (activeSpeechUtterance !== utterance) return;
-    activeSpeechUtterance = null;
-    voiceEnergy.value = 0;
-    ttsPlayback.value = 'idle';
-  };
+
+  const playbackResult = new Promise<'ended' | 'error'>((resolve) => {
+    utterance.onend = () => resolve('ended');
+    utterance.onerror = () => resolve('error');
+  });
+
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
-  return true;
+
+  const result = await Promise.race([playbackResult, waitForSpeechInterruption(utterance)]);
+  if (result === 'interrupted') {
+    return result;
+  }
+  if (result === 'ended') {
+    if (activeSpeechUtterance !== utterance) return 'interrupted';
+    activeSpeechUtterance = null;
+    voiceEnergy.value = 0;
+    ttsPlayback.value = 'idle';
+    ttsStatusText.value = `${label}播报完成`;
+    return result;
+  }
+  if (activeSpeechUtterance === utterance) {
+    activeSpeechUtterance = null;
+    voiceEnergy.value = 0;
+    ttsPlayback.value = 'error';
+    ttsStatusText.value = `${label}播放失败`;
+  }
+  return 'error';
+}
+
+function waitForSpeechInterruption(utterance: SpeechSynthesisUtterance): Promise<'interrupted'> {
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (activeSpeechUtterance !== utterance) {
+        resolve('interrupted');
+        return;
+      }
+      window.setTimeout(tick, 80);
+    };
+    window.setTimeout(tick, 80);
+  });
 }
 
 async function prepareTtsForItem(item: ConversationItem) {
@@ -962,11 +1198,103 @@ function addTtsSegment(item: ConversationItem, segment: ChatStreamTtsReady) {
     segments,
     nextSegmentIndex: current.nextSegmentIndex ?? 0,
   };
-  ttsPlayback.value = ttsPlayback.value === 'playing' ? 'playing' : 'idle';
-  ttsStatusText.value = `TTS 第 ${segment.index + 1} 段已就绪`;
+  if (!activeStreamPlayback) {
+    ttsPlayback.value = ttsPlayback.value === 'playing' || ttsPlayback.value === 'loading' ? ttsPlayback.value : 'idle';
+    ttsStatusText.value = `TTS 第 ${segment.index + 1} 段已就绪`;
+  }
+}
+
+async function playStreamingTtsText(
+  text: string,
+  label: string,
+  monitorPlayback = false,
+): Promise<AudioPlaybackResult> {
+  const trimmedText = text.trim();
+  const AudioContextCtor = getAudioContextCtor();
+  if (!trimmedText || !AudioContextCtor) return 'error';
+
+  cleanupAudio();
+  const streamPlayback = createPcmStreamPlayback(new AudioContextCtor());
+  activeStreamPlayback = streamPlayback;
+  audioContext = streamPlayback.audioContext;
+  ttsPlayback.value = 'loading';
+  ttsStatusText.value = '等待首个音频 chunk';
+
+  try {
+    await streamPlayback.audioContext.resume();
+    startStreamVoiceMeter(streamPlayback);
+
+    let receivedAudio = false;
+    let streamError = '';
+    const endPayload = await streamSpeech(
+      {
+        text: trimmedText,
+        voice: 'longanyang',
+        format: 'pcm',
+      },
+      {
+        onMetadata(metadata) {
+          if (activeStreamPlayback !== streamPlayback) return;
+          ttsStatusText.value = `${metadata.mock ? 'Mock ' : ''}${label} 已连接`;
+        },
+        onAudioChunk(chunk) {
+          if (activeStreamPlayback !== streamPlayback) return;
+          schedulePcmAudioChunk(streamPlayback, chunk);
+          if (!receivedAudio) {
+            receivedAudio = true;
+            ttsPlayback.value = 'playing';
+            ttsStatusText.value = `${label} 播报中`;
+            if (monitorPlayback) {
+              setListeningState('speaking', '正在播报回复。');
+            }
+          }
+        },
+        onTtsError(payload) {
+          streamError = payload.message || 'TTS 真流式失败';
+        },
+      },
+    );
+
+    if (activeStreamPlayback !== streamPlayback) return 'interrupted';
+    if (!endPayload.ok || streamError) {
+      throw new Error(streamError || 'TTS 真流式失败');
+    }
+    if (!receivedAudio) {
+      throw new Error('TTS 真流式未返回音频');
+    }
+
+    await waitForPcmStreamPlaybackEnd(streamPlayback);
+    if (activeStreamPlayback !== streamPlayback) return 'interrupted';
+    cleanupAudio();
+    ttsPlayback.value = 'idle';
+    ttsStatusText.value = '播报完成';
+    return 'ended';
+  } catch (error) {
+    if (activeStreamPlayback !== streamPlayback) return 'interrupted';
+    cleanupAudio();
+    if (error instanceof Error && error.name === 'NotAllowedError') {
+      ttsPlayback.value = 'idle';
+      ttsStatusText.value = '音频已就绪';
+      return 'blocked';
+    }
+    ttsPlayback.value = 'error';
+    ttsStatusText.value = error instanceof Error ? error.message : 'TTS 真流式失败';
+    return 'error';
+  }
 }
 
 async function playConversationTts(item: ConversationItem, options: PlaybackOptions = {}) {
+  if (options.preferStreaming !== false) {
+    const streamResult = await playStreamingTtsText(item.text, '真流式 TTS', options.monitorPlayback);
+    if (streamResult === 'ended') {
+      if (options.monitorPlayback) {
+        finishMonitorTurn('播报完成，等待继续提问。');
+      }
+      return;
+    }
+    if (streamResult === 'interrupted') return;
+  }
+
   if (item.tts?.segments?.length) {
     await playSegmentedConversationTts(item, options);
     return;
@@ -1083,6 +1411,87 @@ function waitForAudioInterruption(audio: HTMLAudioElement): Promise<'interrupted
   });
 }
 
+function createPcmStreamPlayback(context: AudioContext): PcmStreamPlayback {
+  const analyser = context.createAnalyser();
+  analyser.fftSize = 128;
+  analyser.connect(context.destination);
+  const playback: PcmStreamPlayback = {
+    id: crypto.randomUUID(),
+    audioContext: context,
+    analyser,
+    activeSources: new Set<AudioBufferSourceNode>(),
+    stopped: false,
+    nextStartTime: 0,
+    stop() {
+      playback.stopped = true;
+      playback.activeSources.forEach((source) => {
+        try {
+          source.stop();
+        } catch {
+          // Source may already have ended.
+        }
+      });
+      playback.activeSources.clear();
+      playback.analyser.disconnect();
+      if (playback.audioContext.state !== 'closed') {
+        void playback.audioContext.close();
+      }
+    },
+  };
+  return playback;
+}
+
+function schedulePcmAudioChunk(playback: PcmStreamPlayback, chunk: TtsStreamAudioChunk) {
+  if (chunk.format !== 'pcm') {
+    throw new Error('当前浏览器流式播放器仅支持 PCM 音频。');
+  }
+  const bytes = base64ToBytes(chunk.audio_base64);
+  const frameCount = Math.floor(bytes.byteLength / 2);
+  if (frameCount <= 0) return;
+
+  const sampleRate = chunk.sample_rate || 16_000;
+  const dataView = new DataView(bytes.buffer, bytes.byteOffset, frameCount * 2);
+  const audioBuffer = playback.audioContext.createBuffer(1, frameCount, sampleRate);
+  const channel = audioBuffer.getChannelData(0);
+  for (let index = 0; index < frameCount; index += 1) {
+    channel[index] = dataView.getInt16(index * 2, true) / 32768;
+  }
+
+  const source = playback.audioContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(playback.analyser);
+  source.onended = () => {
+    playback.activeSources.delete(source);
+  };
+  const startAt = Math.max(playback.audioContext.currentTime + 0.04, playback.nextStartTime || 0);
+  playback.nextStartTime = startAt + audioBuffer.duration;
+  playback.activeSources.add(source);
+  source.start(startAt);
+}
+
+async function waitForPcmStreamPlaybackEnd(playback: PcmStreamPlayback) {
+  while (
+    !playback.stopped &&
+    activeStreamPlayback === playback &&
+    (playback.activeSources.size > 0 || playback.audioContext.currentTime + 0.05 < playback.nextStartTime)
+  ) {
+    await wait(50);
+  }
+}
+
+function startStreamVoiceMeter(playback: PcmStreamPlayback) {
+  const data = new Uint8Array(playback.analyser.frequencyBinCount);
+  const tick = () => {
+    playback.analyser.getByteFrequencyData(data);
+    const average = data.reduce((sum, value) => sum + value, 0) / data.length;
+    voiceEnergy.value = Math.min(1, average / 96);
+    if (activeStreamPlayback === playback && !playback.stopped) {
+      analyserFrame = requestAnimationFrame(tick);
+    }
+  };
+  tick();
+}
+
 function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -1097,6 +1506,9 @@ async function applyFvsAction(result: ScreenExecuteResponse) {
 
   if (result.success && action) {
     activeActionId.value = action.id;
+    if (fvsConfig.enabled && fvsConfig.mode === 'iframe') {
+      markFvsFrameLoading(`正在切换到 ${action.label}。`);
+    }
     adapterResult = executeFvsAdapterAction(action, fvsConfig, fvsFrame.value);
     if (!adapterResult.success) {
       pushSystemMessage(`FVS 动作未发送：${adapterResult.message}`);
@@ -1126,12 +1538,115 @@ function fillAsrDemo(text: string) {
   asrMockText.value = text;
 }
 
+function demoButtonLabel(question: DemoQuestion, index: number): string {
+  const labels: Record<string, string> = {
+    leader: '领导',
+    knowledge: '知识',
+    data: '问数',
+    screen_control: '控屏',
+    wakeup: '唤醒',
+  };
+  const category = String(question.category || '');
+  return labels[category] ?? `演示${index + 1}`;
+}
+
+function handleFvsFrameLoad() {
+  clearFvsLoadTimer();
+  fvsLoadState.value = 'ready';
+  fvsLoadText.value = 'FVS 看板已加载。';
+}
+
+function handleFvsFrameError() {
+  clearFvsLoadTimer();
+  fvsLoadState.value = 'error';
+  fvsLoadText.value = 'FVS 看板加载失败，请检查 FVS 地址、同源代理或 iframe 策略。';
+  pushSystemMessage(fvsLoadText.value);
+}
+
+function markFvsFrameLoading(text: string) {
+  clearFvsLoadTimer();
+  fvsLoadState.value = 'loading';
+  fvsLoadText.value = text;
+  fvsLoadTimer = window.setTimeout(() => {
+    if (fvsLoadState.value !== 'loading') return;
+    fvsLoadState.value = 'error';
+    fvsLoadText.value = 'FVS 看板加载超时，请检查 FVS 服务、同源代理或浏览器 iframe 限制。';
+    pushSystemMessage(fvsLoadText.value);
+  }, FVS_LOAD_TIMEOUT_MS);
+}
+
+function clearFvsLoadTimer() {
+  if (fvsLoadTimer !== null) {
+    clearTimeout(fvsLoadTimer);
+    fvsLoadTimer = null;
+  }
+}
+
+function opsStatusText(status?: OpsStatus | null): string {
+  const labels: Record<OpsStatus, string> = {
+    ok: '正常',
+    warning: '关注',
+    error: '异常',
+    unknown: '未知',
+  };
+  return labels[status ?? 'unknown'];
+}
+
+function formatOpsLatency(value?: number | null): string {
+  if (value === null || value === undefined) return '-';
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}s`;
+  return `${value}ms`;
+}
+
+function formatOpsTime(value?: string | null): string {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(parsed);
+}
+
+function sessionErrorText(session: OpsSessionSummary): string {
+  if (!session.last_error) return '';
+  const code = String(session.last_error.code ?? 'ERROR');
+  const message = String(session.last_error.message ?? '未记录错误摘要');
+  return `${code}: ${message}`;
+}
+
 function pushSystemMessage(text: string) {
   conversation.value.unshift({
     id: crypto.randomUUID(),
     role: 'system',
     text,
   });
+}
+
+function getInitialMainView(): MainView {
+  return getMainViewFromLocation();
+}
+
+function getMainViewFromLocation(): MainView {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  return path === '/ops' ? 'ops' : 'chat';
+}
+
+function syncMainViewFromLocation() {
+  void setMainView(getMainViewFromLocation(), false);
+}
+
+function getRuntimeDemoStableMode(): boolean {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('demo_mode') === 'stable' || isTruthyEnv(params.get('demoStable'));
+}
+
+function isTruthyEnv(value: unknown): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on', 'stable'].includes(normalized);
 }
 
 function describeMediaError(error: unknown, fallback: string): string {
@@ -1209,6 +1724,10 @@ function cleanupAudio() {
     activeAudio.load();
     activeAudio = null;
   }
+  if (activeStreamPlayback) {
+    activeStreamPlayback.stop();
+    activeStreamPlayback = null;
+  }
   if (audioContext && audioContext.state !== 'closed') {
     void audioContext.close();
   }
@@ -1259,6 +1778,15 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.onerror = () => reject(new Error('音频读取失败'));
     reader.readAsDataURL(blob);
   });
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = window.atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 function mergeSamples(chunks: Float32Array[]): Float32Array {
@@ -1324,19 +1852,172 @@ function writeAscii(view: DataView, offset: number, value: string) {
 </script>
 
 <template>
-  <main class="app-shell" :class="{ 'fvs-host-shell': isFvsHost }">
-    <section class="workspace" :class="{ 'fvs-web-frame': isFvsWebFrame, 'fvs-host': isFvsHost }">
+  <main class="app-shell" :class="{ 'fvs-host-shell': isFvsHost && !isOpsView }">
+    <section
+      class="workspace"
+      :class="{
+        'fvs-web-frame': isFvsWebFrame && !isOpsView,
+        'fvs-host': isFvsHost && !isOpsView,
+        'ops-mode': isOpsView,
+      }"
+    >
       <div class="stage">
-        <div v-if="!isFvsHost" class="stage-topline">
+        <div v-if="!isFvsHost || isOpsView" class="stage-topline">
           <div>
             <p class="eyebrow">ZT Party Building POC</p>
             <h1>党建大屏数字人语音闭环</h1>
           </div>
-          <span class="status-pill" :class="apiStatus">{{ statusText }}</span>
+          <div class="stage-actions">
+            <div class="view-switch" aria-label="Main view">
+              <button type="button" :class="{ active: activeView === 'chat' }" @click="setMainView('chat')">
+                演示
+              </button>
+              <button type="button" :class="{ active: activeView === 'ops' }" @click="setMainView('ops')">
+                运维
+              </button>
+            </div>
+            <span v-if="isDemoStableMode" class="status-pill demo">演示稳态</span>
+            <span class="status-pill" :class="apiStatus">{{ statusText }}</span>
+          </div>
         </div>
 
+        <section v-if="isOpsView" class="ops-dashboard" aria-label="运维监控和日志看板">
+          <div class="ops-toolbar">
+            <div>
+              <span class="ops-kicker">Ops Monitor</span>
+              <strong>运维监控和日志看板</strong>
+            </div>
+            <div class="ops-toolbar-actions">
+              <span class="ops-status-chip" :class="opsOverallStatus">{{ opsStatusText(opsOverallStatus) }}</span>
+              <button type="button" :disabled="opsLoading" @click="loadOpsDashboard">
+                {{ opsLoading ? '刷新中' : '刷新' }}
+              </button>
+              <button type="button" :disabled="opsExporting" @click="exportOpsLogs">
+                {{ opsExporting ? '导出中' : '导出日志' }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="opsErrorText" class="ops-alert">{{ opsErrorText }}</div>
+
+          <div class="ops-summary">
+            <div>
+              <span>客户</span>
+              <strong>{{ opsHealth?.customer_id ?? '-' }}</strong>
+            </div>
+            <div>
+              <span>会话</span>
+              <strong>{{ opsMetrics?.total_sessions ?? 0 }}</strong>
+            </div>
+            <div>
+              <span>事件</span>
+              <strong>{{ opsMetrics?.total_events ?? 0 }}</strong>
+            </div>
+            <div>
+              <span>错误</span>
+              <strong>{{ opsMetrics?.error_events ?? 0 }}</strong>
+            </div>
+            <div>
+              <span>平均耗时</span>
+              <strong>{{ formatOpsLatency(opsMetrics?.avg_latency_ms) }}</strong>
+            </div>
+            <div>
+              <span>更新时间</span>
+              <strong>{{ opsLastUpdated || formatOpsTime(opsHealth?.time) }}</strong>
+            </div>
+          </div>
+
+          <div class="ops-section">
+            <div class="ops-section-title">
+              <span>依赖状态</span>
+              <small>Dora / RAGFlow / FVS / ASR / TTS</small>
+            </div>
+            <div class="dependency-grid">
+              <article
+                v-for="dependency in opsDependencies?.dependencies ?? []"
+                :key="dependency.name"
+                class="dependency-item"
+              >
+                <div>
+                  <strong>{{ dependency.label }}</strong>
+                  <span class="ops-status-chip" :class="dependency.status">
+                    {{ opsStatusText(dependency.status) }}
+                  </span>
+                </div>
+                <p>{{ dependency.message }}</p>
+                <small>{{ formatOpsLatency(dependency.latency_ms) }} · {{ formatOpsTime(dependency.checked_at) }}</small>
+              </article>
+              <div v-if="!opsDependencies?.dependencies.length" class="ops-empty">暂无依赖状态</div>
+            </div>
+          </div>
+
+          <div class="ops-grid">
+            <section class="ops-section">
+              <div class="ops-section-title">
+                <span>最近会话</span>
+                <small>{{ opsSessions.length }} sessions</small>
+              </div>
+              <div class="ops-list">
+                <article v-for="session in opsSessions" :key="session.session_id" class="ops-row">
+                  <div>
+                    <strong>{{ session.session_id }}</strong>
+                    <span>{{ session.last_user_text || '无输入摘要' }}</span>
+                    <small v-if="session.last_error">{{ sessionErrorText(session) }}</small>
+                  </div>
+                  <div>
+                    <code>{{ session.last_intent_type }}</code>
+                    <small>{{ session.turns }} 条 · {{ formatOpsLatency(session.last_latency_ms) }}</small>
+                    <small>{{ formatOpsTime(session.last_message_at) }}</small>
+                  </div>
+                </article>
+                <div v-if="opsSessions.length === 0" class="ops-empty">暂无会话日志</div>
+              </div>
+            </section>
+
+            <section class="ops-section">
+              <div class="ops-section-title">
+                <span>错误列表</span>
+                <small>{{ opsErrors.length }} errors</small>
+              </div>
+              <div class="ops-list">
+                <article v-for="error in opsErrors" :key="error.id" class="ops-row error">
+                  <div>
+                    <strong>{{ error.code }}</strong>
+                    <span>{{ error.message }}</span>
+                    <small>{{ error.user_text || error.session_id }}</small>
+                  </div>
+                  <div>
+                    <code>{{ error.intent_type }}</code>
+                    <small>{{ formatOpsLatency(error.latency_total_ms) }}</small>
+                    <small>{{ formatOpsTime(error.created_at) }}</small>
+                  </div>
+                </article>
+                <div v-if="opsErrors.length === 0" class="ops-empty">暂无错误记录</div>
+              </div>
+            </section>
+          </div>
+
+          <div class="ops-section">
+            <div class="ops-section-title">
+              <span>耗时指标</span>
+              <small>P50 {{ formatOpsLatency(opsMetrics?.p50_latency_ms) }} / P95 {{ formatOpsLatency(opsMetrics?.p95_latency_ms) }}</small>
+            </div>
+            <div class="latency-grid">
+              <article v-for="bucket in opsMetrics?.by_intent ?? []" :key="bucket.name" class="latency-item">
+                <div>
+                  <strong>{{ bucket.name }}</strong>
+                  <small>{{ bucket.count }} 条</small>
+                </div>
+                <span>{{ formatOpsLatency(bucket.avg_latency_ms) }}</span>
+                <small>max {{ formatOpsLatency(bucket.max_latency_ms) }} · errors {{ bucket.error_count }}</small>
+              </article>
+              <div v-if="!opsMetrics?.by_intent.length" class="ops-empty">暂无耗时数据</div>
+            </div>
+          </div>
+        </section>
+
         <div
-          v-if="!isFvsWebFrame"
+          v-else-if="!isFvsWebFrame"
           class="screen-frame"
           :class="{ 'real-fvs': fvsConfig.enabled && fvsConfig.mode === 'iframe' }"
         >
@@ -1344,15 +2025,22 @@ function writeAscii(view: DataView, offset: number, value: string) {
             <span>{{ fvsModeLabel }}</span>
             <strong>{{ activeAction?.label ?? '未选择' }}</strong>
           </div>
-          <iframe
-            v-if="fvsConfig.enabled && fvsConfig.mode === 'iframe'"
-            ref="fvsFrame"
-            class="fvs-iframe"
-            :src="fvsConfig.url"
-            title="FVS Screen"
-            allow="fullscreen"
-            referrerpolicy="no-referrer-when-downgrade"
-          ></iframe>
+          <template v-if="fvsConfig.enabled && fvsConfig.mode === 'iframe'">
+            <iframe
+              ref="fvsFrame"
+              class="fvs-iframe"
+              :src="fvsConfig.url"
+              title="FVS Screen"
+              allow="fullscreen"
+              referrerpolicy="no-referrer-when-downgrade"
+              @load="handleFvsFrameLoad"
+              @error="handleFvsFrameError"
+            ></iframe>
+            <div v-if="fvsLoadState === 'error'" class="fvs-fallback">
+              <strong>FVS 看板暂不可用</strong>
+              <span>{{ fvsLoadText }}</span>
+            </div>
+          </template>
           <template v-else>
             <div class="screen-tabs">
               <button
@@ -1389,7 +2077,7 @@ function writeAscii(view: DataView, offset: number, value: string) {
           </template>
         </div>
 
-        <div v-if="!isFvsHost" class="voice-monitor" :class="ttsPlayback" :style="voiceStyle">
+        <div v-if="!isFvsHost && !isOpsView" class="voice-monitor" :class="ttsPlayback" :style="voiceStyle">
           <div>
             <span>语音播报</span>
             <strong>{{ ttsStatusText }}</strong>
@@ -1399,13 +2087,13 @@ function writeAscii(view: DataView, offset: number, value: string) {
           </div>
         </div>
 
-        <div v-if="!isFvsHost" class="fvs-log">
+        <div v-if="!isFvsHost && !isOpsView" class="fvs-log">
           <span>最近动作</span>
           <strong>{{ latestFvsEvent?.label ?? '暂无执行记录' }}</strong>
           <code>{{ fvsLogCode }}</code>
         </div>
 
-        <div v-if="!isFvsHost" class="screen-action-row" aria-label="FVS page actions">
+        <div v-if="!isFvsHost && !isOpsView" class="screen-action-row" aria-label="FVS page actions">
           <button
             v-for="action in actions"
             :key="action.id"
@@ -1419,7 +2107,7 @@ function writeAscii(view: DataView, offset: number, value: string) {
         </div>
       </div>
 
-      <div class="conversation-panel" :class="{ compact: !isVoicePanelExpanded, expanded: isVoicePanelExpanded }">
+      <div v-if="!isOpsView" class="conversation-panel" :class="{ compact: !isVoicePanelExpanded, expanded: isVoicePanelExpanded }">
         <button
           v-if="!isVoicePanelExpanded"
           class="voice-orb-button"
@@ -1432,6 +2120,15 @@ function writeAscii(view: DataView, offset: number, value: string) {
           <span class="voice-orb-rings" aria-hidden="true"></span>
           <span class="mic-symbol" aria-hidden="true"><i></i></span>
         </button>
+
+        <template v-else-if="isFvsHost">
+          <div class="fvs-comment-stream" aria-live="polite">
+            <article v-for="item in fvsConversationItems" :key="item.id" class="fvs-comment" :class="item.role">
+              <span>{{ item.role === 'user' ? '识别' : '数字人' }}</span>
+              <p>{{ item.text }}</p>
+            </article>
+          </div>
+        </template>
 
         <template v-else>
         <form v-if="!isFvsHost" class="chat-form" @submit.prevent="submitQuestion()">
@@ -1491,10 +2188,14 @@ function writeAscii(view: DataView, offset: number, value: string) {
         </div>
 
         <div v-if="!isFvsHost" class="demo-row" aria-label="Demo questions">
-          <button type="button" @click="fillDemo('返回总览')">输入总览</button>
-          <button type="button" @click="fillDemo('请切换到成品库存页面')">输入库存</button>
-          <button type="button" @click="fillDemo('请切换到生产管理页面')">输入生产</button>
-          <button type="button" @click="fillAsrDemo('请切换到设备分析页面')">ASR 设备</button>
+          <button
+            v-for="(question, index) in demoQuestions"
+            :key="question.id || `${question.text}-${index}`"
+            type="button"
+            @click="fillDemo(question.text || '')"
+          >
+            {{ demoButtonLabel(question, index) }}
+          </button>
           <button type="button" @click="fillAsrDemo('小天小天，请切换到成品库存页面')">ASR 唤醒</button>
         </div>
 

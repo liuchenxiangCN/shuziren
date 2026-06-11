@@ -1,0 +1,23 @@
+version: 0.8.0
+description: 中天证券 POC 脱敏 Excel 问数数据源映射。
+mode: excel
+data_dir: docs/demo_data/ask_metrics
+
+workbooks:
+  study:
+    file: zt_party_study_metrics_2026.xlsx
+    sheets:
+      dashboard: Dashboard
+      branch_summary: 支部汇总
+
+  org_life:
+    file: zt_party_org_life_metrics_2026.xlsx
+    sheets:
+      dashboard: Dashboard
+
+  development:
+    file: zt_party_development_metrics_2026.xlsx
+    sheets:
+      dashboard: Dashboard
+      detail: 发展对象明细
+      branch_summary: 支部汇总

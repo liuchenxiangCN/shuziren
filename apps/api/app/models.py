@@ -79,6 +79,15 @@ class WakeConfigResponse(BaseModel):
     settings: WakeSettings = Field(default_factory=WakeSettings)
 
 
+class DemoConfigResponse(BaseModel):
+    stable_mode: bool
+    customer_id: str
+    ask_metrics_mode: str
+    mock: dict[str, bool]
+    questions: list[dict[str, Any]]
+    notice: str
+
+
 class TtsSynthesizeRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     voice: str | None = Field(default=None, max_length=80)
@@ -125,3 +134,104 @@ class ScreenExecuteResponse(BaseModel):
     speak_text: str
     request_id: str | None = None
     error: ErrorDetail | None = None
+
+
+OpsStatus = Literal["ok", "warning", "error", "unknown"]
+
+
+class OpsHealthResponse(BaseModel):
+    status: OpsStatus
+    app: str
+    version: str
+    customer_id: str
+    time: str
+
+
+class OpsDependencyStatus(BaseModel):
+    name: str
+    label: str
+    status: OpsStatus
+    latency_ms: int | None = None
+    message: str = ""
+    checked_at: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class OpsDependenciesResponse(BaseModel):
+    status: OpsStatus
+    dependencies: list[OpsDependencyStatus]
+
+
+class OpsSessionSummary(BaseModel):
+    session_id: str
+    last_message_at: str
+    turns: int
+    last_intent_type: str
+    last_user_text: str | None = None
+    last_error: dict[str, Any] | None = None
+    last_latency_ms: int | None = None
+
+
+class OpsSessionsResponse(BaseModel):
+    sessions: list[OpsSessionSummary]
+
+
+class OpsSessionEvent(BaseModel):
+    id: int
+    session_id: str
+    message_id: str
+    created_at: str
+    user_text: str | None = None
+    intent_type: str
+    response_summary: str | None = None
+    screen_action: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+    latency_total_ms: int
+
+
+class OpsSessionDetailResponse(BaseModel):
+    session_id: str
+    events: list[OpsSessionEvent]
+
+
+class OpsErrorItem(BaseModel):
+    id: int
+    session_id: str
+    message_id: str
+    created_at: str
+    intent_type: str
+    code: str
+    message: str
+    user_text: str | None = None
+    latency_total_ms: int
+
+
+class OpsErrorsResponse(BaseModel):
+    errors: list[OpsErrorItem]
+
+
+class OpsLatencyBucket(BaseModel):
+    name: str
+    count: int
+    avg_latency_ms: int | None = None
+    max_latency_ms: int | None = None
+    error_count: int
+
+
+class OpsLatencySample(BaseModel):
+    created_at: str
+    session_id: str
+    intent_type: str
+    latency_total_ms: int
+
+
+class OpsMetricsResponse(BaseModel):
+    total_events: int
+    total_sessions: int
+    error_events: int
+    avg_latency_ms: int | None = None
+    p50_latency_ms: int | None = None
+    p95_latency_ms: int | None = None
+    max_latency_ms: int | None = None
+    by_intent: list[OpsLatencyBucket]
+    recent_latency: list[OpsLatencySample]

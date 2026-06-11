@@ -1,0 +1,20 @@
+version: 0.8.0
+mode: semantic
+wake_words:
+  - 小天小天
+  - 中天小天
+  - 你好小天
+settings:
+  min_audio_ms: 800
+  max_audio_ms: 5000
+  silence_ms: 700
+  cooldown_ms: 1500
+  command_timeout_ms: 8000
+  followup_enabled: true
+  followup_window_ms: 12000
+  max_followup_turns: 3
+  vad_threshold: 0.018
+  require_exact_phrase: false
+notes:
+  - 第一阶段使用 VAD + ASR 语义唤醒, 不是严格本地 KWS。
+  - 唤醒后开启短时连续对话窗口, 超时或达到轮数后回到唤醒监听。

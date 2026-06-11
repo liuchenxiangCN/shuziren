@@ -44,6 +44,34 @@ export interface ChatStreamTtsReady {
   mock: boolean;
 }
 
+export interface TtsStreamMetadata {
+  provider: string;
+  voice: string;
+  format: string;
+  mime_type: string;
+  sample_rate: number;
+  mock: boolean;
+  fallback?: string;
+}
+
+export interface TtsStreamAudioChunk {
+  index: number;
+  audio_base64: string;
+  mime_type: string;
+  provider: string;
+  format: string;
+  sample_rate: number;
+  duration_ms?: number | null;
+  mock: boolean;
+}
+
+export interface TtsStreamEnd {
+  ok: boolean;
+  chunks: number;
+  duration_ms?: number | null;
+  fallback?: string;
+}
+
 export interface ScreenAction {
   id: string;
   label: string;
@@ -95,6 +123,22 @@ export interface WakeConfigResponse {
   settings: WakeSettings;
 }
 
+export interface DemoQuestion {
+  id?: string;
+  text?: string;
+  category?: string;
+  expected?: string;
+}
+
+export interface DemoConfigResponse {
+  stable_mode: boolean;
+  customer_id: string;
+  ask_metrics_mode: string;
+  mock: Record<string, boolean>;
+  questions: DemoQuestion[];
+  notice: string;
+}
+
 export interface TtsSynthesizeRequest {
   text: string;
   voice?: string | null;
@@ -119,4 +163,86 @@ export interface ScreenExecuteResponse {
   speak_text: string;
   request_id?: string | null;
   error?: ErrorDetail | null;
+}
+
+export type OpsStatus = 'ok' | 'warning' | 'error' | 'unknown';
+
+export interface OpsHealthResponse {
+  status: OpsStatus;
+  app: string;
+  version: string;
+  customer_id: string;
+  time: string;
+}
+
+export interface OpsDependencyStatus {
+  name: string;
+  label: string;
+  status: OpsStatus;
+  latency_ms?: number | null;
+  message: string;
+  checked_at: string;
+  details: Record<string, unknown>;
+}
+
+export interface OpsDependenciesResponse {
+  status: OpsStatus;
+  dependencies: OpsDependencyStatus[];
+}
+
+export interface OpsSessionSummary {
+  session_id: string;
+  last_message_at: string;
+  turns: number;
+  last_intent_type: string;
+  last_user_text?: string | null;
+  last_error?: Record<string, unknown> | null;
+  last_latency_ms?: number | null;
+}
+
+export interface OpsSessionsResponse {
+  sessions: OpsSessionSummary[];
+}
+
+export interface OpsErrorItem {
+  id: number;
+  session_id: string;
+  message_id: string;
+  created_at: string;
+  intent_type: string;
+  code: string;
+  message: string;
+  user_text?: string | null;
+  latency_total_ms: number;
+}
+
+export interface OpsErrorsResponse {
+  errors: OpsErrorItem[];
+}
+
+export interface OpsLatencyBucket {
+  name: string;
+  count: number;
+  avg_latency_ms?: number | null;
+  max_latency_ms?: number | null;
+  error_count: number;
+}
+
+export interface OpsLatencySample {
+  created_at: string;
+  session_id: string;
+  intent_type: string;
+  latency_total_ms: number;
+}
+
+export interface OpsMetricsResponse {
+  total_events: number;
+  total_sessions: number;
+  error_events: number;
+  avg_latency_ms?: number | null;
+  p50_latency_ms?: number | null;
+  p95_latency_ms?: number | null;
+  max_latency_ms?: number | null;
+  by_intent: OpsLatencyBucket[];
+  recent_latency: OpsLatencySample[];
 }

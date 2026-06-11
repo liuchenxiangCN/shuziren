@@ -1,0 +1,9 @@
+version: 0.8.0
+agent_name: 中天证券党建大屏语音助手
+agent_id: ""
+channel_type: feishu
+chat_mode: sse
+timeout_seconds: 60
+notes:
+  - Dora API Key 只能通过 DORA_API_KEY 环境变量提供。
+  - 如客户现场 Dora 地址不同, 优先在 .env 中配置 DORA_BASE_URL。

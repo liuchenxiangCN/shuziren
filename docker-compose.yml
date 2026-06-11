@@ -10,6 +10,9 @@ services:
       APP_NAME: ${APP_NAME:-zt-digital-human-api}
       APP_VERSION: ${APP_VERSION:-0.1.0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CUSTOMER_ID: ${CUSTOMER_ID:-zt-securities}
+      CUSTOMER_CONFIG_DIR: ${CUSTOMER_CONFIG_DIR:-/app/config/customers/zt-securities}
+      DEMO_STABLE_MODE: ${DEMO_STABLE_MODE:-false}
       TZ: ${TZ:-Asia/Shanghai}
       DORA_BASE_URL: ${DORA_BASE_URL:-}
       DORA_API_KEY: ${DORA_API_KEY:-}
@@ -31,14 +34,13 @@ services:
       TTS_MODEL: ${TTS_MODEL:-cosyvoice-v3-flash}
       TTS_VOICE: ${TTS_VOICE:-longanyang}
       TTS_AUDIO_FORMAT: ${TTS_AUDIO_FORMAT:-mp3}
+      TTS_STREAMING_ENABLED: ${TTS_STREAMING_ENABLED:-true}
+      TTS_STREAMING_FALLBACK: ${TTS_STREAMING_FALLBACK:-segment}
+      TTS_STREAMING_AUDIO_FORMAT: ${TTS_STREAMING_AUDIO_FORMAT:-pcm}
       TTS_WS_URL: ${TTS_WS_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/inference}
       TTS_SAMPLE_RATE: ${TTS_SAMPLE_RATE:-22050}
       TTS_TIMEOUT_SECONDS: ${TTS_TIMEOUT_SECONDS:-30}
-      ACTION_WHITELIST_PATH: /app/config/screen-actions.yaml
-      DEMO_CASES_PATH: /app/config/demo-cases.yaml
-      WAKE_WORDS_PATH: /app/config/wake-words.yaml
-      ASK_METRICS_DATA_DIR: /app/docs/demo_data/ask_metrics
-      ASK_METRICS_CONFIG_PATH: /app/config/ask-metrics.yaml
+      ASK_METRICS_MODE: ${ASK_METRICS_MODE:-excel}
       SQLITE_PATH: /app/data/sessions.db
       TTS_CACHE_DIR: /app/data/tts-cache
       ENABLE_MOCK_DORA: ${ENABLE_MOCK_DORA:-true}
@@ -62,6 +64,7 @@ services:
         VITE_FVS_URL: ${VITE_FVS_URL:-}
         VITE_FVS_INTEGRATION_MODE: ${VITE_FVS_INTEGRATION_MODE:-mock}
         VITE_FVS_TARGET_ORIGIN: ${VITE_FVS_TARGET_ORIGIN:-}
+        VITE_DEMO_STABLE_MODE: ${VITE_DEMO_STABLE_MODE:-false}
     image: zt-digital-human-web:0.1.0
     container_name: zt-digital-human-web
     depends_on:

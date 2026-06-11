@@ -1,0 +1,12 @@
+version: 0.8.0
+base_url: http://host.docker.internal:9380
+mcp_url: http://host.docker.internal:9382/mcp
+dataset_name: zt_party_building_demo
+retrieval:
+  keyword: false
+  page_size: 3
+  top_k: 16
+  similarity_threshold: 0.35
+notes:
+  - RAGFlow API Key 不写入 YAML, 仅放本地 .env 或 RAGFlow 部署环境。
+  - 当前 V0.5/V0.8 第一阶段仍由 Dora 直接配置并调用 MCP。

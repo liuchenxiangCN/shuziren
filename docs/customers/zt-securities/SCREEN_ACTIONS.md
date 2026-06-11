@@ -1,6 +1,6 @@
 # FVS 测试看板动作
 
-本文件记录 V0.6 已验收的真实 FVS iframe 动作白名单。实际执行配置已同步到 `config/screen-actions.yaml`。本轮测试看板为食品工厂管理看板, 页面编号来自 FVS URL 参数 `page_number`。
+本文件记录 V0.6 已验收的真实 FVS iframe 动作白名单。V0.8 起实际执行配置优先来自 `config/customers/zt-securities/screen-actions.yaml`, 根目录 `config/screen-actions.yaml` 仍作为默认模板。本轮测试看板为食品工厂管理看板, 页面编号来自 FVS URL 参数 `page_number`。
 
 ## 当前动作
 
