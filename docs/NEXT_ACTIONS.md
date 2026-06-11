@@ -4,6 +4,12 @@
 
 V1.0 POC 验收交付版已输出。
 
+2026-06-11 已补充客户汇报用项目管理计划和实施甘特图 Excel: `outputs/customer-report-20260617/zt_project_plan_gantt_20260610_0630.xlsx`。该材料按用户指定的客户汇报口径, 将 `2026-06-10` 到 `2026-06-17` 表述为已完成 Mock 链路联调与端到端流程验证, 将 `2026-06-18` 到 `2026-06-30` 表述为自定义新闻爬虫及导入知识库、RAGFlow 知识库调用、性能优化、安全优化、测试验收上线的专项计划。`2026-06-13`、`2026-06-14`、`2026-06-19`、`2026-06-20`、`2026-06-21`、`2026-06-27`、`2026-06-28` 在材料中标为非工作日, 仅保留风险响应 / 问题跟进。
+
+2026-06-11 针对普通唤醒完全无法触发的问题完成热修: 前端 VAD 增加连续两帧超过阈值才正式开始收音的启动确认, 避免单帧环境 / 外放噪声触发空 ASR; 普通唤醒 `vad_threshold` 从 0.014 回调到 0.018, 播报中 `barge_in_vad_threshold` 保持 0.018。验证通过: `corepack pnpm --dir apps/web build`; `python -m compileall apps/api/app`; `docker compose up -d --build api web`; `GET /api/wake/config`; `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`; `git diff --check`; Codex Browser 加载新 bundle。下一步需用户刷新页面、重新开启后台监听并做真实麦克风复测。
+
+2026-06-11 针对党员学习完成率语音提问未播报“收到”完成修复: 默认 `ASK_METRICS_MODE=excel` 下该问题会由 Gateway 本地 Excel 问数 Adapter 在调用 Dora 前直接回答, 因此 Dora Agent 后台没有记录属于设计行为; 前端已改为语音命令自动播放最终回答前先等待“收到, 正在为您查找信息。”确认播报完成或最多等待 1800ms, 避免本地 Excel 快速答案抢占确认提示。验证通过: `corepack pnpm --dir apps/web build`; `python -m compileall apps/api/app`; `docker compose up -d --build web`; `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`; `POST /api/chat` 指标问答返回 `zt_party_study_metrics_2026.xlsx / Dashboard`; `git diff --check`; Codex Browser 加载新 bundle `index-CQTUuisV.js` 且控制台无 error。下一步需用户刷新页面、重新开启后台监听后复测“当前党员学习完成率是多少?”。
+
 ## Phase Status
 
 V0.5 已完成人工验收。已完成本地 RAGFlow Docker Desktop 基础部署、MCP self-host 启动、最小党建知识库资料准备、公网 MCP 映射连通性验证、`zt_party_building_demo` dataset 创建、8 份测试资料上传和解析。MCP `ragflow_retrieval` 已可通过本地和公网地址返回知识库 chunk。已按当前边界完成 Dora 通过公网 MCP 调用 RAGFlow 的真实知识库问答验证: RAGFlow 固定负责 `keyword=false` 向量检索, Dora 负责最终回答生成。已在本地 RAGFlow MCP server 做 POC 返回量瘦身, 并在 POC Gateway 新增 `/api/chat/stream` + 分段 TTS, 降低知识库问答的语音首响等待。
@@ -35,7 +41,7 @@ V1.0 验收交付包已输出到 `docs/delivery/v1.0/`, 包含交付包索引、
 V1.0 验收交付包已完成。下一推荐 goal:
 
 ```text
-执行客户现场验收复演: 按 V1.0 交付包启动环境、补齐截图附件、确认真实 Dora / RAGFlow / ASR / TTS / FVS 依赖、导出最终日志包并完成客户签字。
+执行客户现场验收复演, 并确认新增“指定人员新闻爬取、整理、导入本地 RAGFlow 知识库、衔接 RAGFlow MCP 问答”专项范围: 按 V1.0 交付包启动环境、补齐截图附件、确认真实 Dora / RAGFlow / ASR / TTS / FVS 依赖、导出最终日志包并完成客户签字; 同时向客户确认新闻源白名单、采集合规边界、人员识别字段、导入知识库验收标准和 6/30 上线口径。
 ```
 
 本 goal 的边界:
@@ -43,11 +49,14 @@ V1.0 验收交付包已完成。下一推荐 goal:
 - 使用 `docs/delivery/v1.0/` 中的正式交付包作为现场执行依据。
 - 语音唤醒调优后需优先做真实麦克风复测, 建议连续测试“小天小天”“你好小天”“小天, 返回总览”等 10 次以上, 并记录成功 / 空识别 / 误唤醒次数。
 - 播报中打断需单独复测, 建议在 AI 回复播报中测试“小天小天”“你好小天”“小天小天, 返回总览”和普通闲聊 / 短词“小天”, 分别记录打断成功和误打断次数。
+- 本地 Excel 问数需复测语音确认播报顺序, 建议测试“当前党员学习完成率是多少?”并确认先听到“收到, 正在为您查找信息。”, 再听到最终指标答案。
+- 若客户要求 Dora Agent 后台留存指标类问题, 需先确认是否把 `ASK_METRICS_MODE` 从默认 `excel` 切到 `dora` 或 `auto`, 并重新执行固定问数 smoke。
 - 如需证明真实依赖验收, 应记录 `DEMO_STABLE_MODE` 是否关闭。
 - 现场截图按 `01_ACCEPTANCE_REPORT.md` 的 S-001 到 S-007 附件位补齐。
 - 现场日志包用 `scripts/export-logs.ps1 -Zip` 导出并随验收归档。
 - 客户签字和待确认项按 `07_CUSTOMER_HANDOFF_CHECKLIST.md` 更新。
 - 继续不执行 Dora 或模型生成的 SQL、Python、JavaScript 或 shell 命令。
+- 如客户确认新增新闻爬虫专项, 下一轮应先输出接口 / 数据契约草案, 再实现后端白名单新闻源采集、资料整理、RAGFlow 导入 Adapter 和 MCP 检索验证; 不允许前端直接访问新闻站点或暴露 RAGFlow / Dora API Key。
 
 继续保留 Mock Dora / ASR / TTS / FVS 回退。FVS 控制仍必须由后端白名单校验后的 `action_id` 驱动, 不允许执行模型生成 JavaScript。
 

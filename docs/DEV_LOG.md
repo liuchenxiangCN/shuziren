@@ -4,6 +4,110 @@
 
 ## 2026-06-11
 
+### 本地问数确认播报顺序修复
+
+#### Completed
+
+- 用户反馈询问党员学习完成率相关问题时, 语音没有播报“收到”, Dora Agent 后台也没有收到该条记录; 翻页和领导相关知识库查询无此问题。
+- 确认默认 `ASK_METRICS_MODE=excel` 下, 党员学习完成率属于 Gateway 本地 Excel 问数 Adapter 命中项, 会在调用 Dora 前直接返回本地指标答案, 因此 Dora Agent 后台没有该记录属于当前设计行为。
+- 修复前端语音命令自动播报顺序: `runMonitorCommand` 现在把确认播报 Promise 传给 `submitQuestion`, 自动播放最终回答前会先等待确认播报完成或最多等待 1800ms。
+- 快速返回的本地 Excel 问数答案不再立即启动真流式 TTS 抢占“收到, 正在为您查找信息。”提示。
+- 提示音播放队列新增失败容错, 单次提示播放失败不会让后续提示队列卡在 rejected Promise。
+- 未改变问数路由策略; 如需 Dora Agent 后台也记录指标类问题, 需切换 `ASK_METRICS_MODE=dora` 或 `auto` 并接受指标固定回答策略变化。
+
+#### Changed Files
+
+- `apps/web/src/App.vue`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/CHANGELOG.md`
+- `docs/13_RISKS_AND_TODO.md`
+
+#### Verification
+
+- `corepack pnpm --dir apps/web build` 通过。
+- `python -m compileall apps/api/app` 通过。
+- `docker compose up -d --build web` 成功, Compose 依赖同时重启 API / Web。
+- `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json` 通过。
+- `GET /api/wake/config` 返回普通唤醒 `vad_threshold=0.018`, 播报中打断 `barge_in_enabled=true`。
+- `POST /api/chat` 测试“当前党员学习完成率是多少?”返回本地指标答案, 来源为 `zt_party_study_metrics_2026.xlsx / Dashboard`。
+- `GET /api/health` 返回 `status=ok`。
+- `git diff --check` 通过。
+- Codex Browser 刷新 `http://localhost:18000/`, 确认加载新 bundle `index-CQTUuisV.js`, DOM 渲染正常且控制台无 error。
+
+#### Notes
+
+- 该修复需要用户在真实麦克风环境刷新页面、重新开启后台监听后复测“当前党员学习完成率是多少?”。
+- 若验收要求所有指标问题必须进入 Dora Agent 后台留痕, 下一步应先确认是否将问数模式切到 `dora` 或 `auto`, 并重新做 11 个固定问数 smoke。
+
+### 普通唤醒不可用热修
+
+#### Completed
+
+- 用户反馈播报中打断能力上线后普通语音唤醒完全无法触发。
+- 检查 API 日志发现仍有 `/api/asr/transcribe` 请求, 且多次返回 `ASR_EMPTY_RESULT`, 判断更像是普通唤醒 VAD 阈值过低导致环境 / 外放噪声先触发短片段, 真实唤醒词被 ASR / cooldown 窗口吃掉。
+- 前端 VAD 新增连续两帧超过阈值才正式开始收音的启动确认, 避免单帧噪声尖峰触发唤醒片段。
+- 普通唤醒 `vad_threshold` 从 0.014 回调到 0.018; 播报中 `barge_in_vad_threshold` 保持 0.018。
+- 播报中长唤醒词确认打断能力保留。
+
+#### Changed Files
+
+- `apps/web/src/App.vue`
+- `config/wake-words.yaml`
+- `config/customers/zt-securities/wake-words.yaml`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/CHANGELOG.md`
+
+#### Verification
+
+- `corepack pnpm --dir apps/web build` 通过。
+- `python -m compileall apps/api/app` 通过。
+- `docker compose up -d --build api web` 成功。
+- `GET /api/wake/config` 返回普通唤醒 `vad_threshold=0.018`, 播报中打断 `barge_in_vad_threshold=0.018`。
+- `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json` 通过。
+- `git diff --check` 通过。
+- Codex Browser 验证页面加载新前端 bundle `index-f8g4rF8T.js`, FVS iframe 和 compact 语音入口存在。
+
+#### Notes
+
+- 当前仍需用户真实麦克风复测普通唤醒是否恢复。若仍失败, 下一步需要记录 ASR 返回文本或临时开启可见唤醒调试提示, 判断是空识别、误识别还是命中词匹配问题。
+
+### 客户汇报项目计划与甘特图
+
+#### Completed
+
+- 按用户确认的客户汇报口径生成项目管理计划和实施甘特图 Excel 工作簿。
+- 工作簿路径: `outputs/customer-report-20260617/zt_project_plan_gantt_20260610_0630.xlsx`。
+- 工作簿包含 `客户汇报摘要`、`实施计划`、`甘特图`、`里程碑与风险`、`工作日历` 和 `数据源` 6 个 sheet。
+- 汇报口径使用 `2026-06-17` 作为阶段进展日期, 明确写为“截至 2026-06-17, 项目按计划完成 Mock 链路联调与端到端流程验证, 真实外部系统接入进入专项实施阶段”。
+- 计划周期覆盖 `2026-06-10` 到 `2026-06-30`, 目标写为“完成测试验收并上线”。
+- 已按用户指定将 `2026-06-13`、`2026-06-14`、`2026-06-19`、`2026-06-20`、`2026-06-21`、`2026-06-27`、`2026-06-28` 标为非工作日, 仅保留风险响应 / 问题跟进。
+- 后续待完成专项在计划中明确列出: 自定义新闻爬虫及导入知识库、RAGFlow 知识库调用、性能优化、安全优化。
+- 新增需求在计划中表述为: 前端根据用户指定人员发起请求, 后端按客户确认的新闻源白名单采集公开新闻, 清洗整理后保存到本地 RAGFlow 知识库, 并衔接后续 RAGFlow MCP 问答能力。
+
+#### Changed Files
+
+- `outputs/customer-report-20260617/zt_project_plan_gantt_20260610_0630.xlsx`
+- `outputs/customer-report-20260617/build_customer_plan_gantt.mjs`
+- `outputs/customer-report-20260617/preview_summary.png`
+- `outputs/customer-report-20260617/preview_gantt.png`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/CHANGELOG.md`
+- `docs/13_RISKS_AND_TODO.md`
+
+#### Verification
+
+- 已生成最终 Excel 工作簿。
+- 已渲染并人工检查 `客户汇报摘要` 和 `甘特图` 预览图, 确认摘要、进度指标、每日投入图、任务甘特条、节假日置灰和进度百分比显示正常。
+- 公式 / 错误标记扫描未命中 `#REF!`、`#DIV/0!`、`#VALUE!`、`#NAME?` 或 `#N/A`。
+
+#### Notes
+
+- 本轮为客户汇报计划材料输出, 未实现自定义新闻爬虫、RAGFlow 导入 API、RAGFlow 调用专项、性能优化或安全优化代码。
+- 指定新闻网站暂未确认, 工作簿中采用“客户确认的新闻源白名单 / 可配置新闻源”口径。
+
 ### 播报中长唤醒词确认打断
 
 #### Completed

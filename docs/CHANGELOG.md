@@ -4,6 +4,7 @@
 
 ### Added
 
+- 新增客户汇报用项目管理计划和实施甘特图 Excel: `outputs/customer-report-20260617/zt_project_plan_gantt_20260610_0630.xlsx`, 包含客户汇报摘要、实施计划、甘特图、里程碑与风险、工作日历和数据源 sheet。
 - 新增 V1.0 验收交付包目录 `docs/delivery/v1.0/`。
 - 新增 V1.0 交付包索引、验收报告、部署方案、用户手册、运维手册、配置手册、测试报告和客户移交清单。
 - 新增 V0.9 PowerShell 交付脚本: `scripts/check-poc.ps1`、`scripts/start-poc.ps1`、`scripts/stop-poc.ps1`、`scripts/export-logs.ps1`、`scripts/smoke-demo.ps1` 和公共 helper `scripts/poc-common.ps1`。
@@ -30,6 +31,10 @@
 
 ### Changed
 
+- 语音命令自动播报顺序调整: 后台监听识别到正式指令后, 最终回答 TTS 会先等待“收到, 正在为您查找信息。”确认播报完成或最多等待 1800ms, 避免本地 Excel 问数快速答案抢占确认提示。
+- 普通唤醒热修: 前端 VAD 增加连续两帧超过阈值才开始收音的启动确认, 并将普通唤醒 `vad_threshold` 回调到 0.018, 降低环境 / 外放噪声触发空 ASR 的概率。
+- `NEXT_ACTIONS` 补充新增“指定人员新闻爬取、整理、导入本地 RAGFlow 知识库、衔接 RAGFlow MCP 问答”专项范围确认任务。
+- `docs/13_RISKS_AND_TODO.md` 补充新闻源未确认、自定义爬虫合规 / SSRF、人员同名资料混淆和 RAGFlow 导入解析不稳定等新增风险。
 - 针对现场语音唤醒失败率较高的问题, 前端 VAD 增加约 360ms 预录缓冲, 唤醒词匹配增加常见 ASR 同音偏差归一化和长词优先剥离, 降低唤醒词开头被截断或“小天”被识别为“小田 / 小甜”等导致未命中的概率。
 - 默认和中天证券客户唤醒配置新增短唤醒词 `小天`, 并将唤醒收音参数调整为 `min_audio_ms=1000`、`silence_ms=1000`、`max_audio_ms=6500`、`cooldown_ms=800`、`vad_threshold=0.014`。
 - `GET /api/wake/config` 的 `settings` 增加 `barge_in_*` 播报中打断参数, 当前只把“小天小天”“你好小天”作为播报中打断词。
@@ -56,6 +61,9 @@
 
 ### Verified
 
+- 党员学习完成率语音确认播报修复后, `corepack pnpm --dir apps/web build`、`python -m compileall apps/api/app`、`docker compose up -d --build web`、`scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`、`POST /api/chat` 本地指标问答、`GET /api/health`、`git diff --check` 和 Codex Browser 新 bundle 检查通过。
+- 普通唤醒热修后, `corepack pnpm --dir apps/web build`、`python -m compileall apps/api/app`、`docker compose up -d --build api web`、`GET /api/wake/config`、`scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`、`git diff --check` 和 Codex Browser 页面 bundle 检查通过。
+- 客户汇报 Excel 已生成, 并完成 `客户汇报摘要` 和 `甘特图` 渲染预览检查; 公式 / 错误标记扫描未命中 `#REF!`、`#DIV/0!`、`#VALUE!`、`#NAME?` 或 `#N/A`。
 - `corepack pnpm --dir apps/web build` 通过语音唤醒调优后的前端构建校验。
 - `python -m compileall apps/api/app` 和 `corepack pnpm --dir apps/web build` 通过播报中打断能力的构建校验。
 - V1.0 交付包引用 `logs/smoke/smoke-demo-20260611-011803.md`, 5 条固定演示题均为 `True`。
@@ -94,6 +102,8 @@
 
 ### Not Done
 
+- 自定义新闻爬虫、新闻整理、导入本地 RAGFlow 知识库、RAGFlow 知识库调用、性能优化和安全优化仍为 2026-06-18 至 2026-06-30 的计划专项, 本轮未实现代码。
+- 指定新闻网站 / 新闻源白名单暂未确认。
 - 现场截图、真实客户网络、麦克风 / 播放权限、Dora / RAGFlow 连通性和客户签字仍需在客户现场补齐。
 - Dora 通用问数质量仍需结合客户真实数据源和 Dora 工具能力继续验证。
 

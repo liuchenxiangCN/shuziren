@@ -14,7 +14,7 @@ settings:
   followup_enabled: true
   followup_window_ms: 12000
   max_followup_turns: 3
-  vad_threshold: 0.014
+  vad_threshold: 0.018
   barge_in_enabled: true
   barge_in_wake_words:
     - 小天小天

@@ -86,6 +86,7 @@ type VadSegmentKind = 'wake' | 'command' | 'barge_in';
 
 interface SubmitQuestionOptions {
   awaitTts?: boolean;
+  beforeAutoTts?: Promise<unknown> | null;
 }
 
 interface PlaybackOptions {
@@ -111,6 +112,7 @@ interface PcmStreamPlayback {
 
 const WAKE_GREETING_TEXT = '您好。';
 const ACKNOWLEDGEMENT_TEXT = '收到，正在为您查找信息。';
+const ACKNOWLEDGEMENT_TTS_MAX_WAIT_MS = 1800;
 const FVS_LOAD_TIMEOUT_MS = 10000;
 
 const DEFAULT_WAKE_CONFIG: WakeConfigResponse = {
@@ -146,6 +148,7 @@ const FALLBACK_DEMO_QUESTIONS: DemoQuestion[] = [
   { id: 'local-5', text: '返回总览', category: 'screen_control' },
 ];
 const MONITOR_PREROLL_MS = 360;
+const MONITOR_SPEECH_START_FRAMES = 2;
 
 const sessionId = `demo-session-${Date.now()}`;
 const runtimeDemoStableMode = getRuntimeDemoStableMode();
@@ -213,6 +216,7 @@ let monitorSampleRate = 16000;
 let monitorSpeechActive = false;
 let monitorSpeechStartedAt = 0;
 let monitorLastSpeechAt = 0;
+let monitorSpeechCandidateFrames = 0;
 let monitorFinalizing = false;
 let monitorPlaybackStartedAt = 0;
 let monitorCommandTimer: number | null = null;
@@ -474,10 +478,11 @@ async function submitQuestion(
             streamEnded: true,
           };
           if (options.awaitTts && !earlyStreamingPlayback) {
-            earlyStreamingPlayback = playStreamingTtsText(
+            earlyStreamingPlayback = playAutoStreamingTts(
               streamResponse.speak_text,
               '真流式 TTS',
               true,
+              options.beforeAutoTts,
             );
           }
         },
@@ -528,6 +533,7 @@ async function submitQuestion(
       assistantItem.tts.status = 'ready';
       assistantItem.tts.label = '分段 TTS';
       if (options.awaitTts) {
+        await waitBeforeAutoTts(options.beforeAutoTts);
         await playConversationTts(assistantItem, {
           monitorPlayback: true,
           preferStreaming: !earlyStreamingPlayback,
@@ -725,6 +731,12 @@ function collectVadFrame(frame: Float32Array, rms: number, kind: VadSegmentKind)
   const hasSpeech = rms >= segmentSettings.vadThreshold;
   if (!monitorSpeechActive) {
     if (!hasSpeech) {
+      monitorSpeechCandidateFrames = 0;
+      rememberVadPrerollFrame(frame);
+      return;
+    }
+    monitorSpeechCandidateFrames += 1;
+    if (monitorSpeechCandidateFrames < MONITOR_SPEECH_START_FRAMES) {
       rememberVadPrerollFrame(frame);
       return;
     }
@@ -898,8 +910,11 @@ async function runMonitorCommand(text: string, options: MonitorCommandOptions = 
   }
   commandText.value = cleanedText;
   setListeningState('thinking', '正在处理指令。');
-  playAcknowledgementPrompt();
-  const assistantItem = await submitQuestion(cleanedText, 'voice', { awaitTts: true });
+  const acknowledgementPlayback = playAcknowledgementPrompt();
+  const assistantItem = await submitQuestion(cleanedText, 'voice', {
+    awaitTts: true,
+    beforeAutoTts: acknowledgementPlayback,
+  });
   if (!listenerEnabled.value) return;
 
   if (assistantItem?.tts?.status === 'ready') {
@@ -1041,6 +1056,7 @@ function resetVadSegment() {
   monitorSpeechActive = false;
   monitorSpeechStartedAt = 0;
   monitorLastSpeechAt = 0;
+  monitorSpeechCandidateFrames = 0;
 }
 
 function rememberVadPrerollFrame(frame: Float32Array) {
@@ -1176,10 +1192,10 @@ function playWakeGreetingPrompt() {
   enqueuePromptPlayback(WAKE_GREETING_TEXT, '唤醒提示', getWakeGreetingAudioUrl, () => listenerEnabled.value);
 }
 
-function playAcknowledgementPrompt() {
+function playAcknowledgementPrompt(): Promise<void> {
   setListeningState('thinking', '已收到，正在查找信息。');
   ttsStatusText.value = ACKNOWLEDGEMENT_TEXT;
-  enqueuePromptPlayback(ACKNOWLEDGEMENT_TEXT, '等待提示', getAcknowledgementAudioUrl, () => !activeStreamPlayback);
+  return enqueuePromptPlayback(ACKNOWLEDGEMENT_TEXT, '等待提示', getAcknowledgementAudioUrl, () => !activeStreamPlayback);
 }
 
 function enqueuePromptPlayback(
@@ -1188,7 +1204,7 @@ function enqueuePromptPlayback(
   getAudioUrl: () => Promise<string | null>,
   shouldPlay: () => boolean,
 ) {
-  promptPlaybackQueue = promptPlaybackQueue
+  const playbackTask = promptPlaybackQueue
     .catch(() => undefined)
     .then(async () => {
       if (!shouldPlay() || activeAudio || activeSpeechUtterance || activeStreamPlayback) return;
@@ -1202,6 +1218,8 @@ function enqueuePromptPlayback(
       void getAudioUrl();
       await playLocalPrompt(text, label);
     });
+  promptPlaybackQueue = playbackTask.catch(() => undefined);
+  return playbackTask.catch(() => undefined);
 }
 
 async function playLocalPrompt(text: string, label: string): Promise<AudioPlaybackResult> {
@@ -1291,6 +1309,21 @@ async function prepareTtsForItem(item: ConversationItem) {
     ttsPlayback.value = 'error';
     ttsStatusText.value = message;
   }
+}
+
+async function waitBeforeAutoTts(beforeAutoTts?: Promise<unknown> | null) {
+  if (!beforeAutoTts) return;
+  await Promise.race([beforeAutoTts.catch(() => undefined), wait(ACKNOWLEDGEMENT_TTS_MAX_WAIT_MS)]);
+}
+
+async function playAutoStreamingTts(
+  text: string,
+  label: string,
+  monitorPlayback: boolean,
+  beforeAutoTts?: Promise<unknown> | null,
+): Promise<AudioPlaybackResult> {
+  await waitBeforeAutoTts(beforeAutoTts);
+  return playStreamingTtsText(text, label, monitorPlayback);
 }
 
 function addTtsSegment(item: ConversationItem, segment: ChatStreamTtsReady) {
