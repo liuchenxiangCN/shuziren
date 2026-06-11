@@ -14,6 +14,7 @@
 - Dora + RAGFlow 知识库问答。
 - Excel 问数 Adapter。
 - TTS 字节级真流式和分段 fallback。
+- 语音唤醒、连续追问和播报中长唤醒词确认打断。
 - 运维 Ops API 和日志脱敏导出。
 - V0.9 预检、启停、smoke、日志导出脚本。
 - FVS iframe host 和四页切换。
@@ -138,6 +139,7 @@ TTS 抽样:
 | V0.6 FVS iframe host 和四页切换 | 用户已人工验收 |
 | V0.6 等待提示音和 AI 结果打断 | 用户已人工验收 |
 | 2026-06-11 小型语音 icon、评论流和“您好。”顺序 | 源码和构建验证通过, 真实麦克风顺序需现场复核 |
+| 2026-06-11 播报中长唤醒词确认打断 | `python -m compileall apps/api/app` 和 `corepack pnpm --dir apps/web build` 通过, 真实麦克风打断成功率和误打断率需现场复核 |
 
 ## 安全测试
 

@@ -14,6 +14,8 @@
 - 新增 FVS 唤醒成功语音反馈: 命中唤醒词后立即播报“您好。”。
 - 新增前端独立运维路径 `/ops`, 复用现有 Ops API 和前端服务。
 - 新增 ADR-0016, 记录 FVS 极简悬浮层、独立运维路径和唤醒成功语音反馈决策。
+- 新增播报中长唤醒词确认打断能力: `speaking` 状态下命中 `barge_in_wake_words` 后停止当前 TTS 并进入下一轮。
+- 新增 ADR-0017, 记录播报中只用长唤醒词确认打断、避免任意人声打断的决策。
 - 新增客户私有配置目录 `config/customers/zt-securities/`, 包含 `runtime.yaml`、`screen-actions.yaml`、`ask-metrics.yaml`、`demo-cases.yaml`、`wake-words.yaml`、`dora.yaml`、`ragflow.yaml`、`voice.yaml`、`fvs.yaml` 和 `customer.env.example`。
 - 新增 `CUSTOMER_ID`、`CUSTOMER_CONFIG_DIR` 和 `ASK_METRICS_MODE=excel|dora|auto` 后端配置。
 - 新增 ADR-0012, 记录客户配置覆盖层和问数模式路由决策。
@@ -28,6 +30,9 @@
 
 ### Changed
 
+- 针对现场语音唤醒失败率较高的问题, 前端 VAD 增加约 360ms 预录缓冲, 唤醒词匹配增加常见 ASR 同音偏差归一化和长词优先剥离, 降低唤醒词开头被截断或“小天”被识别为“小田 / 小甜”等导致未命中的概率。
+- 默认和中天证券客户唤醒配置新增短唤醒词 `小天`, 并将唤醒收音参数调整为 `min_audio_ms=1000`、`silence_ms=1000`、`max_audio_ms=6500`、`cooldown_ms=800`、`vad_threshold=0.014`。
+- `GET /api/wake/config` 的 `settings` 增加 `barge_in_*` 播报中打断参数, 当前只把“小天小天”“你好小天”作为播报中打断词。
 - `docs/00_INDEX.md` 增加 V1.0 验收交付包入口。
 - `NEXT_ACTIONS` 当前阶段更新为 V1.0 POC 验收交付包已输出, 下一推荐 goal 改为客户现场验收复演、补齐截图附件、确认真实依赖并完成签收。
 - `docs/12_CUSTOMER_HANDOFF.md` 补充 V1.0 交付包路径和现场签收建议。
@@ -51,6 +56,8 @@
 
 ### Verified
 
+- `corepack pnpm --dir apps/web build` 通过语音唤醒调优后的前端构建校验。
+- `python -m compileall apps/api/app` 和 `corepack pnpm --dir apps/web build` 通过播报中打断能力的构建校验。
 - V1.0 交付包引用 `logs/smoke/smoke-demo-20260611-011803.md`, 5 条固定演示题均为 `True`。
 - V1.0 交付包引用 `logs/exports/zt-poc-logs-20260611-011813.zip` 作为最近日志包证据。
 - `python -m compileall apps/api/app` 通过。

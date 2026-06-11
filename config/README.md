@@ -5,7 +5,7 @@
 ## Files
 
 - `screen-actions.yaml`: 大屏动作白名单。
-- `wake-words.yaml`: 第一阶段语义唤醒词、V0.4 本地 VAD / 冷却参数和 V0.4.1 连续对话窗口参数。
+- `wake-words.yaml`: 第一阶段语义唤醒词、V0.4 本地 VAD / 冷却参数、V0.4.1 连续对话窗口参数和播报中长唤醒词确认打断参数。
 - `demo-cases.yaml`: Mock Dora 和 POC 演示用例。
 - `ask-metrics.yaml`: V0.7 本地 Excel 问数工作簿和 sheet 映射。
 - `dora-output-schema.json`: Dora 标准输出 JSON Schema。
@@ -38,6 +38,13 @@ V0.9 演示稳态由以下配置控制:
 - `DEMO_STABLE_MODE=true`: Dora 请求失败时优先使用本地 Excel 问数和 Mock Dora 演示兜底。
 - `VITE_DEMO_STABLE_MODE=true`: 前端显示“演示稳态”标识。
 - `scripts/check-poc.ps1`、`scripts/start-poc.ps1`、`scripts/export-logs.ps1` 和 `scripts/smoke-demo.ps1` 默认读取根目录 `.env`。
+
+播报中打断由 `wake-words.yaml` 的 `barge_in_*` 控制:
+
+- `barge_in_enabled=true`: AI 回复播报中继续监听短片段。
+- `barge_in_wake_words`: 只建议放长唤醒词, 当前为“小天小天”“你好小天”, 不含短词“小天”。
+- `barge_in_vad_threshold`: 播报中使用的 VAD 阈值, 建议高于普通唤醒阈值以降低外放误触发。
+- `barge_in_ignore_after_tts_start_ms`: TTS 开始后短暂忽略打断, 避免刚起声时误判。
 
 ## Rules
 

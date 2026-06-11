@@ -114,6 +114,13 @@ export interface WakeSettings {
   followup_enabled: boolean;
   followup_window_ms: number;
   max_followup_turns: number;
+  barge_in_enabled: boolean;
+  barge_in_wake_words: string[];
+  barge_in_vad_threshold: number;
+  barge_in_min_audio_ms: number;
+  barge_in_silence_ms: number;
+  barge_in_max_audio_ms: number;
+  barge_in_ignore_after_tts_start_ms: number;
 }
 
 export interface WakeConfigResponse {

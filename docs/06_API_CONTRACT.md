@@ -261,21 +261,30 @@ ASR WebSocket。后续流式 ASR 阶段实现; V0.3 最小闭环先使用 `POST 
 {
   "version": "0.1.0",
   "mode": "semantic",
-  "wake_words": ["小天小天", "中天小天", "你好小天"],
+  "wake_words": ["小天小天", "中天小天", "你好小天", "小天"],
   "settings": {
-    "min_audio_ms": 800,
-    "max_audio_ms": 5000,
-    "cooldown_ms": 1500,
+    "min_audio_ms": 1000,
+    "max_audio_ms": 6500,
+    "cooldown_ms": 800,
     "require_exact_phrase": false,
-    "vad_threshold": 0.018,
-    "silence_ms": 700,
+    "vad_threshold": 0.014,
+    "silence_ms": 1000,
     "command_timeout_ms": 8000,
     "followup_enabled": true,
     "followup_window_ms": 12000,
-    "max_followup_turns": 3
+    "max_followup_turns": 3,
+    "barge_in_enabled": true,
+    "barge_in_wake_words": ["小天小天", "你好小天"],
+    "barge_in_vad_threshold": 0.018,
+    "barge_in_min_audio_ms": 900,
+    "barge_in_silence_ms": 700,
+    "barge_in_max_audio_ms": 3500,
+    "barge_in_ignore_after_tts_start_ms": 700
   }
 }
 ```
+
+`barge_in_*` 配置用于播报中长唤醒词确认打断。前端只在 `speaking` 状态下截取短片段做 ASR 判断, 命中 `barge_in_wake_words` 后才停止当前 TTS; 未命中、空识别或 ASR 失败不改变当前播报状态。
 
 ## GET /api/demo/config
 

@@ -70,6 +70,13 @@ class WakeSettings(BaseModel):
     followup_enabled: bool = True
     followup_window_ms: int = Field(default=12_000, ge=1_000, le=60_000)
     max_followup_turns: int = Field(default=3, ge=0, le=20)
+    barge_in_enabled: bool = False
+    barge_in_wake_words: list[str] = Field(default_factory=list)
+    barge_in_vad_threshold: float = Field(default=0.018, ge=0.001, le=0.5)
+    barge_in_min_audio_ms: int = Field(default=900, ge=200, le=10_000)
+    barge_in_silence_ms: int = Field(default=700, ge=100, le=5_000)
+    barge_in_max_audio_ms: int = Field(default=3_500, ge=500, le=30_000)
+    barge_in_ignore_after_tts_start_ms: int = Field(default=700, ge=0, le=5_000)
 
 
 class WakeConfigResponse(BaseModel):

@@ -124,6 +124,27 @@ TTS_SAMPLE_RATE=22050
 - TTS 真流式默认使用 PCM chunk + Web Audio。
 - 真流式失败时回退分段 TTS。
 
+## 唤醒与播报中打断配置
+
+客户唤醒配置位于:
+
+```text
+config/customers/zt-securities/wake-words.yaml
+```
+
+关键字段:
+
+| 字段 | 说明 |
+| --- | --- |
+| `wake_words` | 普通唤醒词, 当前包含“小天小天”“中天小天”“你好小天”“小天” |
+| `vad_threshold` | 普通唤醒 VAD 阈值 |
+| `barge_in_enabled` | 是否启用播报中长唤醒词确认打断 |
+| `barge_in_wake_words` | 播报中打断词, 当前只包含“小天小天”“你好小天” |
+| `barge_in_vad_threshold` | 播报中 VAD 阈值, 建议高于普通唤醒 |
+| `barge_in_ignore_after_tts_start_ms` | TTS 开始后忽略打断的保护窗口 |
+
+播报中打断不建议加入短词“小天”, 以降低外放和环境声误触发。
+
 ## 问数模式
 
 ```env

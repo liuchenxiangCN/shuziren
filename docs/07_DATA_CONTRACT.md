@@ -236,18 +236,25 @@ V0.4 后台监听从 `config/wake-words.yaml` 读取配置, 经 `GET /api/wake/c
 {
   "version": "0.1.0",
   "mode": "semantic",
-  "wake_words": ["小天小天", "中天小天", "你好小天"],
+  "wake_words": ["小天小天", "中天小天", "你好小天", "小天"],
   "settings": {
-    "min_audio_ms": 800,
-    "max_audio_ms": 5000,
-    "cooldown_ms": 1500,
+    "min_audio_ms": 1000,
+    "max_audio_ms": 6500,
+    "cooldown_ms": 800,
     "require_exact_phrase": false,
-    "vad_threshold": 0.018,
-    "silence_ms": 700,
+    "vad_threshold": 0.014,
+    "silence_ms": 1000,
     "command_timeout_ms": 8000,
     "followup_enabled": true,
     "followup_window_ms": 12000,
-    "max_followup_turns": 3
+    "max_followup_turns": 3,
+    "barge_in_enabled": true,
+    "barge_in_wake_words": ["小天小天", "你好小天"],
+    "barge_in_vad_threshold": 0.018,
+    "barge_in_min_audio_ms": 900,
+    "barge_in_silence_ms": 700,
+    "barge_in_max_audio_ms": 3500,
+    "barge_in_ignore_after_tts_start_ms": 700
   }
 }
 ```
@@ -260,6 +267,7 @@ V0.4 后台监听从 `config/wake-words.yaml` 读取配置, 经 `GET /api/wake/c
 - 命中唤醒词后, 可复用同一句中的剩余文本作为正式指令, 或进入一次正式指令录音。
 - `followup_enabled=true` 时, 前端在播报结束后进入短时连续对话窗口, 窗口内下一句直接作为正式指令。
 - `followup_window_ms` 控制播报后等待追问的时长, `max_followup_turns` 控制单次唤醒后最多连续追问轮数。
+- `barge_in_enabled=true` 时, 前端在 `speaking` 播报状态下继续截取短片段, 但只用 `barge_in_wake_words` 中的长唤醒词确认是否打断当前 TTS。未命中、空识别或 ASR 失败时继续播报, 不进入 `/api/chat`。
 - 不保存未命中唤醒词的环境音。
 
 ## TTS Synthesis

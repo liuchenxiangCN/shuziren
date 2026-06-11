@@ -4,6 +4,89 @@
 
 ## 2026-06-11
 
+### 播报中长唤醒词确认打断
+
+#### Completed
+
+- 新增播报中 `barge_in` 打断能力: 前端在 `speaking` 状态下继续通过 VAD 截取短音频片段, 但只用于长唤醒词确认, 不因任意人声直接打断。
+- `GET /api/wake/config` 的 `settings` 新增 `barge_in_enabled`、`barge_in_wake_words`、`barge_in_vad_threshold`、`barge_in_min_audio_ms`、`barge_in_silence_ms`、`barge_in_max_audio_ms` 和 `barge_in_ignore_after_tts_start_ms`。
+- 默认配置和中天证券客户配置启用 `barge_in_enabled=true`, 播报中打断词仅包含 `小天小天` 和 `你好小天`, 不包含短唤醒词 `小天`。
+- 播报中 ASR 命中 `barge_in_wake_words` 后, 前端调用 `cleanupAudio()` 停止当前 TTS, 播放“您好。”并进入正式指令录音; 若同句包含指令, 剥离唤醒词后直接进入 `/api/chat`。
+- 播报中 ASR 未命中、空识别或请求失败时静默忽略, 当前 TTS 继续播放, 不进入 cooldown, 不进入 `/api/chat`。
+- 新增 ADR-0017, 记录只做长唤醒词确认打断、避免任意人声打断的决策。
+
+#### Changed Files
+
+- `apps/api/app/models.py`
+- `apps/web/src/App.vue`
+- `apps/web/src/types.ts`
+- `config/wake-words.yaml`
+- `config/customers/zt-securities/wake-words.yaml`
+- `config/README.md`
+- `docs/00_INDEX.md`
+- `docs/06_API_CONTRACT.md`
+- `docs/07_DATA_CONTRACT.md`
+- `docs/08_CONFIG_GUIDE.md`
+- `docs/10_TEST_PLAN.md`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/CHANGELOG.md`
+- `docs/CODEX_CONTEXT.md`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/12_CUSTOMER_HANDOFF.md`
+- `docs/customers/zt-securities/ACCEPTANCE_CHECKLIST.md`
+- `docs/decisions/ADR-0017-speaking-barge-in-with-long-wake-words.md`
+- `docs/delivery/v1.0/03_USER_MANUAL.md`
+- `docs/delivery/v1.0/05_CONFIGURATION_MANUAL.md`
+- `docs/delivery/v1.0/06_TEST_REPORT.md`
+- `docs/integrations/ASR_TTS_INTEGRATION.md`
+
+#### Verification
+
+- `python -m compileall apps/api/app` 通过。
+- `corepack pnpm --dir apps/web build` 通过。
+- `docker compose config --services` 返回 `api`、`web`。
+- `git diff --check` 通过。
+- `docker compose up -d --build api web` 成功重建并启动 API / Web。
+- `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json` 通过。
+- `GET /api/wake/config` 返回 `barge_in_enabled=true`, `barge_in_wake_words` 为 2 条, `barge_in_vad_threshold=0.018`, `barge_in_min_audio_ms=900`, `barge_in_silence_ms=700`, `barge_in_max_audio_ms=3500`, `barge_in_ignore_after_tts_start_ms=700`。
+- `GET http://localhost:18000` 返回 HTTP 200。
+- Codex Browser 验证本地页面加载新前端 bundle `index-Mcwb3gfL.js`, FVS iframe 和 compact 语音入口存在。
+
+#### Notes
+
+- 当前打断仍依赖云 ASR 确认, 不是本地 KWS, 因此预计会有约 1-2 秒确认延迟。
+- 尚未完成真实麦克风人工复测。建议现场测试播报中说“小天小天”“你好小天”“小天小天, 返回总览”是否能打断, 并测试普通闲聊和短词“小天”不会打断。
+
+### 语音唤醒失败率现场调优
+
+#### Completed
+
+- 针对本地复测中语音唤醒失败率较高的问题, 检查 API 日志发现多次 `/api/asr/transcribe` 返回 `ASR_EMPTY_RESULT`, 说明前端送到 ASR 的唤醒片段存在过短、过弱或未完整包含唤醒词的情况。
+- 前端 VAD 增加约 360ms 预录缓冲: 检测到人声后, 会把触发阈值前的一小段音频一起送入 ASR, 降低“小天小天”开头被截掉导致识别为空或只识别后半段的概率。
+- 前端唤醒词匹配增加常见 ASR 同音偏差归一化: `晓` / `肖` 归一为 `小`, `田` / `甜` / `添` / `填` 归一为 `天`, 提升“小田小田”“小甜小甜”等识别结果的命中率; 匹配时按唤醒词长度优先, 剥离唤醒词时同样支持这些同音偏差, 避免短唤醒词抢占长唤醒词。
+- 默认和中天证券客户唤醒配置同步调宽: 新增短唤醒词 `小天`, `min_audio_ms` 从 800 调整为 1000, `silence_ms` 从 700 调整为 1000, `max_audio_ms` 从 5000 调整为 6500, `cooldown_ms` 从 1500 调整为 800, `vad_threshold` 从 0.018 调整为 0.014。
+
+#### Changed Files
+
+- `apps/web/src/App.vue`
+- `config/wake-words.yaml`
+- `config/customers/zt-securities/wake-words.yaml`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/CHANGELOG.md`
+- `docs/13_RISKS_AND_TODO.md`
+
+#### Verification
+
+- `corepack pnpm --dir apps/web build` 通过。
+- 本轮已确认 API 日志中存在多次 `ASR_EMPTY_RESULT`, 调优方向聚焦于改善前端 VAD 截段和唤醒词容错。
+
+#### Notes
+
+- 本轮尚未完成真实麦克风复测。调优后需重建 / 重启 API 和 Web, 再由用户在现场连续测试 10 次以上唤醒成功率。
+- 新增短唤醒词 `小天` 会提高召回率, 也可能略微提高误唤醒概率; 若现场误唤醒明显增加, 可把 `vad_threshold` 回调到 0.016 或移除短唤醒词。
+
 ### V1.0 POC 验收交付包
 
 #### Completed

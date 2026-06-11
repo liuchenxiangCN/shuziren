@@ -4,16 +4,26 @@ wake_words:
   - 小天小天
   - 中天小天
   - 你好小天
+  - 小天
 settings:
-  min_audio_ms: 800
-  max_audio_ms: 5000
-  silence_ms: 700
-  cooldown_ms: 1500
+  min_audio_ms: 1000
+  max_audio_ms: 6500
+  silence_ms: 1000
+  cooldown_ms: 800
   command_timeout_ms: 8000
   followup_enabled: true
   followup_window_ms: 12000
   max_followup_turns: 3
-  vad_threshold: 0.018
+  vad_threshold: 0.014
+  barge_in_enabled: true
+  barge_in_wake_words:
+    - 小天小天
+    - 你好小天
+  barge_in_vad_threshold: 0.018
+  barge_in_min_audio_ms: 900
+  barge_in_silence_ms: 700
+  barge_in_max_audio_ms: 3500
+  barge_in_ignore_after_tts_start_ms: 700
   require_exact_phrase: false
 notes:
   - 第一阶段使用 VAD + ASR 语义唤醒, 不是严格本地 KWS。

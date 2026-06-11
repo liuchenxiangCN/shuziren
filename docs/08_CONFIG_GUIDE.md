@@ -410,20 +410,30 @@ wake_words:
   - 小天小天
   - 中天小天
   - 你好小天
+  - 小天
 settings:
-  min_audio_ms: 800
-  max_audio_ms: 5000
-  silence_ms: 700
-  cooldown_ms: 1500
+  min_audio_ms: 1000
+  max_audio_ms: 6500
+  silence_ms: 1000
+  cooldown_ms: 800
   command_timeout_ms: 8000
   followup_enabled: true
   followup_window_ms: 12000
   max_followup_turns: 3
-  vad_threshold: 0.018
+  vad_threshold: 0.014
+  barge_in_enabled: true
+  barge_in_wake_words:
+    - 小天小天
+    - 你好小天
+  barge_in_vad_threshold: 0.018
+  barge_in_min_audio_ms: 900
+  barge_in_silence_ms: 700
+  barge_in_max_audio_ms: 3500
+  barge_in_ignore_after_tts_start_ms: 700
   require_exact_phrase: false
 ```
 
-V0.4 前端通过 `GET /api/wake/config` 读取该配置。`min_audio_ms` / `max_audio_ms` 控制唤醒检查短片段长度, `silence_ms` 控制本地 VAD 判断一句话结束, `command_timeout_ms` 控制唤醒后等待正式指令的最长时间, `cooldown_ms` 控制未命中或退出连续对话后的短暂冷却。V0.4.1 增加连续对话窗口: `followup_enabled` 控制是否启用, `followup_window_ms` 控制播报后等待追问多久, `max_followup_turns` 控制单次唤醒后最多连续追问几轮。
+V0.4 前端通过 `GET /api/wake/config` 读取该配置。`min_audio_ms` / `max_audio_ms` 控制唤醒检查短片段长度, `silence_ms` 控制本地 VAD 判断一句话结束, `command_timeout_ms` 控制唤醒后等待正式指令的最长时间, `cooldown_ms` 控制未命中或退出连续对话后的短暂冷却。V0.4.1 增加连续对话窗口: `followup_enabled` 控制是否启用, `followup_window_ms` 控制播报后等待追问多久, `max_followup_turns` 控制单次唤醒后最多连续追问几轮。`barge_in_*` 控制播报中的长唤醒词确认打断: 只在 `speaking` 状态下识别 `barge_in_wake_words`, 命中后停止当前 TTS 并进入下一轮; 未命中、空识别或 ASR 失败时继续播报。
 
 ## 大屏动作配置
 

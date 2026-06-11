@@ -74,6 +74,7 @@ ADR 位于 [decisions](decisions)。
 - [ADR-0014-readonly-sanitized-ops-dashboard.md](decisions/ADR-0014-readonly-sanitized-ops-dashboard.md)
 - [ADR-0015-v09-delivery-scripts-and-demo-stable-mode.md](decisions/ADR-0015-v09-delivery-scripts-and-demo-stable-mode.md)
 - [ADR-0016-fvs-minimal-overlay-and-ops-route.md](decisions/ADR-0016-fvs-minimal-overlay-and-ops-route.md)
+- [ADR-0017-speaking-barge-in-with-long-wake-words.md](decisions/ADR-0017-speaking-barge-in-with-long-wake-words.md)
 
 ## 外部集成
 

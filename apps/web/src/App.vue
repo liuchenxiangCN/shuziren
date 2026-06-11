@@ -82,7 +82,7 @@ type ListeningState =
   | 'thinking'
   | 'speaking'
   | 'cooldown';
-type VadSegmentKind = 'wake' | 'command';
+type VadSegmentKind = 'wake' | 'command' | 'barge_in';
 
 interface SubmitQuestionOptions {
   awaitTts?: boolean;
@@ -128,6 +128,13 @@ const DEFAULT_WAKE_CONFIG: WakeConfigResponse = {
     followup_enabled: true,
     followup_window_ms: 12000,
     max_followup_turns: 3,
+    barge_in_enabled: false,
+    barge_in_wake_words: ['小天小天', '你好小天'],
+    barge_in_vad_threshold: 0.018,
+    barge_in_min_audio_ms: 900,
+    barge_in_silence_ms: 700,
+    barge_in_max_audio_ms: 3500,
+    barge_in_ignore_after_tts_start_ms: 700,
   },
 };
 
@@ -138,6 +145,7 @@ const FALLBACK_DEMO_QUESTIONS: DemoQuestion[] = [
   { id: 'local-4', text: '请切换到成品库存页面', category: 'screen_control' },
   { id: 'local-5', text: '返回总览', category: 'screen_control' },
 ];
+const MONITOR_PREROLL_MS = 360;
 
 const sessionId = `demo-session-${Date.now()}`;
 const runtimeDemoStableMode = getRuntimeDemoStableMode();
@@ -200,11 +208,13 @@ let monitorSource: MediaStreamAudioSourceNode | null = null;
 let monitorProcessor: ScriptProcessorNode | null = null;
 let monitorGain: GainNode | null = null;
 let monitorSamples: Float32Array[] = [];
+let monitorPrerollSamples: Float32Array[] = [];
 let monitorSampleRate = 16000;
 let monitorSpeechActive = false;
 let monitorSpeechStartedAt = 0;
 let monitorLastSpeechAt = 0;
 let monitorFinalizing = false;
+let monitorPlaybackStartedAt = 0;
 let monitorCommandTimer: number | null = null;
 let monitorCooldownTimer: number | null = null;
 let activeSegmentPlaybackItemId: string | null = null;
@@ -704,14 +714,20 @@ function handleMonitorAudioProcess(event: AudioProcessingEvent) {
     collectVadFrame(frame, rms, 'wake');
   } else if (listeningState.value === 'recording' || listeningState.value === 'followup_listening') {
     collectVadFrame(frame, rms, 'command');
+  } else if (listeningState.value === 'speaking' && shouldCollectBargeInFrame()) {
+    collectVadFrame(frame, rms, 'barge_in');
   }
 }
 
 function collectVadFrame(frame: Float32Array, rms: number, kind: VadSegmentKind) {
   const now = performance.now();
-  const settings = wakeConfig.value.settings;
-  const hasSpeech = rms >= settings.vad_threshold;
-  if (!monitorSpeechActive && hasSpeech) {
+  const segmentSettings = getVadSegmentSettings(kind);
+  const hasSpeech = rms >= segmentSettings.vadThreshold;
+  if (!monitorSpeechActive) {
+    if (!hasSpeech) {
+      rememberVadPrerollFrame(frame);
+      return;
+    }
     if (kind === 'command' && monitorCommandTimer !== null) {
       clearTimeout(monitorCommandTimer);
       monitorCommandTimer = null;
@@ -719,10 +735,9 @@ function collectVadFrame(frame: Float32Array, rms: number, kind: VadSegmentKind)
     monitorSpeechActive = true;
     monitorSpeechStartedAt = now;
     monitorLastSpeechAt = now;
-    monitorSamples = [];
+    monitorSamples = monitorPrerollSamples.slice();
+    monitorPrerollSamples = [];
   }
-
-  if (!monitorSpeechActive) return;
 
   monitorSamples.push(frame);
   if (hasSpeech) {
@@ -731,8 +746,10 @@ function collectVadFrame(frame: Float32Array, rms: number, kind: VadSegmentKind)
 
   const elapsedMs = now - monitorSpeechStartedAt;
   const silenceMs = now - monitorLastSpeechAt;
-  const maxAudioMs = kind === 'wake' ? settings.max_audio_ms : settings.command_timeout_ms;
-  if ((elapsedMs >= settings.min_audio_ms && silenceMs >= settings.silence_ms) || elapsedMs >= maxAudioMs) {
+  if (
+    (elapsedMs >= segmentSettings.minAudioMs && silenceMs >= segmentSettings.silenceMs) ||
+    elapsedMs >= segmentSettings.maxAudioMs
+  ) {
     void finalizeVadSegment(kind);
   }
 }
@@ -742,10 +759,11 @@ async function finalizeVadSegment(kind: VadSegmentKind) {
   monitorFinalizing = true;
   const samples = mergeSamples(monitorSamples);
   const durationMs = (samples.length / Math.max(1, monitorSampleRate)) * 1000;
+  const segmentSettings = getVadSegmentSettings(kind);
   resetVadSegment();
 
   try {
-    if (durationMs < wakeConfig.value.settings.min_audio_ms * 0.6 || samples.length === 0) {
+    if (durationMs < segmentSettings.minAudioMs * 0.6 || samples.length === 0) {
       if (listenerEnabled.value && listeningState.value === 'recording') {
         beginCommandRecording();
       } else if (listenerEnabled.value && listeningState.value === 'followup_listening') {
@@ -757,11 +775,39 @@ async function finalizeVadSegment(kind: VadSegmentKind) {
     const audioBlob = encodeWav(samples, monitorSampleRate, 16000);
     if (kind === 'wake') {
       await processWakeSegment(audioBlob);
+    } else if (kind === 'barge_in') {
+      await processBargeInSegment(audioBlob);
     } else {
       await processCommandSegment(audioBlob);
     }
   } finally {
     monitorFinalizing = false;
+  }
+}
+
+async function processBargeInSegment(audioBlob: Blob) {
+  if (!listenerEnabled.value || !wakeConfig.value.settings.barge_in_enabled) return;
+  try {
+    const response = await transcribeMonitorAudio(audioBlob);
+    if (!listenerEnabled.value || !response.success || !response.text) return;
+
+    const matchedWakeWord = findWakeWord(response.text, getBargeInWakeWords());
+    if (!matchedWakeWord) return;
+
+    wakeCheckText.value = response.text;
+    cleanupAudio();
+    playWakeGreetingPrompt();
+    startFollowupSession();
+
+    const inlineCommand = stripWakeWord(response.text, matchedWakeWord);
+    if (inlineCommand) {
+      await runMonitorCommand(inlineCommand);
+      return;
+    }
+
+    beginCommandRecording();
+  } catch {
+    // Barge-in checks are opportunistic. Failed or empty ASR results should not disturb playback.
   }
 }
 
@@ -933,9 +979,12 @@ function setListeningState(state: ListeningState, detail: string) {
   listeningDetail.value = detail;
 }
 
-function findWakeWord(text: string): string | null {
+function findWakeWord(text: string, wakeWords = wakeConfig.value.wake_words): string | null {
   const normalizedText = normalizeWakeText(text);
-  for (const word of wakeConfig.value.wake_words) {
+  const sortedWakeWords = [...wakeWords].sort(
+    (left, right) => normalizeWakeText(right).length - normalizeWakeText(left).length,
+  );
+  for (const word of sortedWakeWords) {
     const normalizedWord = normalizeWakeText(word);
     if (!normalizedWord) continue;
     if (wakeConfig.value.settings.require_exact_phrase) {
@@ -957,12 +1006,20 @@ function stripAllWakeWords(text: string): string {
 }
 
 function buildWakeWordPattern(wakeWord: string): RegExp {
-  const pieces = Array.from(wakeWord).map((char) => escapeRegExp(char));
+  const pieces = Array.from(wakeWord).map((char) => {
+    if (char === '小') return '[小晓肖]';
+    if (char === '天') return '[天田甜添填]';
+    return escapeRegExp(char);
+  });
   return new RegExp(`${pieces.join('[\\s,，。.!！?？、]*')}[\\s,，。.!！?？、]*`, 'i');
 }
 
 function normalizeWakeText(text: string): string {
-  return text.toLowerCase().replace(/[\s,，。.!！?？、]/g, '');
+  return text
+    .toLowerCase()
+    .replace(/[\s,，。.!！?？、]/g, '')
+    .replace(/[晓肖]/g, '小')
+    .replace(/[田甜添填]/g, '天');
 }
 
 function escapeRegExp(value: string): string {
@@ -980,9 +1037,20 @@ function calculateRms(samples: Float32Array): number {
 
 function resetVadSegment() {
   monitorSamples = [];
+  monitorPrerollSamples = [];
   monitorSpeechActive = false;
   monitorSpeechStartedAt = 0;
   monitorLastSpeechAt = 0;
+}
+
+function rememberVadPrerollFrame(frame: Float32Array) {
+  monitorPrerollSamples.push(frame);
+  const maxSamples = Math.max(1, Math.round((monitorSampleRate * MONITOR_PREROLL_MS) / 1000));
+  let totalSamples = monitorPrerollSamples.reduce((sum, chunk) => sum + chunk.length, 0);
+  while (totalSamples > maxSamples && monitorPrerollSamples.length > 1) {
+    const removed = monitorPrerollSamples.shift();
+    totalSamples -= removed?.length ?? 0;
+  }
 }
 
 function clearMonitorTimers() {
@@ -1021,6 +1089,46 @@ function normalizeWakeConfig(config: WakeConfigResponse): WakeConfigResponse {
       ...(config.settings ?? {}),
     },
   };
+}
+
+function getVadSegmentSettings(kind: VadSegmentKind) {
+  const settings = wakeConfig.value.settings;
+  if (kind === 'barge_in') {
+    return {
+      minAudioMs: settings.barge_in_min_audio_ms,
+      maxAudioMs: settings.barge_in_max_audio_ms,
+      silenceMs: settings.barge_in_silence_ms,
+      vadThreshold: settings.barge_in_vad_threshold,
+    };
+  }
+
+  return {
+    minAudioMs: settings.min_audio_ms,
+    maxAudioMs: kind === 'wake' ? settings.max_audio_ms : settings.command_timeout_ms,
+    silenceMs: settings.silence_ms,
+    vadThreshold: settings.vad_threshold,
+  };
+}
+
+function shouldCollectBargeInFrame(): boolean {
+  const settings = wakeConfig.value.settings;
+  if (!settings.barge_in_enabled || getBargeInWakeWords().length === 0) return false;
+  if (monitorPlaybackStartedAt <= 0) return false;
+  return performance.now() - monitorPlaybackStartedAt >= settings.barge_in_ignore_after_tts_start_ms;
+}
+
+function getBargeInWakeWords(): string[] {
+  const configuredWords = wakeConfig.value.settings.barge_in_wake_words
+    .map((word) => word.trim())
+    .filter(Boolean);
+  if (configuredWords.length > 0) return configuredWords;
+  return wakeConfig.value.wake_words.filter((word) => normalizeWakeText(word).length >= normalizeWakeText('小天小天').length);
+}
+
+function beginMonitorSpeakingState() {
+  monitorPlaybackStartedAt = performance.now();
+  resetVadSegment();
+  setListeningState('speaking', '正在播报回复。');
 }
 
 function getWakeGreetingAudioUrl(): Promise<string | null> {
@@ -1245,7 +1353,7 @@ async function playStreamingTtsText(
             ttsPlayback.value = 'playing';
             ttsStatusText.value = `${label} 播报中`;
             if (monitorPlayback) {
-              setListeningState('speaking', '正在播报回复。');
+              beginMonitorSpeakingState();
             }
           }
         },
@@ -1318,7 +1426,7 @@ async function playSegmentedConversationTts(item: ConversationItem, options: Pla
   activeSegmentPlaybackItemId = item.id;
   try {
     if (options.monitorPlayback) {
-      setListeningState('speaking', '正在播报回复。');
+      beginMonitorSpeakingState();
     }
     while (true) {
       const tts = item.tts;
@@ -1371,7 +1479,7 @@ async function playAudioUrl(
     ttsPlayback.value = 'playing';
     ttsStatusText.value = `${label} 播报中`;
     if (monitorPlayback) {
-      setListeningState('speaking', '正在播报回复。');
+      beginMonitorSpeakingState();
     }
     if (analyser) {
       await audioContext?.resume();
