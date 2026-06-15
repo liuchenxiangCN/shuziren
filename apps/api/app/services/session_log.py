@@ -1,11 +1,11 @@
 import json
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel
 
@@ -259,7 +259,11 @@ class SessionLogStore:
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds")
+        try:
+            tz = ZoneInfo("Asia/Shanghai")
+        except ZoneInfoNotFoundError:
+            tz = timezone(timedelta(hours=8), name="Asia/Shanghai")
+        return datetime.now(tz).isoformat(timespec="seconds")
 
     @staticmethod
     def _to_json(value: BaseModel | dict[str, Any] | None) -> str | None:

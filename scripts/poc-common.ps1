@@ -83,7 +83,7 @@ function Get-PocConfig {
         WebPort = [int]$webPort
         ApiBaseUrl = $apiBaseUrl.TrimEnd("/")
         WebUrl = "http://localhost:$webPort"
-        CustomerId = Get-PocEnvValue -Values $envValues -Key "CUSTOMER_ID" -Default "zt-securities"
+        CustomerId = Get-PocEnvValue -Values $envValues -Key "CUSTOMER_ID" -Default "default"
         DemoStableMode = ConvertTo-PocBool -Value (Get-PocEnvValue -Values $envValues -Key "DEMO_STABLE_MODE" -Default "false")
         DoraMock = ConvertTo-PocBool -Value (Get-PocEnvValue -Values $envValues -Key "ENABLE_MOCK_DORA" -Default "true")
         AsrMock = ConvertTo-PocBool -Value (Get-PocEnvValue -Values $envValues -Key "ENABLE_MOCK_ASR" -Default "true")

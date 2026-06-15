@@ -1,5 +1,5 @@
 version: 0.1.0
-customer: zt-securities
+customer: default
 mock_rules:
   - id: mock-screen-org
     match_keywords:
@@ -11,18 +11,17 @@ mock_rules:
 
   - id: mock-screen-study
     match_keywords:
-      - 党员学习
-      - 学习页面
       - 生产管理
       - 生产页面
+      - 生产进度
     response_type: screen_control
     action_id: SWITCH_TAB_STUDY
 
   - id: mock-screen-activity
     match_keywords:
-      - 党建活动
       - 设备分析
       - 设备页面
+      - 设备状态
     response_type: screen_control
     action_id: SWITCH_TAB_ACTIVITY
 
@@ -35,51 +34,54 @@ mock_rules:
     response_type: screen_control
     action_id: SWITCH_HOME
 
-  - id: mock-leader-zhang
+  - id: mock-guest-welcome
     match_keywords:
-      - 张书记
-      - 张某某
+      - 演示嘉宾
+      - 领导
+      - 欢迎
     response_type: answer
-    title: 张书记欢迎语
-    speak_text: 张书记您好，欢迎莅临中天证券党建大屏。当前大屏已准备好组织建设和党员学习相关数据。
+    title: 通用欢迎语
+    speak_text: 您好，欢迎使用通用可配置数字人。当前系统可通过客户配置切换欢迎语、知识库、问数数据源和大屏动作。
     display:
       mode: text
-      summary: 张书记关注基层党建、党员学习和组织建设。
+      summary: 通用数字人项目通过客户配置适配不同场景。
       bullets:
-        - 近期关注基层党建工作
-        - 重点关注党员学习完成情况
-        - 可继续查看组织建设和党建活动数据
+        - 客户名称、助手名称和欢迎语来自配置
+        - 知识库、问数数据源和演示问题可替换
+        - 大屏动作通过 action_id 白名单执行
 
-  - id: mock-data-study-rate
+  - id: mock-data-summary
     match_keywords:
-      - 学习完成率
-      - 完成率
+      - 核心指标
+      - 指标概览
+      - 数据总结
     response_type: answer
-    title: 党员学习完成率
-    speak_text: 当前党员学习完成率为百分之八十七点五，整体学习情况良好。
+    title: 指标概览
+    speak_text: 当前示例指标运行正常。正式项目可通过配置替换为客户自己的数据源和指标口径。
     display:
       mode: text
-      summary: 当前党员学习完成率为 87.5%。
+      summary: 示例指标用于验证问数链路。
       bullets:
-        - 党员总数：128 人
-        - 本月学习人数：112 人
-        - 学习完成率：87.5%
+        - 问数 Provider 可配置为 Excel、数据库或 Dora
+        - 指标口径应写入客户配置
+        - 回答需要展示数据来源
 
-  - id: mock-knowledge-join-party
+  - id: mock-knowledge-capability
     match_keywords:
-      - 入党流程
-      - 入党
+      - 系统能力
+      - 能做什么
+      - 项目介绍
     response_type: answer
-    title: 入党流程说明
-    speak_text: 入党流程通常包括申请、培养考察、确定发展对象、接收预备党员和转正等环节。
+    title: 系统能力说明
+    speak_text: 本项目提供语音唤醒、语音识别、知识问答、指标问数、大屏控屏、语音播报和运维日志能力。
     display:
       mode: text
-      summary: 入党流程包含申请、培养、发展、预备和转正等环节。
+      summary: 通用数字人能力可通过客户配置组合。
       bullets:
-        - 递交入党申请书
-        - 接受培养教育和考察
-        - 确定发展对象并履行组织程序
-        - 接收为预备党员并按期转正
+        - 语音唤醒、ASR 和 TTS
+        - Dora / 本地 Provider 能力路由
+        - RAGFlow 知识库检索和受控回答
+        - action_id 白名单大屏控制
 
 fallback:
   response_type: fallback
@@ -88,21 +90,21 @@ fallback:
 
 demo_questions:
   - id: Q-001
-    text: 小天小天
+    text: 小智小智
     category: wakeup
     expected: 进入 listening 状态
   - id: Q-002
-    text: 我是张书记
-    category: leader
-    expected: 返回张书记欢迎语
+    text: 我是演示嘉宾
+    category: welcome
+    expected: 返回通用欢迎语
   - id: Q-003
-    text: 入党流程是什么？
+    text: 这个系统能做什么？
     category: knowledge
-    expected: 返回入党流程摘要
+    expected: 返回系统能力说明
   - id: Q-004
-    text: 当前党员学习完成率是多少？
+    text: 当前核心指标怎么样？
     category: data
-    expected: 返回学习完成率
+    expected: 返回示例指标概览
   - id: Q-005
     text: 请切换到成品库存页面
     category: screen_control

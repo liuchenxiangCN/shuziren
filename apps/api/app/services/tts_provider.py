@@ -385,7 +385,7 @@ async def _stream_cosyvoice_tts(
     task_id = str(uuid4())
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "user-agent": "zt-digital-human-api",
+        "user-agent": "configurable-digital-human-api",
     }
     run_task = {
         "header": {

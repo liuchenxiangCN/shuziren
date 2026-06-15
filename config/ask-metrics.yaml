@@ -1,21 +1,24 @@
-version: 0.7.0
-description: V0.7 本地 POC 脱敏 Excel 问数数据源映射。
+version: 0.8.0
+description: 通用可配置数字人根级问数模板。默认模板不绑定具体客户 Excel, 客户实例映射应放入 config/customers/<customer-id>/ask-metrics.yaml。
+provider: excel
 
 workbooks:
   study:
-    file: zt_party_study_metrics_2026.xlsx
+    file: generic_learning_metrics_2026.xlsx
     sheets:
       dashboard: Dashboard
-      branch_summary: 支部汇总
+      branch_summary: SegmentSummary
 
   org_life:
-    file: zt_party_org_life_metrics_2026.xlsx
+    file: generic_activity_metrics_2026.xlsx
     sheets:
       dashboard: Dashboard
 
   development:
-    file: zt_party_development_metrics_2026.xlsx
+    file: generic_process_metrics_2026.xlsx
     sheets:
       dashboard: Dashboard
-      detail: 发展对象明细
-      branch_summary: 支部汇总
+      detail: Detail
+      branch_summary: SegmentSummary
+
+metrics: []

@@ -5,6 +5,7 @@
 - 文档先行: 先写清目标、边界、验收, 再开发。
 - Mock 先行: 外部依赖先用 Mock 跑通主链路。
 - Adapter 化: Dora、ASR、TTS、FVS、RAGFlow 都通过适配层接入。
+- 通用优先: 项目本体是通用可配置数字人, 客户实例只能通过 `config/customers/<customer-id>/`、客户文档和环境变量进入系统。
 - 可恢复: 每轮完成后更新 `DEV_LOG.md`、`NEXT_ACTIONS.md`、`CHANGELOG.md`。
 - 可移交: 交付物必须让客户能读懂当前能力、部署方式、限制和后续路线。
 

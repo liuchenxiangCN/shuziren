@@ -1,22 +1,22 @@
 # Config
 
-本目录存放本地 POC 的通用配置和客户私有配置覆盖层。
+本目录存放通用可配置数字人项目的默认模板和客户配置覆盖层。
 
 ## Files
 
 - `screen-actions.yaml`: 大屏动作白名单。
 - `wake-words.yaml`: 第一阶段语义唤醒词、V0.4 本地 VAD / 冷却参数、V0.4.1 连续对话窗口参数和播报中长唤醒词确认打断参数。
 - `demo-cases.yaml`: Mock Dora 和 POC 演示用例。
-- `ask-metrics.yaml`: V0.7 本地 Excel 问数工作簿和 sheet 映射。
+- `ask-metrics.yaml`: 根级通用问数模板。默认模板不绑定具体客户 Excel, 客户实例工作簿和 sheet 映射放在客户 profile 中。
 - `dora-output-schema.json`: Dora 标准输出 JSON Schema。
-- `customers/zt-securities/`: V0.8 第一阶段新增的中天证券客户私有配置目录。
+- `customers/`: 客户实例配置目录。新增客户时创建 `config/customers/<customer-id>/`。
 
-V0.7 本地问数数据位于 `docs/demo_data/ask_metrics/`, 由 `ASK_METRICS_DATA_DIR` 指向。该目录不存放在 `config/` 下, 是因为三份 `.xlsx` 属于演示数据源而不是运行时密钥或动作配置; 文件名和 sheet 映射由 `ask-metrics.yaml` 管理。
+本地问数数据由 `ASK_METRICS_DATA_DIR` 指向。该目录不存放在 `config/` 下, 是因为 `.xlsx` 属于演示数据源而不是运行时密钥或动作配置; 文件名和 sheet 映射由当前生效的 `ask-metrics.yaml` 管理。
 
-V0.8 起, 后端默认会在 `CUSTOMER_ID=zt-securities` 时加载:
+V0.8 起, 后端可按 `CUSTOMER_ID` 加载对应客户目录。启用某个客户实例时配置:
 
 ```text
-config/customers/zt-securities/
+config/customers/<customer-id>/
 ```
 
 客户目录中的 `screen-actions.yaml`、`ask-metrics.yaml`、`demo-cases.yaml`、`wake-words.yaml` 会覆盖根目录默认配置。`dora.yaml`、`ragflow.yaml`、`voice.yaml` 和 `fvs.yaml` 存放非敏感客户参数样例。

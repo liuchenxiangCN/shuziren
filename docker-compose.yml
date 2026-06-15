@@ -3,15 +3,15 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    image: zt-digital-human-api:0.1.0
-    container_name: zt-digital-human-api
+    image: configurable-digital-human-api:0.1.0
+    container_name: configurable-digital-human-api
     environment:
       APP_ENV: ${APP_ENV:-local}
-      APP_NAME: ${APP_NAME:-zt-digital-human-api}
+      APP_NAME: ${APP_NAME:-configurable-digital-human-api}
       APP_VERSION: ${APP_VERSION:-0.1.0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      CUSTOMER_ID: ${CUSTOMER_ID:-zt-securities}
-      CUSTOMER_CONFIG_DIR: ${CUSTOMER_CONFIG_DIR:-/app/config/customers/zt-securities}
+      CUSTOMER_ID: ${CUSTOMER_ID:-default}
+      CUSTOMER_CONFIG_DIR: ${CUSTOMER_CONFIG_DIR:-}
       DEMO_STABLE_MODE: ${DEMO_STABLE_MODE:-false}
       TZ: ${TZ:-Asia/Shanghai}
       DORA_BASE_URL: ${DORA_BASE_URL:-}
@@ -65,8 +65,8 @@ services:
         VITE_FVS_INTEGRATION_MODE: ${VITE_FVS_INTEGRATION_MODE:-mock}
         VITE_FVS_TARGET_ORIGIN: ${VITE_FVS_TARGET_ORIGIN:-}
         VITE_DEMO_STABLE_MODE: ${VITE_DEMO_STABLE_MODE:-false}
-    image: zt-digital-human-web:0.1.0
-    container_name: zt-digital-human-web
+    image: configurable-digital-human-web:0.1.0
+    container_name: configurable-digital-human-web
     depends_on:
       - api
     ports:

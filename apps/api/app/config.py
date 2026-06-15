@@ -23,10 +23,16 @@ PROJECT_ROOT = _resolve_project_root()
 
 class Settings(BaseSettings):
     app_env: str = "local"
-    app_name: str = "zt-digital-human-api"
+    app_name: str = "configurable-digital-human-api"
     app_version: str = "0.1.0"
     log_level: str = "INFO"
-    customer_id: str = "zt-securities"
+    project_id: str = "configurable-digital-human"
+    project_name: str = "通用可配置数字人 POC"
+    product_name: str = "可配置大屏对话数字人"
+    customer_id: str = "default"
+    customer_name: str = "默认客户"
+    scenario_name: str = "通用大屏交互"
+    assistant_name: str = "小智"
     customer_config_dir: str = ""
     demo_stable_mode: bool = False
 
@@ -105,7 +111,7 @@ def get_settings() -> Settings:
 
 
 def _apply_customer_config(settings: Settings) -> Settings:
-    customer_id = settings.customer_id.strip() or "zt-securities"
+    customer_id = settings.customer_id.strip() or "default"
     customer_dir = _customer_config_dir(settings, customer_id)
     env_vars = _configured_env_vars()
     overrides: dict[str, Any] = {
@@ -118,6 +124,24 @@ def _apply_customer_config(settings: Settings) -> Settings:
 
     runtime = _load_optional_yaml(customer_dir / "runtime.yaml")
     if runtime:
+        project = runtime.get("project")
+        if not isinstance(project, dict):
+            project = {}
+        for setting_name, env_key in (
+            ("project_id", "PROJECT_ID"),
+            ("project_name", "PROJECT_NAME"),
+            ("product_name", "PRODUCT_NAME"),
+            ("customer_name", "CUSTOMER_NAME"),
+            ("scenario_name", "SCENARIO_NAME"),
+            ("assistant_name", "ASSISTANT_NAME"),
+        ):
+            _overlay_value(
+                overrides,
+                env_vars,
+                setting_name,
+                env_key,
+                project.get(setting_name, runtime.get(setting_name)),
+            )
         _overlay_value(
             overrides,
             env_vars,

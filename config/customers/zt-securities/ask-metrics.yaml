@@ -1,5 +1,6 @@
 version: 0.8.0
 description: 中天证券 POC 脱敏 Excel 问数数据源映射。
+provider: excel
 mode: excel
 data_dir: docs/demo_data/ask_metrics
 
@@ -21,3 +22,387 @@ workbooks:
       dashboard: Dashboard
       detail: 发展对象明细
       branch_summary: 支部汇总
+
+metrics:
+  - id: overall_summary
+    priority: 10
+    match:
+      all: ["总结"]
+      any_groups:
+        - ["党建", "整体"]
+    context:
+      study:
+        workbook: study
+        sheet: dashboard
+        type: dashboard
+      org:
+        workbook: org_life
+        sheet: dashboard
+        type: dashboard
+      dev:
+        workbook: development
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 党建工作整体情况
+      speak_text: "当前党建数据整体平稳。党员学习完成率为{study.学习完成率|percent}，组织生活活动完成率为{org.活动完成率|percent}，入党积极分子{dev.入党积极分子人数|number}人，发展对象{dev.发展对象人数|number}人。"
+      summary: 学习、组织生活和党员发展三类测试指标已汇总。
+      bullets:
+        - "学习完成率：{study.学习完成率|percent}"
+        - "组织生活活动完成率：{org.活动完成率|percent}"
+        - "平均参会率：{org.平均参会率|percent}"
+        - "入党积极分子：{dev.入党积极分子人数|number} 人"
+        - "发展对象：{dev.发展对象人数|number} 人"
+      source:
+        text: docs/demo_data/ask_metrics/*.xlsx
+
+  - id: study_lowest_branch
+    priority: 20
+    match:
+      all: ["支部", "学习"]
+      any: ["最低", "倒数"]
+    context:
+      branch:
+        workbook: study
+        sheet: branch_summary
+        type: table
+    transforms:
+      - type: min_row
+        source: branch
+        by: 完成率
+        as: lowest
+    result:
+      title: 学习完成率最低支部
+      speak_text: "当前学习完成率最低的是{lowest.支部名称}，完成率为{lowest.完成率|percent}，已完成{lowest.已完成人数|number}人，党员数{lowest.党员数|number}人。"
+      summary: "{lowest.支部名称}完成率最低，为 {lowest.完成率|percent}。"
+      bullets:
+        - "已完成人数：{lowest.已完成人数|number} 人"
+        - "党员数：{lowest.党员数|number} 人"
+        - "心得未提交：{lowest.心得未提交|number} 人"
+      source:
+        - workbook: study
+          sheet: branch_summary
+
+  - id: study_completion_rate
+    priority: 30
+    match:
+      all: ["学习", "完成率"]
+    context:
+      metrics:
+        workbook: study
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 党员学习完成率
+      speak_text: "当前党员学习完成率为{metrics.学习完成率|percent}，党员总数{metrics.党员总数|number}人，已完成学习{metrics.已完成学习人数|number}人。"
+      summary: "当前党员学习完成率为 {metrics.学习完成率|percent}。"
+      bullets:
+        - "党员总数：{metrics.党员总数|number} 人"
+        - "已完成学习：{metrics.已完成学习人数|number} 人"
+        - "未完成：{metrics.未完成人数|number} 人"
+      source:
+        - workbook: study
+          sheet: dashboard
+
+  - id: study_total_members
+    priority: 40
+    match:
+      any_groups:
+        - ["党员总数", "学习总人数"]
+    context:
+      metrics:
+        workbook: study
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 党员学习人数
+      speak_text: "按2026年6月学习口径，党员总数为{metrics.党员总数|number}人。"
+      summary: "党员总数 {metrics.党员总数|number} 人。"
+      bullets:
+        - "已完成学习：{metrics.已完成学习人数|number} 人"
+        - "学习完成率：{metrics.学习完成率|percent}"
+      source:
+        - workbook: study
+          sheet: dashboard
+
+  - id: study_completed_count
+    priority: 50
+    match:
+      all: ["学习"]
+      any: ["完成学习", "已完成学习"]
+    context:
+      metrics:
+        workbook: study
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 本月学习完成人数
+      speak_text: "本月已完成学习人数为{metrics.已完成学习人数|number}人，完成率为{metrics.学习完成率|percent}。"
+      summary: "本月已完成学习 {metrics.已完成学习人数|number} 人。"
+      bullets:
+        - "党员总数：{metrics.党员总数|number} 人"
+        - "未完成：{metrics.未完成人数|number} 人"
+      source:
+        - workbook: study
+          sheet: dashboard
+
+  - id: study_uncompleted_count
+    priority: 60
+    match:
+      all: ["学习", "未完成"]
+    context:
+      metrics:
+        workbook: study
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 本月学习未完成人数
+      speak_text: "本月未完成学习人数为{metrics.未完成人数|number}人。"
+      summary: "未完成学习 {metrics.未完成人数|number} 人。"
+      bullets:
+        - "已完成学习：{metrics.已完成学习人数|number} 人"
+        - "学习完成率：{metrics.学习完成率|percent}"
+      source:
+        - workbook: study
+          sheet: dashboard
+
+  - id: org_theme_day_count
+    priority: 70
+    match:
+      all: ["主题党日"]
+    context:
+      metrics:
+        workbook: org_life
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 主题党日开展次数
+      speak_text: "2026年1到6月主题党日完成次数为{metrics.主题党日完成次数|number}次。"
+      summary: "主题党日完成 {metrics.主题党日完成次数|number} 次。"
+      bullets:
+        - "已完成活动：{metrics.已完成活动数|number} 次"
+        - "活动完成率：{metrics.活动完成率|percent}"
+      source:
+        - workbook: org_life
+          sheet: dashboard
+
+  - id: org_attendance_rate
+    priority: 80
+    match:
+      any: ["参会率", "平均参会"]
+    context:
+      metrics:
+        workbook: org_life
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 组织生活平均参会率
+      speak_text: "2026年1到6月组织生活平均参会率为{metrics.平均参会率|percent}。"
+      summary: "平均参会率 {metrics.平均参会率|percent}。"
+      bullets:
+        - "已完成活动：{metrics.已完成活动数|number} 次"
+        - "活动完成率：{metrics.活动完成率|percent}"
+      source:
+        - workbook: org_life
+          sheet: dashboard
+
+  - id: org_rectification_rate
+    priority: 90
+    match:
+      all: ["整改", "闭环"]
+    context:
+      metrics:
+        workbook: org_life
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 整改事项闭环率
+      speak_text: "当前整改事项数为{metrics.整改事项数|number}项，整改闭环率为{metrics.整改闭环率|percent}。"
+      summary: "整改闭环率 {metrics.整改闭环率|percent}。"
+      bullets:
+        - "整改事项数：{metrics.整改事项数|number} 项"
+        - "活动完成率：{metrics.活动完成率|percent}"
+      source:
+        - workbook: org_life
+          sheet: dashboard
+
+  - id: org_activity_completion_rate
+    priority: 100
+    match:
+      all: ["完成率"]
+      any_groups:
+        - ["组织生活", "活动"]
+    context:
+      metrics:
+        workbook: org_life
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 组织生活活动完成率
+      speak_text: "2026年1到6月活动计划总数为{metrics.活动计划总数|number}次，已完成{metrics.已完成活动数|number}次，活动完成率为{metrics.活动完成率|percent}。"
+      summary: "组织生活活动完成率 {metrics.活动完成率|percent}。"
+      bullets:
+        - "计划活动：{metrics.活动计划总数|number} 次"
+        - "已完成活动：{metrics.已完成活动数|number} 次"
+        - "未完成活动：{metrics.未完成活动数|number} 次"
+      source:
+        - workbook: org_life
+          sheet: dashboard
+
+  - id: development_activists
+    priority: 110
+    match:
+      all: ["积极分子"]
+    context:
+      metrics:
+        workbook: development
+        sheet: dashboard
+        type: dashboard
+      branch:
+        workbook: development
+        sheet: branch_summary
+        type: table
+    result:
+      title: 入党积极分子人数
+      speak_text: "当前入党积极分子共有{metrics.入党积极分子人数|number}人。"
+      summary: "入党积极分子 {metrics.入党积极分子人数|number} 人。"
+      bullets:
+        - "入党积极分子：{metrics.入党积极分子人数|number} 人"
+      source:
+        - workbook: development
+          sheet: dashboard
+        - workbook: development
+          sheet: branch_summary
+
+  - id: development_objects
+    priority: 120
+    match:
+      all: ["发展对象"]
+    context:
+      metrics:
+        workbook: development
+        sheet: dashboard
+        type: dashboard
+      branch:
+        workbook: development
+        sheet: branch_summary
+        type: table
+    transforms:
+      - type: distribution
+        source: branch
+        label_field: 支部名称
+        value_field: 发展对象
+        as: distribution
+      - type: join_items
+        source: distribution
+        template: "{label}{value|number}人"
+        separator: "，"
+        as: distribution_text
+      - type: render_items
+        source: distribution
+        template: "{label}：{value|number} 人"
+        as: distribution_bullets
+    result:
+      title: 发展对象人数
+      speak_text: "当前发展对象共有{metrics.发展对象人数|number}人，分布为{distribution_text}。"
+      summary: "发展对象 {metrics.发展对象人数|number} 人。"
+      bullets:
+        - "发展对象：{metrics.发展对象人数|number} 人"
+        - extend: distribution_bullets
+      source:
+        - workbook: development
+          sheet: dashboard
+        - workbook: development
+          sheet: branch_summary
+
+  - id: development_regularized_count
+    priority: 130
+    match:
+      all: ["转正"]
+    context:
+      metrics:
+        workbook: development
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 本年转正党员人数
+      speak_text: "2026年党员发展台账中，本年转正党员为{metrics.本年转正人数|number}人。"
+      summary: "本年转正党员 {metrics.本年转正人数|number} 人。"
+      bullets:
+        - "发展台账总人数：{metrics.发展台账总人数|number} 人"
+        - "预备党员：{metrics.预备党员人数|number} 人"
+      source:
+        - workbook: development
+          sheet: dashboard
+
+  - id: development_material_pending
+    priority: 140
+    match:
+      all: ["材料"]
+      any: ["待补充", "补充"]
+    context:
+      detail:
+        workbook: development
+        sheet: detail
+        type: table
+    transforms:
+      - type: filter_rows
+        source: detail
+        where:
+          field: 材料状态
+          equals: 待补充
+        as: rows
+      - type: join_items
+        source: rows
+        template: "{姓名}（{支部名称}，{人员ID}）"
+        separator: "、"
+        as: names
+      - type: render_items
+        source: rows
+        template: "{姓名}：{支部名称}，当前阶段{当前阶段}"
+        as: row_bullets
+    result:
+      title: 党员发展材料待补充
+      speak_text: "当前党员发展材料待补充人数为{rows|count}人，分别是{names}。"
+      summary: "材料待补充 {rows|count} 人。"
+      bullets:
+        - extend: row_bullets
+      source:
+        - workbook: development
+          sheet: detail
+
+  - id: development_political_pending
+    priority: 150
+    match:
+      all: ["政审"]
+      any: ["待", "未完成", "多少"]
+    context:
+      detail:
+        workbook: development
+        sheet: detail
+        type: table
+    transforms:
+      - type: filter_rows
+        source: detail
+        where:
+          field: 政审状态
+          contains: 待完成
+        as: rows
+      - type: join_items
+        source: rows
+        template: "{姓名}（{支部名称}，{人员ID}）"
+        separator: "、"
+        as: names
+      - type: render_items
+        source: rows
+        template: "{姓名}：{支部名称}，当前阶段{当前阶段}"
+        as: row_bullets
+    result:
+      title: 政审待完成人数
+      speak_text: "当前政审待完成人数为{rows|count}人，分别是{names}。"
+      summary: "政审待完成 {rows|count} 人。"
+      bullets:
+        - extend: row_bullets
+      source:
+        - workbook: development
+          sheet: detail

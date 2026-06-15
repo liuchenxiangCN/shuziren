@@ -16,7 +16,7 @@
 - 大屏控制仍坚持 `action_id` + Gateway 白名单校验。
 - 禁止执行模型生成的 JavaScript、SQL、Python 或 shell 命令。
 - 问数可以由 Dora 承接, 但必须保留切回固定 Excel 指标匹配的方案。
-- 客户私有配置从核心代码中解耦, 客户差异进入 `config/customers/<customer-id>/` 和本地 `.env`。
+- 项目本体保持通用可配置数字人, 客户私有配置从核心代码中解耦, 客户差异进入 `config/customers/<customer-id>/` 和本地 `.env`。
 - 交付材料在功能增强和交付优化完成后再输出, 避免文档先行锁死尚未实现的能力。
 
 ## V0.8 功能增强版

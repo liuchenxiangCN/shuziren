@@ -16,7 +16,7 @@
 | R-008 | 问数口径不清 | 回答不准 | V0.7 已采用 Gateway 本地只读 Excel Adapter 承接脱敏样例问数, 并验证 11 个固定问题; 正式客户真实数据源和指标口径仍需确认 | Mitigated |
 | R-009 | 大模型误触发控屏 | 页面误切换 | action 白名单 + 二次校验 | Open |
 | R-010 | 证券客户合规要求高 | 云模型受限 | POC 前确认云模型、数据范围、脱敏策略 | Open |
-| R-011 | 本机未安装 pnpm / uv, 且 PATH 上 Python 为 3.14 | 非 Docker 本地开发会受阻 | V0.1 已通过 Docker 内 pnpm / uv 和 Python 3.12 构建验证; 本机非 Docker 开发前仍需补装工具 | Open |
+| R-011 | 本机 pnpm / uv / Python 版本与 PATH 可能不一致 | 非 Docker 本地开发会受阻 | 2026-06-15 已确认 `uv` 安装在 `C:\Users\nifen\.local\bin\uv.exe`, 可用 uv Python 3.12.13 创建本地 `.venv` 并完成 FastAPI TestClient smoke; 当前 PowerShell PATH 尚未刷新, 需要用绝对路径或重启终端后再用 `uv` 命令 | Mitigated |
 | R-012 | 当前真实 Dora Agent 尚未按党建大屏 JSON Prompt 固化 | 真实 `screen_control` 可能无法稳定输出项目动作 JSON | 已发布专用 Agent `中天证券党建大屏语音助手`, 真实控屏端到端验证通过 | Closed |
 | R-013 | 浏览器自动播放策略阻止 TTS 主动播报 | 数字人回答后不能自动发声, 等待提示音也可能被拦截 | V0.3 改为后台合成音频, 展示手动播报按钮和原生音频控件; V0.6 等待提示优先预热后端 TTS, 并用浏览器 `speechSynthesis` 兜底, 当前环境已通过人工验收; 正式客户环境仍需演示前检查播放权限 | Mitigated |
 | R-014 | 百炼 API Key 已出现在对话上下文中 | 密钥泄露风险升高 | `.env` 不入 Git, 前端不暴露 Key; 客户移交或正式演示前建议在百炼控制台轮换 Key | Open |
@@ -35,9 +35,25 @@
 | R-027 | 自定义新闻爬虫存在合规、版权、频控和 SSRF 风险 | 可能访问未授权内容、触发网站限制或被滥用访问内网地址 | 仅采集公开页面; 遵守新闻源访问规则; 后端做 URL 白名单和内网地址拦截; 增加限频、日志审计和脱敏; 前端不得直接抓取新闻站点 | Open |
 | R-028 | 指定人员同名或资料来源可信度不足 | 导入知识库后可能混入错误人员信息, 影响回答可信度 | 采集时增加单位、职务、关键词约束; 整理阶段保留来源 URL、发布时间和置信度; 低置信度内容进入待确认状态 | Open |
 | R-029 | RAGFlow 导入解析状态不稳定或耗时不可控 | 新增资料无法按时进入 MCP 检索, 影响 6/30 上线验收 | 导入 Adapter 需记录批次日志、轮询解析状态、失败重试和小批量导入; 验收前准备人工导入兜底 | Open |
+| R-030 | 临时宣传分支内容污染主线 | 后续架构和配置中心设计可能误把临时录屏页面、专用资产或临时动作白名单当成主线能力 | 2026-06-15 已删除本地临时宣传分支, 清理主线运行目录中的录屏页面、专用组件、临时客户配置、临时资产、临时 ADR 和财务录屏动作白名单; 后续阶段 0A 固化主线清洁搜索门禁 | Mitigated |
+| R-031 | 配置页泄露敏感配置 | Dora / ASR / TTS Key、Token、数据库 DSN 或供应商密钥可能通过前端泄露 | 阶段 1 已新增脱敏只读 `GET /api/config/effective` 和 `/ops/config`; sensitive 字段只返回 configured / source / masked, API 不返回 Key、Token、密码、DSN、Bearer、`sk-*`、`ak-*`, 且不直接返回 `Settings.model_dump()` | Mitigated |
+| R-032 | 可写 action 配置早于授权执行响应增强 | 前端仍可能根据旧缓存动作执行 FVS, 不能保证“本次后端授权结果”是唯一执行依据 | 可写 action 配置必须等阶段 4: `/api/screen/execute` 返回完整授权 action, 前端只执行该响应, 且 `params` 通过 schema 校验 | Open |
+| R-033 | 数据库问数和知识库直连引入越权或编造 | 后续扩展如果允许自由 SQL 或无来源 summarizer, 会破坏当前安全边界 | 阶段 2 仅预留 Database Provider `not_implemented` 状态, 未连接数据库、未执行 SQL; 后续数据库问数仍必须只允许只读账号、表 / 字段白名单、参数化查询、超时和 limit; KnowledgeDirect summarizer 必须 require_sources 且 no_evidence_policy=fallback | Open |
+| R-034 | 通用项目主线重新被客户实例污染 | 后续新增客户时可能继续把某个客户名称、场景、Prompt 或看板动作写回核心代码 / 默认模板 | 2026-06-15 已完成阶段 0A 默认入口和根模板清洁; 阶段 2 已移除 `apps/api/app/services/ask_metrics.py` 客户实例硬编码, 客户 Excel 问数规则仅保留在 `config/customers/zt-securities/ask-metrics.yaml` 客户 profile 中 | Mitigated |
+| R-036 | 配置驱动问数定义缺少独立校验器 | 后续新增客户 metric 配置时, YAML 字段、模板或 workbook/sheet 名写错会导致问数 fallback | 阶段 2 已用 11 个固定问数 smoke 覆盖当前客户 profile, 并保持异常安全 fallback; 后续可在阶段 5 validate/test API 中增加 ask-metrics dry-run 校验, 当前不得开放写配置接口 | Open |
+| R-035 | 配置来源误标导致排障误判 | 只读配置页可能把合并后的最终值误标为来自 env / customer_config, 误导现场排障或配置治理 | 阶段 1 已新增来源构造服务, 按 env / customer_config / root_config / code_default / frontend_runtime 契约显式标注; 对 action_count、provider 组合、Prompt 未实现项等无法精确追踪字段标 `derived` / `unknown` 并说明限制 | Mitigated |
 
 ## 当前遗留事项
 
+- 2026-06-15 已恢复主线清洁基线, 后续主线优化不再继承临时宣传录屏页面、临时客户配置、临时资产或临时白名单动作。
+- 2026-06-15 项目定位已调整为通用可配置数字人; 中天证券党建大屏只作为 `zt-securities` 客户配置实例。
+- 2026-06-15 已完成阶段 0A 默认入口和根模板清洁; 默认 Docker Compose、包名、根级唤醒词 / 演示用例 / 问数模板、前端 Mock 大屏、README 和脚本默认用例均切为通用示例。
+- 2026-06-15 已完成阶段 1 只读 effective config 和 schema: 新增 `/api/config/effective`、`/api/config/schema` 和 `/ops/config` 只读页面, 只展示脱敏白名单配置快照和 schema, 不提供保存、reload、action 编辑或写入入口。
+- 2026-06-15 已确认本机 `uv` 可用但当前 PowerShell PATH 尚未刷新; 阶段 1 请求级 smoke 使用 `C:\Users\nifen\.local\bin\uv.exe` 绝对路径完成。
+- 未跟踪目录 `outputs/manual-20260614-212600/` 已清点为历史 / 手工输出, 不作为阶段 1 配置模型、schema、页面或 Provider 设计输入。
+- 能力路由与配置中心方案已调整为先做阶段 0A 默认入口 / 根模板清洁和阶段 1 只读 effective config; 可写配置、数据库问数和知识库直连均不属于下一轮首步。
+- 2026-06-15 已完成阶段 2 AskMetricsProvider 抽象: `apps/api/app/services/ask_metrics.py` 不再包含客户实例硬编码, Excel 问数由配置驱动 `ExcelAskMetricsProvider` 承接; 当前 Database Provider 仅保留 `not_implemented` 状态, 未连接数据库或执行 SQL。
+- 当前 `Settings` 运行时仍只保留合并后最终值; 阶段 1 已通过独立 `ConfigSnapshot` 来源构造输出 `source` 字段, 对聚合或浏览器 runtime 字段标 `derived` / `frontend_runtime` / `unknown`。
 - V0.1 Mock 闭环已完成。
 - V0.2 Dora Adapter 已接入 OpenClaw `agents` 和 `sse/chat`, Mock 回退保留。
 - 真实 Dora Agent `中天证券党建大屏语音助手` 已验证可返回 `answer` / `screen_control` / `fallback`。

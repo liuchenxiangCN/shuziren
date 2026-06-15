@@ -2,7 +2,7 @@
 
 ## 配置目标
 
-核心代码保持通用, 客户差异通过配置和文档管理。V0.8 第一阶段已新增客户私有配置覆盖层:
+核心代码保持通用, 客户差异通过配置和文档管理。项目默认定位是通用可配置数字人; 中天证券党建大屏通过客户配置覆盖层实现。V0.8 第一阶段已新增客户私有配置覆盖层:
 
 ```text
 config/
@@ -55,9 +55,16 @@ config/
 ```env
 # Runtime
 APP_ENV=local
+APP_NAME=configurable-digital-human-api
 LOG_LEVEL=INFO
-CUSTOMER_ID=zt-securities
-CUSTOMER_CONFIG_DIR=/app/config/customers/zt-securities
+PROJECT_ID=configurable-digital-human
+PROJECT_NAME=通用可配置数字人 POC
+PRODUCT_NAME=可配置大屏对话数字人
+CUSTOMER_ID=default
+CUSTOMER_NAME=默认客户
+SCENARIO_NAME=通用大屏交互
+ASSISTANT_NAME=小智
+CUSTOMER_CONFIG_DIR=
 DEMO_STABLE_MODE=false
 
 # Frontend
@@ -71,7 +78,7 @@ VITE_DEMO_STABLE_MODE=false
 DORA_BASE_URL=https://your-dora-host
 DORA_API_KEY=replace_me
 DORA_AGENT_ID=
-DORA_AGENT_NAME=中天证券党建大屏语音助手
+DORA_AGENT_NAME=your-published-agent-name
 DORA_CHANNEL_TYPE=feishu
 DORA_CHAT_MODE=sse
 DORA_TIMEOUT_SECONDS=60
@@ -127,6 +134,15 @@ ENABLE_MOCK_TTS=true
 # Session
 SQLITE_PATH=/app/data/sessions.db
 SAVE_AUDIO=false
+```
+
+启用中天证券客户实例时, 在 `.env` 中覆盖:
+
+```env
+CUSTOMER_ID=zt-securities
+CUSTOMER_NAME=中天证券
+CUSTOMER_CONFIG_DIR=/app/config/customers/zt-securities
+DORA_AGENT_NAME=中天证券党建大屏语音助手
 ```
 
 ## V0.9 演示稳态模式
@@ -201,11 +217,11 @@ V0.8 已新增 `ASK_METRICS_MODE`:
 V0.8 第一阶段已新增客户私有配置覆盖层:
 
 ```env
-CUSTOMER_ID=zt-securities
-CUSTOMER_CONFIG_DIR=/app/config/customers/zt-securities
+CUSTOMER_ID=<customer-id>
+CUSTOMER_CONFIG_DIR=/app/config/customers/<customer-id>
 ```
 
-当前目录:
+当前中天证券客户实例目录:
 
 ```text
 config/customers/zt-securities/

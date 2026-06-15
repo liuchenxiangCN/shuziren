@@ -1,10 +1,8 @@
 version: 0.1.0
 mode: semantic
 wake_words:
-  - 小天小天
-  - 中天小天
-  - 你好小天
-  - 小天
+  - 小智小智
+  - 你好小智
 settings:
   min_audio_ms: 1000
   max_audio_ms: 6500
@@ -17,8 +15,8 @@ settings:
   vad_threshold: 0.018
   barge_in_enabled: true
   barge_in_wake_words:
-    - 小天小天
-    - 你好小天
+    - 小智小智
+    - 你好小智
   barge_in_vad_threshold: 0.018
   barge_in_min_audio_ms: 900
   barge_in_silence_ms: 700

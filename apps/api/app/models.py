@@ -88,11 +88,41 @@ class WakeConfigResponse(BaseModel):
 
 class DemoConfigResponse(BaseModel):
     stable_mode: bool
+    project_id: str
+    project_name: str
+    product_name: str
     customer_id: str
+    customer_name: str
+    scenario_name: str
+    assistant_name: str
     ask_metrics_mode: str
     mock: dict[str, bool]
     questions: list[dict[str, Any]]
     notice: str
+
+
+class ConfigEffectiveResponse(BaseModel):
+    version: str
+    generated_at: str
+    read_only: bool
+    provenance: dict[str, Any]
+    project: dict[str, Any]
+    customer: dict[str, Any]
+    dashboard: dict[str, Any]
+    capabilities: dict[str, Any]
+    mock_switches: dict[str, Any]
+    prompt_profiles: dict[str, Any]
+    implementation_status: dict[str, Any]
+    sensitive: dict[str, Any]
+
+
+class ConfigSchemaResponse(BaseModel):
+    version: str
+    generated_at: str
+    read_only: bool
+    sources: list[str]
+    sections: dict[str, Any]
+    disabled_endpoints: list[str]
 
 
 class TtsSynthesizeRequest(BaseModel):

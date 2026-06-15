@@ -2,6 +2,14 @@ version: 0.9.0
 customer_id: zt-securities
 description: 中天证券党建大屏数字人 POC 客户运行时配置。
 
+project:
+  project_id: zt-digital-human
+  project_name: 中天证券党建大屏数字人 POC
+  product_name: 党建大屏对话数字人
+  customer_name: 中天证券
+  scenario_name: 党建大屏
+  assistant_name: 小天
+
 demo_stable_mode: false
 demo:
   stable_mode: false

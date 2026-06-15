@@ -40,7 +40,7 @@ V0.2 Dora Adapter 对外先稳定返回:
 
 ## Ask Metrics Answer
 
-V0.7 本地 Excel 问数 Adapter 命中后仍返回标准 `answer`, 不新增前端响应类型。回答必须说明数据来源, 防止把脱敏样例误认为真实客户数据。
+V0.7 本地 Excel 问数命中后仍返回标准 `answer`, 不新增前端响应类型。阶段 2 已将问数链路抽象为 `AskMetricsProvider`, 当前 Excel 能力由配置驱动 `ExcelAskMetricsProvider` 承接。回答必须说明数据来源, 防止把脱敏样例误认为真实客户数据。
 
 ```json
 {
@@ -61,7 +61,7 @@ V0.7 本地 Excel 问数 Adapter 命中后仍返回标准 `answer`, 不新增前
 }
 ```
 
-当前支持的本地问数范围:
+当前客户 profile 支持的本地问数范围:
 
 - 党员学习: 党员总数、已完成学习人数、学习完成率、未完成人数、最低完成率支部。
 - 组织生活与党建活动: 活动完成率、主题党日完成次数、平均参会率、整改闭环率。
@@ -70,9 +70,66 @@ V0.7 本地 Excel 问数 Adapter 命中后仍返回标准 `answer`, 不新增前
 规则:
 
 - 数据源为 `docs/demo_data/ask_metrics/*.xlsx` 的脱敏样例。
-- Gateway 在调用 Dora 前先匹配问数意图; 命中后直接读 Excel 返回。
+- Gateway 在 `ASK_METRICS_MODE=excel` 时, 调用 `ExcelAskMetricsProvider` 按当前 `ask-metrics.yaml` 的 metric 定义匹配问数意图; 命中后直接读 Excel 返回。
 - 未命中问数意图时继续走 Dora / Mock Dora, 不抢占知识库问答和控屏。
 - 禁止执行模型生成的 SQL、Python 或 JavaScript 来查询数据。
+- 根级 `config/ask-metrics.yaml` 只保留通用空 metric 模板; 客户实例 workbook、sheet、关键词、字段、模板和来源说明位于 `config/customers/<customer-id>/ask-metrics.yaml`。
+
+## AskMetricsProvider
+
+阶段 2 已实现。Provider 只负责只读问数查询和返回标准 `answer` 所需的结构化结果, 不执行控屏、不调用供应商密钥、不执行模型生成代码。
+
+```json
+{
+  "provider": "excel",
+  "metric_id": "study_completion_rate",
+  "title": "党员学习完成率",
+  "speak_text": "当前党员学习完成率为87.5%。",
+  "summary": "当前党员学习完成率为 87.5%。",
+  "bullets": ["党员总数：128 人"],
+  "source": "zt_party_study_metrics_2026.xlsx / Dashboard"
+}
+```
+
+当前实现:
+
+- `excel`: 已实现, 由 `ExcelAskMetricsProvider` 按配置读取本地 `.xlsx`。
+- `dora`: 仍通过既有 Dora / Mock Dora 路径承接, 不是本地 Provider。
+- `auto`: 路由策略, 优先 Dora / Mock Dora, fallback 时回退 Excel。
+- `database`: 仅预留 `not_implemented` 状态, 不连接数据库、不执行 SQL。
+
+Excel metric 定义由客户配置提供, 典型结构如下:
+
+```yaml
+metrics:
+  - id: study_completion_rate
+    match:
+      all: ["学习", "完成率"]
+    context:
+      metrics:
+        workbook: study
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 党员学习完成率
+      speak_text: "当前党员学习完成率为{metrics.学习完成率|percent}。"
+      source:
+        - workbook: study
+          sheet: dashboard
+```
+
+模板过滤器:
+
+- `number`: 格式化整数 / 小数。
+- `percent`: 将 0-1 小数格式化为百分比。
+- `count`: 对列表计数。
+
+Excel Provider 支持的只读 transform:
+
+- `min_row`: 在配置声明的表格中按字段取最小行。
+- `filter_rows`: 在配置声明的表格中按字段等于或包含过滤。
+- `distribution`: 从配置声明的表格中按 label/value 字段生成分布项。
+- `join_items` / `render_items`: 将已选行或分布项渲染为文本或 bullet。
 
 ## Ask Metrics Mode
 
@@ -92,6 +149,7 @@ V0.8 已实现。问数模式由 `ASK_METRICS_MODE` 控制:
 - `excel`: Gateway 本地 Excel Adapter 先匹配问数; 未命中继续 Dora / Mock Dora。
 - `dora`: Excel Adapter 不抢占, 由 Dora / Mock Dora 承接通用问数, Gateway 只做归一化和安全兜底。
 - `auto`: 优先 Dora / Mock Dora, Dora 请求失败或返回 `fallback` 时回退 Excel。
+- 阶段 2 后, 上述 `Excel Adapter` 指配置驱动 `ExcelAskMetricsProvider`, 不再指运行代码中的客户硬编码 allowlist。
 
 规则:
 
@@ -126,7 +184,13 @@ V0.9 已实现。演示稳态模式由 `DEMO_STABLE_MODE` 控制, 前端构建�
 ```json
 {
   "stable_mode": true,
-  "customer_id": "zt-securities",
+  "project_id": "configurable-digital-human",
+  "project_name": "通用可配置数字人 POC",
+  "product_name": "可配置大屏对话数字人",
+  "customer_id": "default",
+  "customer_name": "默认客户",
+  "scenario_name": "通用大屏交互",
+  "assistant_name": "小智",
   "ask_metrics_mode": "excel",
   "mock": {
     "dora": false,
@@ -145,6 +209,82 @@ V0.9 已实现。演示稳态模式由 `DEMO_STABLE_MODE` 控制, 前端构建�
   "notice": "演示稳态模式已开启，外部 Dora 失败时会优先使用本地演示兜底。"
 }
 ```
+
+## Config Snapshot
+
+阶段 1 已实现。配置快照用于只读展示当前生效配置和来源, 不作为可写配置存储格式。
+
+### Config Field
+
+```json
+{
+  "value": "通用可配置数字人 POC",
+  "source": "code_default",
+  "sensitive": false,
+  "notes": "可选说明"
+}
+```
+
+`source` 可为:
+
+- `code_default`
+- `root_config`
+- `customer_config`
+- `env`
+- `frontend_build`
+- `frontend_runtime`
+- `derived`
+- `unknown`
+
+规则:
+
+- 不允许从最终值硬猜精确来源。
+- 无法精确判断或属于多字段聚合时使用 `derived` / `unknown`。
+- `frontend_runtime` 表示浏览器 URL 参数或 Vite build-time 配置, 后端只能返回契约, 前端页面读取当前 runtime。
+
+### Sensitive Config Field
+
+```json
+{
+  "label": "Dora API Key",
+  "configured": true,
+  "source": "env",
+  "sensitive": true,
+  "masked": "configured:length=48"
+}
+```
+
+规则:
+
+- 不返回 API Key、Token、密码、DSN、Bearer、`sk-*`、`ak-*` 或供应商原始响应。
+- `masked` 只表达是否配置和长度摘要, 不包含前缀、后缀或可还原片段。
+
+### Config Effective Response
+
+```json
+{
+  "version": "1.0",
+  "generated_at": "2026-06-15T20:00:00+08:00",
+  "read_only": true,
+  "project": {},
+  "customer": {},
+  "dashboard": {},
+  "capabilities": {},
+  "mock_switches": {},
+  "prompt_profiles": {},
+  "implementation_status": {},
+  "sensitive": {}
+}
+```
+
+必须明确显示:
+
+- 项目、客户、场景、助手字段。
+- 看板 backend effective 配置和 frontend runtime 契约。
+- 问数当前 `excel|dora|auto` 状态, 并标注 Database Provider 未实现。
+- 知识库当前 `dora_ragflow_mcp` 状态, 并标注 `KnowledgeDirectAdapter` 和 LLM summarizer 未实现。
+- 控屏当前 `dora_or_mock -> fvs_whitelist` 状态, 并标注 `/api/screen/execute` 尚未返回完整授权 action。
+- 可写配置、可写 Prompt、可写 action 配置、validate/test/reload/audit 均未实现。
 
 ## Chart Answer
 
@@ -463,8 +603,8 @@ V0.8 已实现第一阶段。客户私有配置覆盖规则:
 
 ```json
 {
-  "customer_id": "zt-securities",
-  "customer_config_dir": "/app/config/customers/zt-securities",
+  "customer_id": "<customer-id>",
+  "customer_config_dir": "/app/config/customers/<customer-id>",
   "overrides": [
     "runtime.yaml",
     "screen-actions.yaml",
@@ -542,7 +682,7 @@ actions:
 ```json
 {
   "type": "FVS_ACTION",
-  "source": "zt-digital-human",
+  "source": "configurable-digital-human",
   "action_id": "SWITCH_TAB_ORG",
   "actionId": "SWITCH_TAB_ORG",
   "functionName": "gotoPage",

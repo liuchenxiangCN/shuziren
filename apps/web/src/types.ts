@@ -139,11 +139,54 @@ export interface DemoQuestion {
 
 export interface DemoConfigResponse {
   stable_mode: boolean;
+  project_id: string;
+  project_name: string;
+  product_name: string;
   customer_id: string;
+  customer_name: string;
+  scenario_name: string;
+  assistant_name: string;
   ask_metrics_mode: string;
   mock: Record<string, boolean>;
   questions: DemoQuestion[];
   notice: string;
+}
+
+export interface ConfigField<T = unknown> {
+  value?: T;
+  source?: string;
+  sensitive?: boolean;
+  notes?: string;
+  status?: string;
+  configured?: boolean;
+  masked?: string;
+  label?: string;
+}
+
+export type ConfigSection = Record<string, unknown>;
+
+export interface ConfigEffectiveResponse {
+  version: string;
+  generated_at: string;
+  read_only: boolean;
+  provenance: ConfigSection;
+  project: Record<string, ConfigField>;
+  customer: Record<string, ConfigField>;
+  dashboard: ConfigSection;
+  capabilities: ConfigSection;
+  mock_switches: Record<string, ConfigField>;
+  prompt_profiles: ConfigSection;
+  implementation_status: Record<string, string>;
+  sensitive: Record<string, ConfigField>;
+}
+
+export interface ConfigSchemaResponse {
+  version: string;
+  generated_at: string;
+  read_only: boolean;
+  sources: string[];
+  sections: ConfigSection;
+  disabled_endpoints: string[];
 }
 
 export interface TtsSynthesizeRequest {

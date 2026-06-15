@@ -17,7 +17,7 @@ export interface FvsActionResult {
 
 interface FvsActionMessage {
   type: 'FVS_ACTION';
-  source: 'zt-digital-human';
+  source: 'configurable-digital-human';
   action_id: string;
   actionId: string;
   functionName: string;
@@ -55,7 +55,7 @@ export function executeFvsAction(
 
   const message: FvsActionMessage = {
     type: 'FVS_ACTION',
-    source: 'zt-digital-human',
+    source: 'configurable-digital-human',
     action_id: action.id,
     actionId: action.id,
     functionName: action.fvs_function,

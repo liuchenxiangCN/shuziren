@@ -117,7 +117,7 @@ export async function executeFvsAction(action: ScreenAction) {
 ```json
 {
   "type": "FVS_ACTION",
-  "source": "zt-digital-human",
+  "source": "configurable-digital-human",
   "action_id": "SWITCH_TAB_ORG",
   "actionId": "SWITCH_TAB_ORG",
   "functionName": "gotoPage",
@@ -164,7 +164,7 @@ V0.6 已验收的 UI 方案以 FVS iframe 为页面主体。2026-06-11 起, 按�
 ```js
 window.addEventListener("message", function (event) {
   var message = event.data;
-  if (!message || message.type !== "FVS_ACTION" || message.source !== "zt-digital-human") {
+  if (!message || message.type !== "FVS_ACTION" || message.source !== "configurable-digital-human") {
     return;
   }
 
@@ -206,7 +206,7 @@ duchamp.onlyCommunicateWithOrigins(["http://localhost:18000"]);
 
 ```js
 duchamp.addPostMessageListener(function (message) {
-  if (!message || message.type !== "FVS_ACTION" || message.source !== "zt-digital-human") {
+  if (!message || message.type !== "FVS_ACTION" || message.source !== "configurable-digital-human") {
     return;
   }
 

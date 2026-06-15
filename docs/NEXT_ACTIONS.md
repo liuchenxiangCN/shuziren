@@ -4,6 +4,16 @@
 
 V1.0 POC 验收交付版已输出。
 
+2026-06-15 项目定位已调整为通用可配置数字人 POC。中天证券党建大屏不再是项目本体, 而是当前客户实例: 通过 `config/customers/zt-securities/` 覆盖项目名称、客户名称、助手名称、Dora Agent、知识库、问数数据、FVS 看板、动作白名单、唤醒词和演示话术。根目录默认配置和 `.env.example` 改为通用默认, 前端标题和 Ops 导出标题改为读取配置。新增 ADR-0023 记录该定位决策。
+
+2026-06-15 已恢复主线清洁基线: 本地临时宣传分支已删除, 主线工作树中的录屏页面、专用数字人组件、专用资产、临时客户配置、财务录屏动作白名单和临时 ADR 已移除。当前只保留主线架构图 `docs/15_MAINLINE_ARCHITECTURE_DIAGRAM.md`、能力路由与配置中心方案 `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md` 以及 ADR-0022。配置中心方案已进一步按实际代码修正: 阶段 0A 先做默认入口和根模板清洁; 阶段 1 做只读 effective config 时必须新增字段来源构造, 不能凭合并后的 `Settings` 猜测来源; 不直接进入可写配置。阶段 0A 当时列出的 `AskMetricsService` 临时遗留 allowlist 已在阶段 2 移除。
+
+2026-06-15 已完成通用可配置数字人阶段 0A: 默认 Docker Compose 启动不再自动进入客户 profile, API / Web 镜像名、容器名和包名改为 `configurable-digital-human-*`; 根级 `wake-words.yaml`、`demo-cases.yaml`、`ask-metrics.yaml` 和前端 Mock 大屏默认态已改为通用示例; README 与 PowerShell 脚本默认 smoke 改为通用用例; `config/customers/zt-securities/` 继续作为客户实例保留。阶段 0A 当时记录 `apps/api/app/services/ask_metrics.py` 为阶段 2 前临时遗留 allowlist, 该遗留已在阶段 2 移除。未跟踪输出目录 `outputs/manual-20260614-212600/` 已清点为历史 / 手工输出, 不作为阶段 1 输入。
+
+2026-06-15 已完成通用可配置数字人阶段 1: 新增只读脱敏 `GET /api/config/effective` 和 `GET /api/config/schema`; 后端通过 `ConfigSnapshot` 白名单构造和来源构造输出项目、客户、场景、助手、看板、问数、知识库、控屏 provider、Mock 开关、Prompt profile、敏感字段摘要和当前实现状态, 不直接返回 `Settings.model_dump()`。前端新增 `/ops/config` 只读配置页, 同时展示后端 effective FVS 配置和当前浏览器 FVS runtime; 页面无保存、reload、action 编辑或写入入口。当前 Database Provider、KnowledgeDirectAdapter、LLM summarizer、可写 Prompt、可写 action 配置、配置 validate/test/reload/audit 均明确未实现。验证通过: `corepack.cmd pnpm --dir apps/web build`; `python -m compileall apps/api/app`; `git diff --check`; uv + FastAPI TestClient 请求级 smoke; 相关静态验收搜索通过。
+
+2026-06-15 已完成通用可配置数字人阶段 2: 新增 `AskMetricsProvider` 抽象与配置驱动 `ExcelAskMetricsProvider`, `apps/api/app/services/ask_metrics.py` 仅保留 provider 编排, 不再包含客户实例 allowlist 规则。当前 Excel 问数的关键词、字段、模板、来源和口径说明已迁移到 `config/customers/zt-securities/ask-metrics.yaml` 客户 profile; 根级 `config/ask-metrics.yaml` 保持通用空 metric 模板。`ASK_METRICS_MODE=excel|dora|auto` 行为保持不退化: excel 模式继续本地优先, dora 模式不被 Excel 抢答, auto 模式在 Dora / Mock Dora fallback 时回退 Excel。Database Provider 仅在配置快照中保留 `not_implemented` 状态, 未连接数据库、未执行 SQL、未开放写配置或 dry-run 接口。
+
 2026-06-11 已补充客户汇报用项目管理计划和实施甘特图 Excel: `outputs/customer-report-20260617/zt_project_plan_gantt_20260610_0630.xlsx`。该材料按用户指定的客户汇报口径, 将 `2026-06-10` 到 `2026-06-17` 表述为已完成 Mock 链路联调与端到端流程验证, 将 `2026-06-18` 到 `2026-06-30` 表述为自定义新闻爬虫及导入知识库、RAGFlow 知识库调用、性能优化、安全优化、测试验收上线的专项计划。`2026-06-13`、`2026-06-14`、`2026-06-19`、`2026-06-20`、`2026-06-21`、`2026-06-27`、`2026-06-28` 在材料中标为非工作日, 仅保留风险响应 / 问题跟进。
 
 2026-06-11 针对普通唤醒完全无法触发的问题完成热修: 前端 VAD 增加连续两帧超过阈值才正式开始收音的启动确认, 避免单帧环境 / 外放噪声触发空 ASR; 普通唤醒 `vad_threshold` 从 0.014 回调到 0.018, 播报中 `barge_in_vad_threshold` 保持 0.018。验证通过: `corepack pnpm --dir apps/web build`; `python -m compileall apps/api/app`; `docker compose up -d --build api web`; `GET /api/wake/config`; `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`; `git diff --check`; Codex Browser 加载新 bundle。下一步需用户刷新页面、重新开启后台监听并做真实麦克风复测。
@@ -38,27 +48,23 @@ V1.0 验收交付包已输出到 `docs/delivery/v1.0/`, 包含交付包索引、
 
 ## Next Task
 
-V1.0 验收交付包已完成。下一推荐 goal:
+V1.0 验收交付包、阶段 0A 默认入口和根模板清洁、阶段 1 只读 effective config / schema、阶段 2 AskMetricsProvider 抽象与 Excel 问数迁移均已完成。下一推荐 goal:
 
 ```text
-执行客户现场验收复演, 并确认新增“指定人员新闻爬取、整理、导入本地 RAGFlow 知识库、衔接 RAGFlow MCP 问答”专项范围: 按 V1.0 交付包启动环境、补齐截图附件、确认真实 Dora / RAGFlow / ASR / TTS / FVS 依赖、导出最终日志包并完成客户签字; 同时向客户确认新闻源白名单、采集合规边界、人员识别字段、导入知识库验收标准和 6/30 上线口径。
+执行通用可配置数字人阶段 3: KnowledgeDirectAdapter 设计与实现准备。先确认是否需要在 Gateway 本地直连 RAGFlow 检索并由受控 summarizer 回答; 若开始实现, 必须坚持 require_sources、no_evidence_policy=fallback 和不生成 / 不执行 SQL、Python、JavaScript 或 shell。
 ```
 
 本 goal 的边界:
 
-- 使用 `docs/delivery/v1.0/` 中的正式交付包作为现场执行依据。
-- 语音唤醒调优后需优先做真实麦克风复测, 建议连续测试“小天小天”“你好小天”“小天, 返回总览”等 10 次以上, 并记录成功 / 空识别 / 误唤醒次数。
-- 播报中打断需单独复测, 建议在 AI 回复播报中测试“小天小天”“你好小天”“小天小天, 返回总览”和普通闲聊 / 短词“小天”, 分别记录打断成功和误打断次数。
-- 本地 Excel 问数需复测语音确认播报顺序, 建议测试“当前党员学习完成率是多少?”并确认先听到“收到, 正在为您查找信息。”, 再听到最终指标答案。
-- 若客户要求 Dora Agent 后台留存指标类问题, 需先确认是否把 `ASK_METRICS_MODE` 从默认 `excel` 切到 `dora` 或 `auto`, 并重新执行固定问数 smoke。
-- 如需证明真实依赖验收, 应记录 `DEMO_STABLE_MODE` 是否关闭。
-- 现场截图按 `01_ACCEPTANCE_REPORT.md` 的 S-001 到 S-007 附件位补齐。
-- 现场日志包用 `scripts/export-logs.ps1 -Zip` 导出并随验收归档。
-- 客户签字和待确认项按 `07_CUSTOMER_HANDOFF_CHECKLIST.md` 更新。
-- 继续不执行 Dora 或模型生成的 SQL、Python、JavaScript 或 shell 命令。
-- 如客户确认新增新闻爬虫专项, 下一轮应先输出接口 / 数据契约草案, 再实现后端白名单新闻源采集、资料整理、RAGFlow 导入 Adapter 和 MCP 检索验证; 不允许前端直接访问新闻站点或暴露 RAGFlow / Dora API Key。
+- 阶段 3 不应回头新增数据库问数真实查询; Database Provider 仍保持 `not_implemented`, 除非用户另开数据库问数阶段。
+- KnowledgeDirectAdapter 若实施, RAGFlow 只能检索 chunks, summarizer 只能基于来源回答, 无依据时必须 fallback。
+- 不实现可写 Prompt、Prompt 编辑、可写配置、action 写入、配置 validate/test/reload/audit。
+- 不让 LLM 生成或执行 SQL、Python、JavaScript 或 shell。
+- FVS 控制继续使用 `action_id` + 后端白名单校验; 不改变 `/api/screen/execute` 既有响应结构, 授权 action 响应增强留到阶段 4。
 
-继续保留 Mock Dora / ASR / TTS / FVS 回退。FVS 控制仍必须由后端白名单校验后的 `action_id` 驱动, 不允许执行模型生成 JavaScript。
+Go / No-Go: 阶段 3 可以开始, 但只能在阶段 3 边界内推进 KnowledgeDirectAdapter / 来源约束设计; 不得顺带实现数据库问数、可写配置、Prompt 编辑或控屏授权响应增强。
+
+客户现场验收复演仍可按 `docs/delivery/v1.0/` 执行, 但不与本轮配置中心主线优化混在同一个 goal 中推进。
 
 ## Context
 

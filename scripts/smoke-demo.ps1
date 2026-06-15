@@ -16,11 +16,11 @@ if (-not $ApiBaseUrl) {
 $ApiBaseUrl = $ApiBaseUrl.TrimEnd("/")
 
 $cases = @(
-    @{ id = "ZT-L-001"; text = "我是张书记"; expected_type = "answer"; contains = "张书记" },
-    @{ id = "ZT-K-001"; text = "入党流程是什么？"; expected_type = "answer"; contains = "入党" },
-    @{ id = "ZT-D-001"; text = "当前党员学习完成率是多少？"; expected_type = "answer"; contains = "87.5" },
-    @{ id = "ZT-S-001"; text = "请切换到成品库存页面"; expected_type = "screen_control"; action_id = "SWITCH_TAB_ORG" },
-    @{ id = "ZT-S-002"; text = "返回总览"; expected_type = "screen_control"; action_id = "SWITCH_HOME" }
+    @{ id = "GEN-W-001"; text = "我是演示嘉宾"; expected_type = "answer"; contains = "通用可配置数字人" },
+    @{ id = "GEN-K-001"; text = "这个系统能做什么？"; expected_type = "answer"; contains = "语音唤醒" },
+    @{ id = "GEN-D-001"; text = "当前核心指标怎么样？"; expected_type = "answer"; contains = "示例指标" },
+    @{ id = "GEN-S-001"; text = "请切换到成品库存页面"; expected_type = "screen_control"; action_id = "SWITCH_TAB_ORG" },
+    @{ id = "GEN-S-002"; text = "返回总览"; expected_type = "screen_control"; action_id = "SWITCH_HOME" }
 )
 
 $results = @()

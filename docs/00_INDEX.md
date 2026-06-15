@@ -40,6 +40,8 @@
 | [12_CUSTOMER_HANDOFF.md](12_CUSTOMER_HANDOFF.md) | 客户移交、运维、常见问题 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
 | [14_ENHANCEMENT_ROADMAP.md](14_ENHANCEMENT_ROADMAP.md) | V0.8 功能增强、V0.9 交付优化、V1.0 验收交付路线 |
+| [15_MAINLINE_ARCHITECTURE_DIAGRAM.md](15_MAINLINE_ARCHITECTURE_DIAGRAM.md) | 主链路系统架构图, 区分 Dora 中心版和本地直连版 |
+| [16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md](16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md) | 能力解耦路由、配置模型和配置中心升级方案 |
 
 ## V1.0 验收交付包
 
@@ -75,6 +77,8 @@ ADR 位于 [decisions](decisions)。
 - [ADR-0015-v09-delivery-scripts-and-demo-stable-mode.md](decisions/ADR-0015-v09-delivery-scripts-and-demo-stable-mode.md)
 - [ADR-0016-fvs-minimal-overlay-and-ops-route.md](decisions/ADR-0016-fvs-minimal-overlay-and-ops-route.md)
 - [ADR-0017-speaking-barge-in-with-long-wake-words.md](decisions/ADR-0017-speaking-barge-in-with-long-wake-words.md)
+- [ADR-0022-capability-routing-and-config-center.md](decisions/ADR-0022-capability-routing-and-config-center.md)
+- [ADR-0023-generic-configurable-digital-human-positioning.md](decisions/ADR-0023-generic-configurable-digital-human-positioning.md)
 
 ## 外部集成
 

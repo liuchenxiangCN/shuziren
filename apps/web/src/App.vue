@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
   executeScreenAction,
+  fetchConfigEffective,
+  fetchConfigSchema,
   fetchDemoConfig,
   fetchOpsDependencies,
   fetchOpsErrors,
@@ -22,6 +24,9 @@ import { executeFvsAction as executeFvsAdapterAction, getFvsConfig } from './fvs
 import type {
   ChatResponse,
   ChatStreamTtsReady,
+  ConfigEffectiveResponse,
+  ConfigField,
+  ConfigSchemaResponse,
   DemoConfigResponse,
   DemoQuestion,
   OpsDependenciesResponse,
@@ -70,7 +75,7 @@ interface FvsEvent {
 }
 
 type InputMode = 'text' | 'voice';
-type MainView = 'chat' | 'ops';
+type MainView = 'chat' | 'ops' | 'config';
 type TtsPlaybackState = 'idle' | 'loading' | 'playing' | 'error';
 type FvsLoadState = 'idle' | 'loading' | 'ready' | 'error';
 type ListeningState =
@@ -118,7 +123,7 @@ const FVS_LOAD_TIMEOUT_MS = 10000;
 const DEFAULT_WAKE_CONFIG: WakeConfigResponse = {
   version: '0.1.0',
   mode: 'semantic',
-  wake_words: ['小天小天', '中天小天', '你好小天'],
+  wake_words: ['小智小智', '你好小智'],
   settings: {
     min_audio_ms: 800,
     max_audio_ms: 5000,
@@ -131,7 +136,7 @@ const DEFAULT_WAKE_CONFIG: WakeConfigResponse = {
     followup_window_ms: 12000,
     max_followup_turns: 3,
     barge_in_enabled: false,
-    barge_in_wake_words: ['小天小天', '你好小天'],
+    barge_in_wake_words: ['小智小智', '你好小智'],
     barge_in_vad_threshold: 0.018,
     barge_in_min_audio_ms: 900,
     barge_in_silence_ms: 700,
@@ -141,9 +146,9 @@ const DEFAULT_WAKE_CONFIG: WakeConfigResponse = {
 };
 
 const FALLBACK_DEMO_QUESTIONS: DemoQuestion[] = [
-  { id: 'local-1', text: '我是张书记', category: 'leader' },
-  { id: 'local-2', text: '入党流程是什么？', category: 'knowledge' },
-  { id: 'local-3', text: '当前党员学习完成率是多少？', category: 'data' },
+  { id: 'local-1', text: '我是演示嘉宾', category: 'welcome' },
+  { id: 'local-2', text: '这个系统能做什么？', category: 'knowledge' },
+  { id: 'local-3', text: '当前核心指标怎么样？', category: 'data' },
   { id: 'local-4', text: '请切换到成品库存页面', category: 'screen_control' },
   { id: 'local-5', text: '返回总览', category: 'screen_control' },
 ];
@@ -191,6 +196,10 @@ const opsLoading = ref(false);
 const opsExporting = ref(false);
 const opsErrorText = ref('');
 const opsLastUpdated = ref('');
+const configEffective = ref<ConfigEffectiveResponse | null>(null);
+const configSchema = ref<ConfigSchemaResponse | null>(null);
+const configLoading = ref(false);
+const configErrorText = ref('');
 const demoConfig = ref<DemoConfigResponse | null>(null);
 const demoConfigError = ref('');
 const fvsLoadState = ref<FvsLoadState>(fvsConfig.enabled && fvsConfig.mode === 'iframe' ? 'loading' : 'idle');
@@ -238,7 +247,9 @@ const activeAction = computed(() => {
 const latestFvsEvent = computed(() => fvsEvents.value[0]);
 const isFvsHost = computed(() => fvsConfig.enabled && fvsConfig.mode === 'iframe');
 const isFvsWebFrame = computed(() => fvsConfig.enabled && fvsConfig.mode === 'parent');
-const isOpsView = computed(() => activeView.value === 'ops');
+const isOpsView = computed(() => activeView.value !== 'chat');
+const isOpsMonitorView = computed(() => activeView.value === 'ops');
+const isConfigView = computed(() => activeView.value === 'config');
 const isDemoStableMode = computed(
   () => runtimeDemoStableMode || buildDemoStableMode || Boolean(demoConfig.value?.stable_mode),
 );
@@ -246,6 +257,9 @@ const demoQuestions = computed(() => {
   const questions = demoConfig.value?.questions?.filter((item) => item.text) ?? [];
   return (questions.length ? questions : FALLBACK_DEMO_QUESTIONS).slice(0, 6);
 });
+const stageEyebrow = computed(() => demoConfig.value?.product_name || 'Configurable Digital Human');
+const stageTitle = computed(() => demoConfig.value?.project_name || '通用可配置数字人');
+const opsCustomerLabel = computed(() => demoConfig.value?.customer_name || opsHealth.value?.customer_id || '-');
 const fvsConversationItems = computed(() => {
   return conversation.value.filter((item) => item.role === 'user' || item.role === 'assistant').slice(0, 5);
 });
@@ -302,6 +316,47 @@ const opsOverallStatus = computed<OpsStatus>(() => {
   if (opsDependencies.value?.status) return opsDependencies.value.status;
   return opsHealth.value?.status ?? 'unknown';
 });
+const configProjectFields = computed(() => configFieldEntries(configEffective.value?.project));
+const configCustomerFields = computed(() => configFieldEntries(configEffective.value?.customer));
+const configMockFields = computed(() => configFieldEntries(configEffective.value?.mock_switches));
+const configSensitiveFields = computed(() => configFieldEntries(configEffective.value?.sensitive));
+const configDashboardBackendFields = computed(() =>
+  configFieldEntries(asConfigRecord(configEffective.value?.dashboard?.backend_effective)),
+);
+const configDashboardContractFields = computed(() =>
+  configFieldEntries(asConfigRecord(configEffective.value?.dashboard?.frontend_runtime_contract)),
+);
+const configAskMetricsFields = computed(() =>
+  configFieldEntries(asConfigRecord(asConfigRecord(configEffective.value?.capabilities).ask_metrics)),
+);
+const configKnowledgeFields = computed(() =>
+  configFieldEntries(asConfigRecord(asConfigRecord(configEffective.value?.capabilities).knowledge)),
+);
+const configScreenControlFields = computed(() =>
+  configFieldEntries(asConfigRecord(asConfigRecord(configEffective.value?.capabilities).screen_control)),
+);
+const configDoraFields = computed(() =>
+  configFieldEntries(asConfigRecord(asConfigRecord(configEffective.value?.capabilities).dora)),
+);
+const configVoiceFields = computed(() =>
+  configFieldEntries(asConfigRecord(asConfigRecord(configEffective.value?.capabilities).voice)),
+);
+const configPromptEntries = computed(() => Object.entries(asConfigRecord(configEffective.value?.prompt_profiles)));
+const configImplementationEntries = computed(() => Object.entries(configEffective.value?.implementation_status ?? {}));
+const configProvenanceNotes = computed(() => {
+  const notes = configEffective.value?.provenance?.notes;
+  return Array.isArray(notes) ? notes.map(String) : [];
+});
+const configDisabledEndpoints = computed(() => configSchema.value?.disabled_endpoints ?? []);
+const frontendRuntimeFvsFields = computed(() => [
+  ['enabled', { value: fvsConfig.enabled, source: 'frontend_runtime', sensitive: false } as ConfigField],
+  ['mode', { value: fvsConfig.mode, source: 'frontend_runtime', sensitive: false } as ConfigField],
+  ['url', { value: fvsConfig.url || '-', source: 'frontend_runtime', sensitive: false } as ConfigField],
+  [
+    'targetOrigin',
+    { value: fvsConfig.targetOrigin || '-', source: 'frontend_runtime', sensitive: false } as ConfigField,
+  ],
+] as Array<[string, ConfigField]>);
 
 const followupLabel = computed(() => {
   const maxTurns = wakeConfig.value.settings.max_followup_turns;
@@ -347,6 +402,8 @@ onMounted(async () => {
 
   if (activeView.value === 'ops') {
     await loadOpsDashboard();
+  } else if (activeView.value === 'config') {
+    await loadConfigDashboard();
   }
 });
 
@@ -362,7 +419,7 @@ onBeforeUnmount(() => {
 async function setMainView(view: MainView, updateUrl = true) {
   activeView.value = view;
   if (updateUrl) {
-    const nextPath = view === 'ops' ? '/ops' : '/';
+    const nextPath = view === 'config' ? '/ops/config' : view === 'ops' ? '/ops' : '/';
     const nextUrl = `${nextPath}${window.location.search}${window.location.hash}`;
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (nextUrl !== currentUrl) {
@@ -371,6 +428,8 @@ async function setMainView(view: MainView, updateUrl = true) {
   }
   if (view === 'ops' && !opsHealth.value && !opsLoading.value) {
     await loadOpsDashboard();
+  } else if (view === 'config' && !configEffective.value && !configLoading.value) {
+    await loadConfigDashboard();
   }
 }
 
@@ -414,6 +473,20 @@ async function exportOpsLogs() {
     opsErrorText.value = error instanceof Error ? error.message : '日志导出失败';
   } finally {
     opsExporting.value = false;
+  }
+}
+
+async function loadConfigDashboard() {
+  configLoading.value = true;
+  configErrorText.value = '';
+  try {
+    const [effective, schema] = await Promise.all([fetchConfigEffective(), fetchConfigSchema()]);
+    configEffective.value = effective;
+    configSchema.value = schema;
+  } catch (error) {
+    configErrorText.value = error instanceof Error ? error.message : '配置快照读取失败';
+  } finally {
+    configLoading.value = false;
   }
 }
 
@@ -1138,7 +1211,7 @@ function getBargeInWakeWords(): string[] {
     .map((word) => word.trim())
     .filter(Boolean);
   if (configuredWords.length > 0) return configuredWords;
-  return wakeConfig.value.wake_words.filter((word) => normalizeWakeText(word).length >= normalizeWakeText('小天小天').length);
+  return wakeConfig.value.wake_words.filter((word) => normalizeWakeText(word).length >= normalizeWakeText('小智小智').length);
 }
 
 function beginMonitorSpeakingState() {
@@ -1759,6 +1832,69 @@ function sessionErrorText(session: OpsSessionSummary): string {
   return `${code}: ${message}`;
 }
 
+function asConfigRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function configFieldEntries(value?: Record<string, unknown> | null): Array<[string, ConfigField]> {
+  return Object.entries(value ?? {}).map(([key, field]) => [key, toConfigField(field)]);
+}
+
+function toConfigField(value: unknown): ConfigField {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as ConfigField;
+    if (
+      'value' in record ||
+      'source' in record ||
+      'status' in record ||
+      'configured' in record ||
+      'masked' in record
+    ) {
+      return record;
+    }
+  }
+  return { value, source: 'derived', sensitive: false };
+}
+
+function configFieldValue(field: ConfigField): string {
+  if (field.sensitive) {
+    const configured = field.configured ? 'configured' : 'not configured';
+    return field.masked ? `${configured} · ${field.masked}` : configured;
+  }
+  if (field.status) return String(field.status);
+  if (field.value === null || field.value === undefined || field.value === '') return '-';
+  if (Array.isArray(field.value)) return field.value.map(String).join(', ');
+  if (typeof field.value === 'object') return JSON.stringify(field.value);
+  if (typeof field.value === 'boolean') return field.value ? 'true' : 'false';
+  return String(field.value);
+}
+
+function configSourceLabel(source?: string): string {
+  const labels: Record<string, string> = {
+    code_default: 'code default',
+    root_config: 'root config',
+    customer_config: 'customer config',
+    env: 'env',
+    frontend_build: 'frontend build',
+    frontend_runtime: 'frontend runtime',
+    derived: 'derived',
+    unknown: 'unknown',
+  };
+  return labels[source || 'unknown'] ?? String(source);
+}
+
+function configKeyLabel(key: string): string {
+  return key.replace(/_/g, ' ');
+}
+
+function implementationStatusText(status: unknown): string {
+  const value = String(status);
+  if (value === 'implemented') return 'implemented';
+  if (value === 'not_implemented') return 'not implemented';
+  return value;
+}
+
 function pushSystemMessage(text: string) {
   conversation.value.unshift({
     id: crypto.randomUUID(),
@@ -1773,6 +1909,7 @@ function getInitialMainView(): MainView {
 
 function getMainViewFromLocation(): MainView {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/ops/config') return 'config';
   return path === '/ops' ? 'ops' : 'chat';
 }
 
@@ -2005,8 +2142,8 @@ function writeAscii(view: DataView, offset: number, value: string) {
       <div class="stage">
         <div v-if="!isFvsHost || isOpsView" class="stage-topline">
           <div>
-            <p class="eyebrow">ZT Party Building POC</p>
-            <h1>党建大屏数字人语音闭环</h1>
+            <p class="eyebrow">{{ stageEyebrow }}</p>
+            <h1>{{ stageTitle }}</h1>
           </div>
           <div class="stage-actions">
             <div class="view-switch" aria-label="Main view">
@@ -2016,13 +2153,16 @@ function writeAscii(view: DataView, offset: number, value: string) {
               <button type="button" :class="{ active: activeView === 'ops' }" @click="setMainView('ops')">
                 运维
               </button>
+              <button type="button" :class="{ active: activeView === 'config' }" @click="setMainView('config')">
+                配置
+              </button>
             </div>
             <span v-if="isDemoStableMode" class="status-pill demo">演示稳态</span>
             <span class="status-pill" :class="apiStatus">{{ statusText }}</span>
           </div>
         </div>
 
-        <section v-if="isOpsView" class="ops-dashboard" aria-label="运维监控和日志看板">
+        <section v-if="isOpsMonitorView" class="ops-dashboard" aria-label="运维监控和日志看板">
           <div class="ops-toolbar">
             <div>
               <span class="ops-kicker">Ops Monitor</span>
@@ -2044,7 +2184,7 @@ function writeAscii(view: DataView, offset: number, value: string) {
           <div class="ops-summary">
             <div>
               <span>客户</span>
-              <strong>{{ opsHealth?.customer_id ?? '-' }}</strong>
+              <strong>{{ opsCustomerLabel }}</strong>
             </div>
             <div>
               <span>会话</span>
@@ -2157,6 +2297,270 @@ function writeAscii(view: DataView, offset: number, value: string) {
           </div>
         </section>
 
+        <section v-else-if="isConfigView" class="config-dashboard" aria-label="只读配置快照">
+          <div class="ops-toolbar config-toolbar">
+            <div>
+              <span class="ops-kicker">Config Snapshot</span>
+              <strong>只读配置快照</strong>
+            </div>
+            <div class="ops-toolbar-actions">
+              <span class="ops-status-chip ok">read only</span>
+              <span class="ops-status-chip unknown">schema v{{ configSchema?.version || '-' }}</span>
+            </div>
+          </div>
+
+          <div v-if="configErrorText" class="ops-alert">{{ configErrorText }}</div>
+          <div v-if="configLoading" class="ops-empty">配置快照读取中</div>
+
+          <template v-if="configEffective">
+            <div class="ops-summary config-summary">
+              <div>
+                <span>项目</span>
+                <strong>{{ configFieldValue(configEffective.project.project_name) }}</strong>
+              </div>
+              <div>
+                <span>客户</span>
+                <strong>{{ configFieldValue(configEffective.customer.customer_name) }}</strong>
+              </div>
+              <div>
+                <span>场景</span>
+                <strong>{{ configFieldValue(configEffective.customer.scenario_name) }}</strong>
+              </div>
+              <div>
+                <span>助手</span>
+                <strong>{{ configFieldValue(configEffective.customer.assistant_name) }}</strong>
+              </div>
+              <div>
+                <span>版本</span>
+                <strong>{{ configEffective.version }}</strong>
+              </div>
+              <div>
+                <span>生成时间</span>
+                <strong>{{ formatOpsTime(configEffective.generated_at) }}</strong>
+              </div>
+            </div>
+
+            <div class="config-grid">
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>项目与客户</span>
+                  <small>project / customer / scenario / assistant</small>
+                </div>
+                <div class="config-list">
+                  <article v-for="[key, field] in configProjectFields" :key="`project-${key}`" class="config-row">
+                    <span>{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                    <small v-if="field.notes">{{ field.notes }}</small>
+                  </article>
+                  <article v-for="[key, field] in configCustomerFields" :key="`customer-${key}`" class="config-row">
+                    <span>{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                    <small v-if="field.notes">{{ field.notes }}</small>
+                  </article>
+                </div>
+              </section>
+
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>看板配置</span>
+                  <small>backend effective / frontend runtime</small>
+                </div>
+                <div class="config-list">
+                  <article
+                    v-for="[key, field] in configDashboardBackendFields"
+                    :key="`dashboard-backend-${key}`"
+                    class="config-row"
+                  >
+                    <span>backend.{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                    <small v-if="field.notes">{{ field.notes }}</small>
+                  </article>
+                  <article
+                    v-for="[key, field] in configDashboardContractFields"
+                    :key="`dashboard-contract-${key}`"
+                    class="config-row muted"
+                  >
+                    <span>contract.{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                    <small v-if="field.notes">{{ field.notes }}</small>
+                  </article>
+                  <article
+                    v-for="[key, field] in frontendRuntimeFvsFields"
+                    :key="`dashboard-runtime-${key}`"
+                    class="config-row"
+                  >
+                    <span>runtime.{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                  </article>
+                </div>
+              </section>
+            </div>
+
+            <div class="config-grid">
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>问数 Provider</span>
+                  <small>Database Provider 未实现</small>
+                </div>
+                <div class="config-list">
+                  <article v-for="[key, field] in configAskMetricsFields" :key="`ask-${key}`" class="config-row">
+                    <span>{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                    <small v-if="field.notes">{{ field.notes }}</small>
+                  </article>
+                </div>
+              </section>
+
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>知识库 Provider</span>
+                  <small>KnowledgeDirectAdapter 未实现</small>
+                </div>
+                <div class="config-list">
+                  <article v-for="[key, field] in configKnowledgeFields" :key="`knowledge-${key}`" class="config-row">
+                    <span>{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                    <small v-if="field.notes">{{ field.notes }}</small>
+                  </article>
+                </div>
+              </section>
+            </div>
+
+            <div class="config-grid">
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>控屏 Provider</span>
+                  <small>可写 action 配置未实现</small>
+                </div>
+                <div class="config-list">
+                  <article v-for="[key, field] in configScreenControlFields" :key="`screen-${key}`" class="config-row">
+                    <span>{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                    <small v-if="field.notes">{{ field.notes }}</small>
+                  </article>
+                </div>
+              </section>
+
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>Dora 与语音</span>
+                  <small>Mock 开关保留</small>
+                </div>
+                <div class="config-list">
+                  <article v-for="[key, field] in configDoraFields" :key="`dora-${key}`" class="config-row">
+                    <span>dora.{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                    <small v-if="field.notes">{{ field.notes }}</small>
+                  </article>
+                  <article v-for="[key, field] in configVoiceFields" :key="`voice-${key}`" class="config-row">
+                    <span>voice.{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                    <small v-if="field.notes">{{ field.notes }}</small>
+                  </article>
+                </div>
+              </section>
+            </div>
+
+            <div class="config-grid">
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>Mock 开关</span>
+                  <small>Dora / ASR / TTS / FVS</small>
+                </div>
+                <div class="config-list">
+                  <article v-for="[key, field] in configMockFields" :key="`mock-${key}`" class="config-row">
+                    <span>{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                  </article>
+                </div>
+              </section>
+
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>Prompt Profile</span>
+                  <small>本轮无可写 Prompt</small>
+                </div>
+                <div class="config-list">
+                  <article v-for="[key, raw] in configPromptEntries" :key="`prompt-${key}`" class="config-row">
+                    <span>{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(toConfigField(asConfigRecord(raw).profile)) }}</strong>
+                    <code>{{ configSourceLabel(toConfigField(asConfigRecord(raw).profile).source) }}</code>
+                    <small v-if="toConfigField(asConfigRecord(raw).profile).notes">
+                      {{ toConfigField(asConfigRecord(raw).profile).notes }}
+                    </small>
+                  </article>
+                </div>
+              </section>
+            </div>
+
+            <div class="config-grid">
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>敏感字段</span>
+                  <small>只展示 configured / source / masked</small>
+                </div>
+                <div class="config-list">
+                  <article v-for="[key, field] in configSensitiveFields" :key="`sensitive-${key}`" class="config-row">
+                    <span>{{ configKeyLabel(key) }}</span>
+                    <strong>{{ configFieldValue(field) }}</strong>
+                    <code>{{ configSourceLabel(field.source) }}</code>
+                  </article>
+                </div>
+              </section>
+
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>实现状态</span>
+                  <small>阶段 1 边界</small>
+                </div>
+                <div class="status-grid">
+                  <span
+                    v-for="[key, status] in configImplementationEntries"
+                    :key="`status-${key}`"
+                    class="status-pill"
+                    :class="status === 'implemented' ? 'ready' : 'error'"
+                  >
+                    {{ configKeyLabel(key) }}: {{ implementationStatusText(status) }}
+                  </span>
+                </div>
+              </section>
+            </div>
+
+            <div class="config-grid">
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>来源限制</span>
+                  <small>provenance notes</small>
+                </div>
+                <div class="config-note-list">
+                  <p v-for="note in configProvenanceNotes" :key="note">{{ note }}</p>
+                </div>
+              </section>
+
+              <section class="ops-section config-section">
+                <div class="ops-section-title">
+                  <span>未开放接口</span>
+                  <small>schema disabled endpoints</small>
+                </div>
+                <div class="status-grid">
+                  <code v-for="endpoint in configDisabledEndpoints" :key="endpoint">{{ endpoint }}</code>
+                </div>
+              </section>
+            </div>
+          </template>
+        </section>
+
         <div
           v-else-if="!isFvsWebFrame"
           class="screen-frame"
@@ -2198,16 +2602,16 @@ function writeAscii(view: DataView, offset: number, value: string) {
             <div class="screen-body">
               <div class="metric-strip">
                 <div>
-                  <span>党员总数</span>
-                  <strong>128</strong>
+                  <span>接入看板</span>
+                  <strong>4</strong>
                 </div>
                 <div>
-                  <span>学习完成率</span>
-                  <strong>87.5%</strong>
+                  <span>示例指标</span>
+                  <strong>3</strong>
                 </div>
                 <div>
-                  <span>本月活动</span>
-                  <strong>16</strong>
+                  <span>演示动作</span>
+                  <strong>4</strong>
                 </div>
               </div>
               <div class="screen-copy">
@@ -2337,7 +2741,7 @@ function writeAscii(view: DataView, offset: number, value: string) {
           >
             {{ demoButtonLabel(question, index) }}
           </button>
-          <button type="button" @click="fillAsrDemo('小天小天，请切换到成品库存页面')">ASR 唤醒</button>
+          <button type="button" @click="fillAsrDemo('小智小智，请切换到成品库存页面')">ASR 唤醒</button>
         </div>
 
         <div class="messages" aria-live="polite">

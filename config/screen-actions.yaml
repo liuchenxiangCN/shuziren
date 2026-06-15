@@ -1,5 +1,5 @@
 version: 0.1.0
-customer: zt-securities
+customer: default
 actions:
   SWITCH_HOME:
     label: 总览

@@ -105,7 +105,7 @@ input:disabled {
   border: 1px solid #d9e0e7;
   background: #ffffff;
   display: inline-grid;
-  grid-template-columns: repeat(2, minmax(64px, 1fr));
+  grid-template-columns: repeat(3, minmax(58px, 1fr));
   gap: 3px;
 }
 
@@ -268,6 +268,12 @@ h1 {
   color: #b42318;
   border-color: #fecaca;
   background: #fff1f2;
+}
+
+.ops-status-chip.unknown {
+  color: #344054;
+  border-color: #d9e0e7;
+  background: #f8fafc;
 }
 
 .ops-alert {
@@ -442,6 +448,109 @@ h1 {
   display: grid;
   place-items: center;
   text-align: center;
+}
+
+.config-dashboard {
+  display: grid;
+  gap: 16px;
+}
+
+.config-toolbar .ops-toolbar-actions {
+  min-width: 0;
+}
+
+.config-summary {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.config-section {
+  align-content: start;
+}
+
+.config-list {
+  display: grid;
+  gap: 8px;
+}
+
+.config-row {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #d9e0e7;
+  border-radius: 8px;
+  background: #ffffff;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.36fr) minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: start;
+}
+
+.config-row.muted {
+  background: #f8fafc;
+}
+
+.config-row span {
+  min-width: 0;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.config-row strong {
+  min-width: 0;
+  color: #151b22;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.config-row code,
+.status-grid code {
+  max-width: 100%;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #9f1f2e;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.config-row small {
+  grid-column: 2 / -1;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.config-note-list {
+  display: grid;
+  gap: 8px;
+}
+
+.config-note-list p {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid #d9e0e7;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #344054;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .screen-frame {
@@ -1159,6 +1268,14 @@ h1 {
   .ops-grid {
     grid-template-columns: 1fr;
   }
+
+  .config-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1192,6 +1309,7 @@ h1 {
   .screen-action-row,
   .metric-strip,
   .ops-summary,
+  .config-summary,
   .dependency-grid,
   .latency-grid,
   .demo-row,
@@ -1202,6 +1320,14 @@ h1 {
 
   .ops-row {
     flex-direction: column;
+  }
+
+  .config-row {
+    grid-template-columns: 1fr;
+  }
+
+  .config-row small {
+    grid-column: auto;
   }
 
   .ops-row > div:last-child {

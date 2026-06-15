@@ -4,6 +4,16 @@
 
 ### Added
 
+- 新增 `AskMetricsProvider` 抽象、`MetricResult` / provider status 数据结构和配置驱动 `ExcelAskMetricsProvider`。
+- 新增客户 profile 级 `ask-metrics.yaml` metric 定义: 由配置声明关键词、workbook、sheet、字段、transform、回答模板和来源说明。
+- 新增只读脱敏配置 API: `GET /api/config/effective` 和 `GET /api/config/schema`。
+- 新增 `ConfigSnapshot` 白名单构造与来源构造服务 `apps/api/app/services/config_snapshot.py`, sensitive 字段只返回 configured / source / masked。
+- 新增前端只读配置页 `/ops/config`, 展示项目、客户、场景、助手、看板、问数、知识库、控屏 provider、Mock 开关、Prompt profile、前端 FVS runtime 和当前实现状态。
+- 新增 ADR-0023, 记录项目定位从中天证券党建大屏数字人调整为通用可配置数字人, 中天证券作为客户 profile 实现。
+- `/api/demo/config` 新增脱敏项目展示字段: `project_id`、`project_name`、`product_name`、`customer_name`、`scenario_name`、`assistant_name`。
+- 新增主链路系统架构图 `docs/15_MAINLINE_ARCHITECTURE_DIAGRAM.md`, 区分 Dora 中心版和 Gateway 本地直连版。
+- 新增能力解耦路由与配置中心方案 `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`, 明确阶段 0A 默认入口 / 根模板清洁、阶段 1 只读 effective config、后续数据库问数、知识库直连、控屏 resolver 和可写配置路线。
+- 新增 ADR-0022, 记录能力路由、配置中心、主线清洁基线和可写 action 配置前置条件。
 - 新增客户汇报用项目管理计划和实施甘特图 Excel: `outputs/customer-report-20260617/zt_project_plan_gantt_20260610_0630.xlsx`, 包含客户汇报摘要、实施计划、甘特图、里程碑与风险、工作日历和数据源 sheet。
 - 新增 V1.0 验收交付包目录 `docs/delivery/v1.0/`。
 - 新增 V1.0 交付包索引、验收报告、部署方案、用户手册、运维手册、配置手册、测试报告和客户移交清单。
@@ -31,6 +41,25 @@
 
 ### Changed
 
+- `apps/api/app/services/ask_metrics.py` 不再包含客户实例问数 allowlist, 仅负责 provider 编排和 `ChatResponse` 包装。
+- 当前 Excel 问数能力迁移到 `config/customers/zt-securities/ask-metrics.yaml`; 根级 `config/ask-metrics.yaml` 保持通用空 metric 模板。
+- `/api/config/effective` 和 `/api/config/schema` 同步标注 `AskMetricsProvider` / `ExcelAskMetricsProvider` 已实现, Database Provider 仍为 `not_implemented`。
+- `SessionLogStore` 和 API 时间戳在 uv 精简 Python 缺少 `Asia/Shanghai` tzdata 时回退到 UTC+8, 避免 TestClient 日志写入失败。
+- 阶段 1 配置观测层明确 `KnowledgeDirectAdapter`、Database Provider、可写 action 配置、配置写入 / validate / test / reload / audit、LLM summarizer 和可写 Prompt 均未实现。
+- 阶段 1 配置快照时间戳在 Windows / uv 精简 Python 缺少系统时区数据时回退到 UTC+8, 避免只读配置 API 因 `Asia/Shanghai` tzdata 缺失返回 500。
+- `docs/06_API_CONTRACT.md` 和 `docs/07_DATA_CONTRACT.md` 同步新增配置 API 和配置快照数据结构。
+- `docs/13_RISKS_AND_TODO.md` 将配置页敏感信息泄露和配置来源误标风险更新为阶段 1 已缓解。
+- 完成通用可配置数字人阶段 0A: Docker Compose 默认 profile、API / Web 镜像名和容器名、前后端包名、根级唤醒词、根级演示用例、根级问数模板、前端 Mock 大屏、README 和脚本默认 smoke 均改为通用示例; 默认启动不再自动进入客户 profile。
+- `config/ask-metrics.yaml` 不再引用客户 Excel 文件; 客户 Excel 问数映射和 metric 规则保留在客户 profile。阶段 2 已移除 `apps/api/app/services/ask_metrics.py` 临时遗留 allowlist。
+- `outputs/manual-20260614-212600/` 已清点为历史 / 手工输出, 不作为阶段 1 配置模型、schema 或页面输入。
+- `NEXT_ACTIONS` 下一推荐 goal 调整为阶段 1 只读配置模型和配置页 / API, 不再把阶段 0A 列为待做项。
+- 项目主线定位调整为通用可配置数字人; 根目录默认配置和 `.env.example` 改为通用默认, 中天证券信息保留在 `config/customers/zt-securities/` 和客户文档中。
+- 配置中心方案按实际代码二次修正: 阶段 0 改为阶段 0A 默认入口和根模板清洁, 阶段 1 增加字段来源构造 / provenance 要求; 阶段 2 已移除当时记录的 `AskMetricsService` 临时遗留 allowlist。
+- 前端首页标题、产品 eyebrow 和 Ops 客户展示改为读取 `/api/demo/config` 的项目 / 客户配置字段。
+- 运维日志导出标题改为使用当前生效 `project_name`, 客户行显示 `customer_name (customer_id)`。
+- 删除本地临时宣传分支, 并从主线工作树清理临时录屏页面、专用数字人组件、专用资产、临时客户配置、财务录屏动作白名单和临时 ADR。
+- `NEXT_ACTIONS` 下一推荐 goal 调整为能力路由与配置中心阶段 0A / 阶段 1, 先做默认入口 / 根模板清洁和只读脱敏配置展示, 不直接做可写配置。
+- `docs/13_RISKS_AND_TODO.md` 新增主线污染、配置页脱敏、可写 action 配置前置条件、数据库问数和知识库直连安全风险。
 - 语音命令自动播报顺序调整: 后台监听识别到正式指令后, 最终回答 TTS 会先等待“收到, 正在为您查找信息。”确认播报完成或最多等待 1800ms, 避免本地 Excel 问数快速答案抢占确认提示。
 - 普通唤醒热修: 前端 VAD 增加连续两帧超过阈值才开始收音的启动确认, 并将普通唤醒 `vad_threshold` 回调到 0.018, 降低环境 / 外放噪声触发空 ASR 的概率。
 - `NEXT_ACTIONS` 补充新增“指定人员新闻爬取、整理、导入本地 RAGFlow 知识库、衔接 RAGFlow MCP 问答”专项范围确认任务。
@@ -61,6 +90,21 @@
 
 ### Verified
 
+- 阶段 2 开始前使用 uv + FastAPI TestClient 建立 11 个固定问数 smoke 基线, 11/11 通过。
+- 阶段 2 迁移后同一 11 个固定问数 smoke 11/11 通过。
+- 阶段 2 迁移后, `corepack.cmd pnpm --dir apps/web build`、`python -m compileall apps/api/app` 和 `git diff --check` 通过。
+- 阶段 2 使用 uv + FastAPI TestClient 完成请求级 smoke: `/api/config/effective` 和 `/api/config/schema` 返回 200; 阶段 5 前禁止的配置写入 / validate / test / reload / audit 路由返回 404; `/api/chat/stream` Excel 问数返回 `answer`; `dora` 模式不返回 Excel 来源; `auto` 模式在 Mock Dora fallback 时回退 Excel。
+- 阶段 2 静态验收搜索确认 `apps/`、根级 `config/`、`docker-compose.yml`、`README.md`、`scripts/` 和 `apps/api/app/services/ask_metrics.py` 不再命中客户实例或临时宣传词; 新增 Provider / 配置 API 代码未发现 `Settings.model_dump()` 直接输出、配置写接口调用或明文 secret 输出。
+- 阶段 1 只读配置 API / 页面实现后, `corepack.cmd pnpm --dir apps/web build`、`python -m compileall apps/api/app` 和 `git diff --check` 通过。
+- 阶段 1 使用 uv + FastAPI TestClient 完成请求级 smoke: `/api/config/effective` 和 `/api/config/schema` 返回 200, 阶段 5 前禁止的配置写入 / validate / test / reload / audit 路由返回 404。
+- 阶段 1 静态验收搜索确认新增配置 API / 页面代码未直接返回 `Settings.model_dump()`, 未新增配置写入接口调用, 未发现明文 secret 输出。
+- 阶段 0A 默认入口和根模板清洁后, `corepack.cmd pnpm --dir apps/web build`、`python -m compileall apps/api/app` 和 `git diff --check` 通过。
+- 阶段 0A 验收搜索通过: 本地分支仅 `main`; `apps/`、`docker-compose.yml`、`README.md`、`scripts/` 的客户实例和临时宣传词搜索仅命中 `apps/api/app/services/ask_metrics.py` 临时 allowlist; 根级 `config/` 排除 `config/customers/**` 后无命中; `config/ask-metrics.yaml` 不再引用 `zt_party_*.xlsx`。
+- 通用定位调整后, `corepack.cmd pnpm --dir apps/web build`、`python -m compileall apps/api/app` 和 `git diff --check` 通过。
+- 对核心默认配置、运行代码和接口 / FVS 契约执行客户实例关键词搜索, 中天证券 / 党建大屏 / 张书记相关内容无命中; `.env.example` 仅保留中天证券客户 profile 的注释示例。
+- 主线清洁后, 临时宣传分支检查无输出。
+- 主线清洁后, 对运行目录和主线文档执行临时录屏污染关键词搜索, 结果无命中。
+- 主线清洁和方案文档修正后, `corepack.cmd pnpm --dir apps/web build`、`python -m compileall apps/api/app` 和 `git diff --check` 通过。
 - 党员学习完成率语音确认播报修复后, `corepack pnpm --dir apps/web build`、`python -m compileall apps/api/app`、`docker compose up -d --build web`、`scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`、`POST /api/chat` 本地指标问答、`GET /api/health`、`git diff --check` 和 Codex Browser 新 bundle 检查通过。
 - 普通唤醒热修后, `corepack pnpm --dir apps/web build`、`python -m compileall apps/api/app`、`docker compose up -d --build api web`、`GET /api/wake/config`、`scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`、`git diff --check` 和 Codex Browser 页面 bundle 检查通过。
 - 客户汇报 Excel 已生成, 并完成 `客户汇报摘要` 和 `甘特图` 渲染预览检查; 公式 / 错误标记扫描未命中 `#REF!`、`#DIV/0!`、`#VALUE!`、`#NAME?` 或 `#N/A`。

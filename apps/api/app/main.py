@@ -2,11 +2,11 @@ import base64
 import json
 import logging
 from concurrent.futures import Future, ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from time import sleep
 from time import perf_counter
 from uuid import uuid4
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import FastAPI, Query, Request
@@ -24,6 +24,8 @@ from app.models import (
     AsrTranscribeResponse,
     ChatRequest,
     ChatResponse,
+    ConfigEffectiveResponse,
+    ConfigSchemaResponse,
     DemoConfigResponse,
     ErrorDetail,
     HealthResponse,
@@ -43,6 +45,7 @@ from app.models import (
 )
 from app.services.asr_provider import AsrProviderError, build_asr_provider
 from app.services.ask_metrics import AskMetricsService
+from app.services.config_snapshot import build_config_effective, build_config_schema
 from app.services.dora_client import DoraClient, DoraClientError
 from app.services.dora_normalizer import dora_error_response, normalize_dora_output
 from app.services.mock_dora import MockDoraService
@@ -288,7 +291,13 @@ def get_wake_config() -> WakeConfigResponse:
 def get_demo_config() -> DemoConfigResponse:
     return DemoConfigResponse(
         stable_mode=settings.demo_stable_mode,
+        project_id=settings.project_id,
+        project_name=settings.project_name,
+        product_name=settings.product_name,
         customer_id=settings.customer_id,
+        customer_name=settings.customer_name,
+        scenario_name=settings.scenario_name,
+        assistant_name=settings.assistant_name,
         ask_metrics_mode=_ask_metrics_mode(),
         mock={
             "dora": settings.enable_mock_dora,
@@ -303,6 +312,16 @@ def get_demo_config() -> DemoConfigResponse:
             else "演示稳态模式未开启，系统按当前真实/Mock 开关运行。"
         ),
     )
+
+
+@app.get("/api/config/effective", response_model=ConfigEffectiveResponse)
+def get_config_effective() -> ConfigEffectiveResponse:
+    return ConfigEffectiveResponse(**build_config_effective(settings, action_service))
+
+
+@app.get("/api/config/schema", response_model=ConfigSchemaResponse)
+def get_config_schema() -> ConfigSchemaResponse:
+    return ConfigSchemaResponse(**build_config_schema())
 
 
 @app.post("/api/tts", response_model=TtsSynthesizeResponse)
@@ -982,11 +1001,11 @@ def _ops_export_markdown(*, limit: int) -> str:
     errors = session_logs.list_errors(limit=20)
 
     lines = [
-        "# 中天证券数字人 POC 运维日志导出",
+        f"# {settings.project_name} 运维日志导出",
         "",
         f"- 导出时间: {_now_iso()}",
         f"- 应用: {settings.app_name} {settings.app_version}",
-        f"- 客户: {settings.customer_id}",
+        f"- 客户: {settings.customer_name} ({settings.customer_id})",
         f"- 总体状态: {_overall_ops_status(dependencies)}",
         "",
         "## 依赖状态",
@@ -1054,7 +1073,11 @@ def _join_url(base_url: str, path: str) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds")
+    try:
+        tz = ZoneInfo("Asia/Shanghai")
+    except ZoneInfoNotFoundError:
+        tz = timezone(timedelta(hours=8), name="Asia/Shanghai")
+    return datetime.now(tz).isoformat(timespec="seconds")
 
 
 def _format_ms(value: int | None) -> str:

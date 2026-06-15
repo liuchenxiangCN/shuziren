@@ -1,5 +1,5 @@
 [project]
-name = "zt-digital-human-api"
+name = "configurable-digital-human-api"
 version = "0.1.0"
 description = "Mock gateway API for the local digital human POC."
 requires-python = ">=3.12,<3.13"

@@ -60,8 +60,8 @@ scripts\stop-poc.ps1
 原始 Docker Compose 命令仍可使用:
 
 ```powershell
-git clone <repo> zt-digital-human
-cd zt-digital-human
+git clone <repo> configurable-digital-human
+cd configurable-digital-human
 
 Copy-Item .env.example .env
 # 修改 .env
@@ -97,15 +97,22 @@ V0.7 本地问数 Adapter 需要读取仓库内脱敏 Excel, Docker Compose 已�
 ./docs/demo_data:/app/docs/demo_data:ro
 ```
 
-V0.8 起 Docker Compose 会传入:
+V0.8 起 Docker Compose 可按客户 profile 传入:
+
+```env
+CUSTOMER_ID=default
+CUSTOMER_CONFIG_DIR=
+ASK_METRICS_MODE=excel
+```
+
+使用中天证券客户实例时设置:
 
 ```env
 CUSTOMER_ID=zt-securities
 CUSTOMER_CONFIG_DIR=/app/config/customers/zt-securities
-ASK_METRICS_MODE=excel
 ```
 
-后端默认加载 `config/customers/zt-securities/ask-metrics.yaml`, 其中 `data_dir` 指向 `/app/docs/demo_data/ask_metrics`。如需强制使用其他路径, 再显式设置 `ASK_METRICS_DATA_DIR` 或 `ASK_METRICS_CONFIG_PATH`。
+后端会加载 `config/customers/<customer-id>/ask-metrics.yaml`, 其中 `data_dir` 可指向 `/app/docs/demo_data/ask_metrics` 或客户自己的只读问数数据目录。如需强制使用其他路径, 再显式设置 `ASK_METRICS_DATA_DIR` 或 `ASK_METRICS_CONFIG_PATH`。
 
 ## RAGFlow 启动策略
 

@@ -4,6 +4,8 @@ import type {
   ChatRequest,
   ChatResponse,
   ChatStreamTtsReady,
+  ConfigEffectiveResponse,
+  ConfigSchemaResponse,
   DemoConfigResponse,
   OpsDependenciesResponse,
   OpsErrorsResponse,
@@ -148,6 +150,14 @@ export function fetchWakeConfig(): Promise<WakeConfigResponse> {
 
 export function fetchDemoConfig(): Promise<DemoConfigResponse> {
   return requestJson<DemoConfigResponse>('/api/demo/config');
+}
+
+export function fetchConfigEffective(): Promise<ConfigEffectiveResponse> {
+  return requestJson<ConfigEffectiveResponse>('/api/config/effective');
+}
+
+export function fetchConfigSchema(): Promise<ConfigSchemaResponse> {
+  return requestJson<ConfigSchemaResponse>('/api/config/schema');
 }
 
 export function synthesizeSpeech(payload: TtsSynthesizeRequest): Promise<TtsSynthesizeResponse> {

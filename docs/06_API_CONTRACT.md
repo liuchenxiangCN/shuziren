@@ -19,19 +19,21 @@
 ```json
 {
   "status": "ok",
-  "app": "zt-digital-human-api",
+  "app": "configurable-digital-human-api",
   "version": "0.1.0"
 }
 ```
 
 ## POST /api/chat
 
-文本对话接口。V0.1 使用 Mock Dora, V0.2 接入真实 Dora, V0.3 可接收 ASR 输出文本进入同一链路。V0.7 增加 Gateway 本地 Excel 问数 Adapter, 用于稳定回答 `docs/demo_data/ask_metrics/` 中的脱敏党建指标。
+文本对话接口。V0.1 使用 Mock Dora, V0.2 接入真实 Dora, V0.3 可接收 ASR 输出文本进入同一链路。V0.7 增加 Gateway 本地 Excel 问数能力, 用于稳定回答 `docs/demo_data/ask_metrics/` 中的脱敏样例指标。阶段 2 已将问数链路抽象为 `AskMetricsProvider`, 当前本地 Excel 能力由配置驱动 `ExcelAskMetricsProvider` 承接。
 
 ### Runtime Mode
 
-- V0.7 问数优先级: 后端会先用本地 Excel Adapter 匹配问数意图; 命中后直接返回 `type=answer`, 不调用 Dora, 避免模型编造 Excel 查询结果。
+- V0.7 / 阶段 2 问数优先级: `ASK_METRICS_MODE=excel` 时, 后端会先用 `ExcelAskMetricsProvider` 按当前 `ask-metrics.yaml` metric 定义匹配问数意图; 命中后直接返回 `type=answer`, 不调用 Dora, 避免模型编造 Excel 查询结果。
 - V0.8 已实现 `ASK_METRICS_MODE=excel|dora|auto`。`excel` 保持 V0.7 行为; `dora` 不让 Excel Adapter 抢答, 由 Dora / Mock Dora 承接; `auto` 优先 Dora / Mock Dora, Dora 请求失败或返回 `fallback` 时回退 Excel。
+- 阶段 2 已移除运行代码中的客户实例问数 allowlist; 客户 Excel 文件、关键词、字段、模板和来源说明来自客户 profile, 根级默认配置保持通用空 metric 模板。
+- Database Provider 仅预留 `not_implemented` 状态; 当前不会连接数据库、执行 SQL 或让 LLM 生成 SQL。
 - `ENABLE_MOCK_DORA=true`: 继续使用 V0.1 Mock Dora, 不依赖外部 Dora。
 - `ENABLE_MOCK_DORA=false`: 后端使用 `.env` 中的 `DORA_BASE_URL`、`DORA_API_KEY`、`DORA_AGENT_ID` / `DORA_AGENT_NAME`、`DORA_CHANNEL_TYPE` 调用 Dora OpenClaw SSE。
 - `DEMO_STABLE_MODE=true`: Dora 请求失败时优先尝试本地 Excel 问数和 Mock Dora 演示兜底; 未命中时仍返回安全 `fallback`。该模式只用于演示稳态, 不能替代真实外部依赖验收。
@@ -43,9 +45,9 @@
 ```json
 {
   "session_id": "demo-session-001",
-  "text": "请介绍一下张书记近期调研情况",
+  "text": "这个系统能做什么？",
   "context": {
-    "screen_id": "party_building_home",
+    "screen_id": "dashboard_home",
     "mode": "text"
   }
 }
@@ -60,15 +62,15 @@
   "session_id": "demo-session-001",
   "message_id": "msg-001",
   "type": "answer",
-  "title": "张书记近期动态",
-  "speak_text": "张书记近期调研了基层党建工作，并强调要加强党员学习。",
+  "title": "系统能力说明",
+  "speak_text": "本系统支持语音唤醒、知识问答、指标问数、大屏控屏、语音播报和运维日志。",
   "display": {
     "mode": "text",
-    "summary": "张书记近期调研基层党建工作。",
+    "summary": "通用可配置数字人可通过客户配置适配不同大屏场景。",
     "bullets": [
-      "关注基层组织建设",
-      "强调党员学习",
-      "要求强化党建引领"
+      "客户名称、助手名称和场景名称可配置",
+      "知识库和问数数据源可替换",
+      "大屏动作必须通过 action_id 白名单执行"
     ]
   }
 }
@@ -295,7 +297,13 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
 ```json
 {
   "stable_mode": true,
-  "customer_id": "zt-securities",
+  "project_id": "configurable-digital-human",
+  "project_name": "通用可配置数字人 POC",
+  "product_name": "可配置大屏对话数字人",
+  "customer_id": "default",
+  "customer_name": "默认客户",
+  "scenario_name": "通用大屏交互",
+  "assistant_name": "小智",
   "ask_metrics_mode": "excel",
   "mock": {
     "dora": false,
@@ -314,6 +322,188 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
   "notice": "演示稳态模式已开启，外部 Dora 失败时会优先使用本地演示兜底。"
 }
 ```
+
+## GET /api/config/effective
+
+阶段 1 已实现。读取当前生效配置的脱敏只读快照, 供 `/ops/config` 展示。该接口只允许白名单构造 `ConfigSnapshot`, 不允许直接返回 `Settings.model_dump()` 或供应商原始响应。
+
+### Response
+
+```json
+{
+  "version": "1.0",
+  "generated_at": "2026-06-15T20:00:00+08:00",
+  "read_only": true,
+  "provenance": {
+    "sources": [
+      "code_default",
+      "root_config",
+      "customer_config",
+      "env",
+      "frontend_build",
+      "frontend_runtime",
+      "derived",
+      "unknown"
+    ],
+    "notes": [
+      "本接口按白名单构造 ConfigSnapshot, 不返回 Settings.model_dump()。"
+    ]
+  },
+  "project": {
+    "project_id": {"value": "configurable-digital-human", "source": "code_default", "sensitive": false},
+    "project_name": {"value": "通用可配置数字人 POC", "source": "code_default", "sensitive": false},
+    "product_name": {"value": "可配置大屏对话数字人", "source": "code_default", "sensitive": false}
+  },
+  "customer": {
+    "customer_id": {"value": "default", "source": "code_default", "sensitive": false},
+    "customer_name": {"value": "默认客户", "source": "code_default", "sensitive": false},
+    "scenario_name": {"value": "通用大屏交互", "source": "code_default", "sensitive": false},
+    "assistant_name": {"value": "小智", "source": "code_default", "sensitive": false}
+  },
+  "dashboard": {
+    "backend_effective": {
+      "provider": {"value": "mock_fvs", "source": "derived", "sensitive": false},
+      "integration_mode": {"value": "mock", "source": "code_default", "sensitive": false},
+      "url": {"value": "", "source": "code_default", "sensitive": false},
+      "action_count": {"value": 4, "source": "derived", "sensitive": false}
+    },
+    "frontend_runtime_contract": {
+      "url": {
+        "value": "VITE_FVS_URL 或 URL 参数 fvs_url",
+        "source": "frontend_runtime",
+        "sensitive": false
+      }
+    }
+  },
+  "capabilities": {
+    "ask_metrics": {
+      "mode": {"value": "excel", "source": "code_default", "sensitive": false},
+      "current_provider": {"value": "excel", "source": "derived", "sensitive": false},
+      "provider_interface": {
+        "status": "implemented",
+        "source": "code_default",
+        "sensitive": false,
+        "notes": "阶段 2 已抽象 AskMetricsProvider; Excel 问数由配置驱动的 ExcelAskMetricsProvider 承接。"
+      },
+      "implemented_providers": ["excel", "dora", "auto"],
+      "planned_providers": ["database"],
+      "excel_provider": {
+        "status": "implemented",
+        "source": "code_default",
+        "sensitive": false,
+        "notes": "Excel Provider 只读读取配置声明的 workbook/sheet/metric 模板。"
+      },
+      "database_provider": {
+        "status": "not_implemented",
+        "source": "code_default",
+        "sensitive": false,
+        "notes": "阶段 2 仅预留 Database Provider 状态; 不连接数据库, 不执行 SQL, 不让模型生成 SQL。"
+      }
+    },
+    "knowledge": {
+      "current_provider": {"value": "dora_ragflow_mcp", "source": "derived", "sensitive": false},
+      "implemented_providers": ["dora_ragflow_mcp"],
+      "planned_providers": ["local_ragflow_llm"],
+      "knowledge_direct_adapter": {
+        "status": "not_implemented",
+        "source": "code_default",
+        "sensitive": false
+      }
+    },
+    "screen_control": {
+      "resolver": {"value": "dora_or_mock", "source": "derived", "sensitive": false},
+      "executor": {"value": "fvs_whitelist", "source": "root_config", "sensitive": false},
+      "execute_returns_authorized_action": {"value": false, "source": "code_default", "sensitive": false},
+      "writable_action_config": {"status": "not_implemented", "source": "code_default", "sensitive": false}
+    }
+  },
+  "mock_switches": {
+    "dora": {"value": true, "source": "code_default", "sensitive": false},
+    "asr": {"value": true, "source": "code_default", "sensitive": false},
+    "tts": {"value": true, "source": "code_default", "sensitive": false},
+    "fvs": {"value": true, "source": "code_default", "sensitive": false}
+  },
+  "prompt_profiles": {
+    "dora_direct_mode": {
+      "profile": {"value": "mock_dora", "source": "derived", "sensitive": false},
+      "writable": false
+    },
+    "knowledge_summarizer": {
+      "profile": {
+        "value": null,
+        "source": "unknown",
+        "sensitive": false,
+        "notes": "阶段 3 前未实现本地 knowledge summarizer prompt profile。"
+      },
+      "writable": false
+    }
+  },
+  "implementation_status": {
+    "readonly_config_api": "implemented",
+    "readonly_config_page": "implemented",
+    "writable_config": "not_implemented",
+    "ask_metrics_provider_interface": "implemented",
+    "excel_ask_metrics_provider": "implemented",
+    "database_provider": "not_implemented",
+    "knowledge_direct_adapter": "not_implemented",
+    "llm_summarizer": "not_implemented",
+    "writable_prompt": "not_implemented"
+  },
+  "sensitive": {
+    "dora_api_key": {
+      "label": "Dora API Key",
+      "configured": false,
+      "source": "code_default",
+      "sensitive": true,
+      "masked": "not_configured"
+    }
+  }
+}
+```
+
+规则:
+
+- `source` 只能来自显式来源构造; 无法精确判断时必须使用 `derived` / `unknown` 并说明限制。
+- sensitive 字段只返回 `configured` / `source` / `masked` / `sensitive`, 不返回 API Key、Token、密码、DSN、Bearer、`sk-*`、`ak-*` 或供应商原始响应。
+- URL 字段如包含 `token`、`key`、`secret`、`password` 等查询参数, 返回前必须脱敏。
+- 当前 `KnowledgeDirectAdapter`、Database Provider、可写 action 配置、LLM summarizer、可写 Prompt 均必须显示为 `not_implemented`。
+- 本接口不得改变 `/api/chat`、`/api/chat/stream`、`/api/tts/stream`、`/api/screen/execute` 行为。
+
+## GET /api/config/schema
+
+阶段 1 已实现。返回只读配置快照 schema 和后续阶段才允许开放的接口列表。
+
+### Response
+
+```json
+{
+  "version": "1.0",
+  "generated_at": "2026-06-15T20:00:00+08:00",
+  "read_only": true,
+  "sources": ["code_default", "root_config", "customer_config", "env", "frontend_runtime", "derived", "unknown"],
+  "sections": {
+    "project": {
+      "description": "项目、客户、场景和助手展示字段。",
+      "editable_stage": 5,
+      "sensitive": false
+    },
+    "sensitive": {
+      "description": "API Key、Token、密码、DSN 等敏感项只返回 configured/source/masked。",
+      "editable_stage": null,
+      "sensitive": true
+    }
+  },
+  "disabled_endpoints": [
+    "PUT /api/config/overrides",
+    "POST /api/config/validate",
+    "POST /api/config/test",
+    "POST /api/config/reload",
+    "GET /api/config/audit"
+  ]
+}
+```
+
+阶段 1 不实现 `PUT /api/config/overrides`、`POST /api/config/validate`、`POST /api/config/test`、`POST /api/config/reload` 或 `GET /api/config/audit`。
 
 ## POST /api/tts
 
@@ -434,9 +624,9 @@ V0.8 第三阶段已实现。运维监控和日志看板接口。所有 Ops 接�
 ```json
 {
   "status": "ok",
-  "app": "zt-digital-human-api",
+  "app": "configurable-digital-human-api",
   "version": "0.1.0",
-  "customer_id": "zt-securities",
+  "customer_id": "default",
   "time": "2026-06-11T20:00:00+08:00"
 }
 ```

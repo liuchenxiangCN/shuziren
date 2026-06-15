@@ -2,6 +2,277 @@
 
 本文件记录每轮开发的事实结果。不要写愿望, 只写已经发生的变更、验证和遗留问题。
 
+## 2026-06-15
+
+### 通用可配置数字人阶段 2 AskMetricsProvider 抽象与 Excel 问数迁移
+
+#### Completed
+
+- 按阶段 2 边界先建立当前客户 profile 下 11 个固定 Excel 问数 smoke 基线, 结果为 11/11 通过。
+- 新增 `AskMetricsProvider` 抽象和 `MetricResult` / provider status 数据结构。
+- 新增配置驱动 `ExcelAskMetricsProvider`, 只读读取配置声明的 workbook、sheet、metric 匹配规则、字段、模板、来源和 transform。
+- 将 `apps/api/app/services/ask_metrics.py` 改为 provider 编排与 `ChatResponse` 包装, 不再包含客户实例关键词、字段名或 metric 模板。
+- 将当前 Excel 问数能力迁移到 `config/customers/zt-securities/ask-metrics.yaml`, 客户关键词、字段、回答模板、来源说明和口径说明只保留在客户 profile 中。
+- 根级 `config/ask-metrics.yaml` 保持通用空 metric 模板, 默认 profile 不再依赖客户 Excel 文件或客户词硬编码。
+- `/api/config/effective` 和 `/api/config/schema` 同步标注 `AskMetricsProvider` / `ExcelAskMetricsProvider` 已实现, Database Provider 仍为 `not_implemented`。
+- 保持 `ASK_METRICS_MODE=excel|dora|auto`: `excel` 本地优先, `dora` 不返回 Excel 来源, `auto` 在 Dora / Mock Dora fallback 时回退 Excel。
+- Database Provider 本轮只保留 `not_implemented` 状态, 未连接数据库、未执行 SQL、未让 LLM 生成 SQL。
+- 补齐 `SessionLogStore` 和 API 时间戳在 uv 精简 Python 缺少 `Asia/Shanghai` tzdata 时的 UTC+8 fallback, 避免 TestClient 日志写入失败。
+- 本轮未实现 KnowledgeDirectAdapter、LLM summarizer、Prompt 编辑、可写 Prompt、可写 action 配置、可写配置中心、配置 validate/test/reload/audit, 未改变 `/api/screen/execute` 响应结构。
+
+#### Changed Files
+
+- `apps/api/app/main.py`
+- `apps/api/app/services/ask_metrics.py`
+- `apps/api/app/services/ask_metrics_provider.py`
+- `apps/api/app/services/excel_ask_metrics_provider.py`
+- `apps/api/app/services/config_snapshot.py`
+- `apps/api/app/services/session_log.py`
+- `config/ask-metrics.yaml`
+- `config/customers/zt-securities/ask-metrics.yaml`
+- `docs/06_API_CONTRACT.md`
+- `docs/07_DATA_CONTRACT.md`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`
+- `docs/CHANGELOG.md`
+- `docs/CODEX_CONTEXT.md`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+
+#### Verification
+
+- 阶段 2 前基线: uv + FastAPI TestClient, `CUSTOMER_ID=zt-securities`、`ASK_METRICS_MODE=excel`, 11 个固定问数 smoke 11/11 通过。
+- 迁移后: uv + FastAPI TestClient, 同一 11 个固定问数 smoke 11/11 通过。
+- `corepack.cmd pnpm --dir apps/web build` 通过。
+- `python -m compileall apps/api/app` 通过。
+- uv + FastAPI TestClient 阶段 2 关键路径通过: `/api/config/effective` 和 `/api/config/schema` 返回 200; 配置写接口仍为 404; `/api/chat/stream` Excel 问数返回 `metadata` 和 `answer`; `dora` 模式不返回 Excel 来源; `auto` 模式在 Mock Dora fallback 时回退 Excel; 默认通用 profile 不依赖客户硬编码。
+- 验收搜索通过: `apps/`、根级 `config/`、`docker-compose.yml`、`README.md`、`scripts/` 不再命中客户实例或临时宣传词; `apps/api/app/services/ask_metrics.py` 无客户实例词。
+- 静态搜索通过: 新增 Provider / 配置 API 代码未发现 `Settings.model_dump()` 直接输出、配置写接口路由、前端配置写 API 调用或明文 secret 输出。
+- `git diff --check` 通过。
+
+#### Notes
+
+- 阶段 3 可以开始, 但仅限 KnowledgeDirectAdapter / 来源约束方向; 不得在同一 goal 混入数据库问数、可写配置、Prompt 编辑或控屏授权响应增强。
+- 新增风险 R-036: 配置驱动问数定义目前依赖 smoke 覆盖, 未来新增客户 metric 前应在阶段 5 validate/test API 中补 ask-metrics dry-run。
+
+### 通用可配置数字人阶段 1 只读 effective config 与 schema
+
+#### Completed
+
+- 新增脱敏只读 `GET /api/config/effective`, 通过 `ConfigSnapshot` 白名单构造项目、客户、场景、助手、看板、问数、知识库、控屏、Mock 开关、Prompt profile、敏感字段摘要和当前实现状态。
+- 新增只读 `GET /api/config/schema`, 返回阶段 1 只读 schema、来源类型、分区说明和阶段 5 前禁用的写入 / validate / test / reload / audit 接口列表。
+- 新增 `apps/api/app/services/config_snapshot.py`, 按环境变量、客户配置、根配置、代码默认和前端 runtime 契约显式构造字段来源; 对无法精确表示的聚合字段标 `derived` / `unknown`, 不直接返回 `Settings.model_dump()`。
+- sensitive 字段只返回 `configured`、`source`、`masked` 和 `sensitive=true`; Dora / RAGFlow / ASR / TTS API Key 及数据库 DSN 不返回明文。
+- `effective` 明确当前 `KnowledgeDirectAdapter`、Database Provider、可写 action 配置、配置写入、validate、test、reload、audit、LLM summarizer 和可写 Prompt 均未实现。
+- 前端新增 `/ops/config` 只读配置页入口, 展示后端 effective config、schema 禁用接口、当前浏览器 FVS runtime 配置、Mock 开关、Prompt profile 和实现状态; 页面不包含保存、reload、action 编辑或写入入口。
+- 本轮未修改 `/api/chat`、`/api/chat/stream`、`/api/tts/stream`、`/api/screen/execute` 的既有行为。
+
+#### Changed Files
+
+- `apps/api/app/models.py`
+- `apps/api/app/main.py`
+- `apps/api/app/services/config_snapshot.py`
+- `apps/web/src/api.ts`
+- `apps/web/src/types.ts`
+- `apps/web/src/App.vue`
+- `apps/web/src/style.css`
+- `docs/06_API_CONTRACT.md`
+- `docs/07_DATA_CONTRACT.md`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/CHANGELOG.md`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+
+#### Verification
+
+- `corepack.cmd pnpm --dir apps/web build` 通过。
+- `python -m compileall apps/api/app` 通过。
+- `git diff --check` 通过。
+- 使用 `C:\Users\nifen\.local\bin\uv.exe run python -` 完成 FastAPI TestClient 请求级 smoke: `/api/config/effective` 和 `/api/config/schema` 均返回 200; `PUT /api/config/overrides`、`POST /api/config/validate`、`POST /api/config/test`、`POST /api/config/reload`、`GET /api/config/audit` 均返回 404。
+- 新增 API / 前端配置页代码静态搜索未发现 `Settings.model_dump()` 作为配置响应输出, 未发现写入配置 API 调用。
+- `apps/`、根级 `config/`、`docker-compose.yml`、`README.md`、`scripts/` 的客户实例和临时宣传词搜索未发现本轮新增污染; 既有 `apps/api/app/services/ask_metrics.py` 仍作为阶段 2 前临时 allowlist。
+
+#### Notes
+
+- 本机已安装 `uv` 到 `C:\Users\nifen\.local\bin\uv.exe`, 当前 PowerShell PATH 尚未刷新; 本轮使用绝对路径完成请求级 smoke。第一次 smoke 发现 `ZoneInfo("Asia/Shanghai")` 在 uv 精简 Python 下缺少 `tzdata` 会失败, 已补充 UTC+8 fallback。
+- 阶段 2 可以开始, 但边界是先抽象 `AskMetricsProvider` 并移除旧 `AskMetricsService` 客户实例 allowlist, 不得在旧服务内继续新增客户规则或直接接自由 SQL。
+
+### 通用可配置数字人阶段 0A 默认入口和根模板清洁
+
+#### Completed
+
+- 将 `docker-compose.yml` 默认 `CUSTOMER_ID` 改为 `default`, `CUSTOMER_CONFIG_DIR` 改为空默认值, API / Web 镜像名和容器名改为 `configurable-digital-human-*`, 默认启动不再自动进入 `zt-securities` 客户 profile。
+- 将 `apps/api/pyproject.toml`、`apps/api/uv.lock` 和 `apps/web/package.json` 的包名改为 `configurable-digital-human-*`。
+- 将根级 `config/wake-words.yaml` 默认唤醒词从客户实例唤醒词切为通用“小智”示例; 前端 `DEFAULT_WAKE_CONFIG` 和 ASR 唤醒按钮同步为通用示例。
+- 将根级 `config/demo-cases.yaml` 中的客户实例关键词替换为通用业务大屏示例, 保留成品库存、生产管理、设备分析和总览的通用 Mock 控屏路径。
+- 将根级 `config/ask-metrics.yaml` 从客户 Excel 文件映射改为通用占位模板; 中天证券 Excel 问数映射仅保留在 `config/customers/zt-securities/ask-metrics.yaml`。
+- 将前端 Mock 大屏默认指标从客户实例指标改为通用示例指标。
+- 将 `README.md`、`scripts/poc-common.ps1`、`scripts/check-poc.ps1` 和 `scripts/smoke-demo.ps1` 的默认说明、默认 CustomerId 和默认 smoke 用例改为通用主线。
+- 保留 `config/customers/zt-securities/` 作为客户实例配置目录, 未删除客户 profile。
+- 明确 `apps/api/app/services/ask_metrics.py` 仍是阶段 2 前的临时遗留 allowlist, 本轮未在该文件继续新增客户规则。
+- 清点未跟踪目录 `outputs/manual-20260614-212600/`: 当前内容为 `presentations/` 下的历史 / 手工输出, 保留但不作为阶段 1 配置模型、schema 或页面输入。
+
+#### Changed Files
+
+- `docker-compose.yml`
+- `apps/api/pyproject.toml`
+- `apps/api/uv.lock`
+- `apps/web/package.json`
+- `apps/web/src/App.vue`
+- `config/wake-words.yaml`
+- `config/demo-cases.yaml`
+- `config/ask-metrics.yaml`
+- `config/README.md`
+- `README.md`
+- `scripts/poc-common.ps1`
+- `scripts/check-poc.ps1`
+- `scripts/smoke-demo.ps1`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/DEV_LOG.md`
+- `docs/CHANGELOG.md`
+- `docs/CODEX_CONTEXT.md`
+
+#### Verification
+
+- `corepack.cmd pnpm --dir apps/web build` 通过。
+- `python -m compileall apps/api/app` 通过。
+- `git diff --check` 通过。
+- `git branch --list` 仅显示 `main`, 未发现临时宣传分支。
+- 对 `apps/`、`docker-compose.yml`、`README.md`、`scripts/` 执行客户实例和临时宣传词搜索, 仅 `apps/api/app/services/ask_metrics.py` 命中阶段 2 前临时遗留 allowlist。
+- 对根级 `config/` 执行同类搜索并排除 `config/customers/**`, 无命中。
+- `config/ask-metrics.yaml` 不再引用 `zt_party_*.xlsx`; 相关映射只保留在 `config/customers/zt-securities/ask-metrics.yaml`。
+- `git status --short` 仍显示已有未提交变更和未跟踪 `outputs/manual-20260614-212600/`; 该输出目录已在文档中标注为历史 / 手工输出, 不作为阶段 1 输入。
+
+#### Notes
+
+- 本轮未新增 `/api/config/*`, 未做只读配置页, 未做可写配置, 未抽象 `AskMetricsProvider`, 未新增数据库问数、`KnowledgeDirectAdapter`、LLM summarizer 或 Prompt 编辑。
+- 下一步可以进入阶段 1, 但阶段 1 必须先实现字段来源构造 / provenance 和脱敏白名单输出, 不能直接 dump `Settings` 或加入保存 / reload 能力。
+
+### 配置中心方案二次审计修正
+
+#### Completed
+
+- 基于实际代码二次审计 `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`, 修正阶段 0A / 阶段 1 的不可达验收口径。
+- 明确当前 `docker-compose.yml` 默认仍进入 `zt-securities`, 镜像 / 容器 / 包名仍有 `zt-digital-human-*`, 根级配置和前端 Mock 默认态仍有客户实例残留, 因此下一步应先执行阶段 0A 默认入口和根模板清洁。
+- 明确 `apps/api/app/services/ask_metrics.py` 仍包含党建 Excel 问数硬编码; 在阶段 2 抽象 `AskMetricsProvider` 前, 该文件只能作为临时遗留 allowlist, 不能把 `apps/` 零客户词作为阶段 0A 的硬验收。
+- 明确阶段 1 的 `effective.source` 不能从合并后的 `Settings` 直接可靠推出; 必须新增字段来源构造或 provenance 追踪, 无法精确判断时标 `derived` / `unknown`。
+- 同步更新 ADR-0022 和 `NEXT_ACTIONS.md`, 将下一推荐 goal 调整为阶段 0A / 阶段 1, 并保留“不得新增可写配置、不改变现有业务行为”的边界。
+
+#### Changed Files
+
+- `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`
+- `docs/decisions/ADR-0022-capability-routing-and-config-center.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/DEV_LOG.md`
+- `docs/CHANGELOG.md`
+- `docs/13_RISKS_AND_TODO.md`
+
+#### Verification
+
+- 已用 `rg` 对实际路由、`ScreenExecuteResponse`、前端 FVS 执行路径、Docker Compose 默认值、根级配置、`AskMetricsService` 和配置加载来源能力进行静态核对。
+- 本轮仅修正文档, 未改前后端代码, 未运行构建。
+
+#### Notes
+
+- 下一轮如果实现阶段 0A, 应先改默认启动入口、根模板和前端 Mock 默认态; 不应在旧 `AskMetricsService` 里继续堆新客户规则。
+- 下一轮如果实现阶段 1, 应先设计 `ConfigSnapshot` 和字段来源构造, 再开放只读 API / 页面。
+
+### 通用可配置数字人项目定位调整
+
+#### Completed
+
+- 按用户要求将项目本体从“中天证券党建大屏数字人”调整为“通用可配置数字人”。
+- 明确中天证券党建大屏只是客户实例, 通过 `config/customers/zt-securities/` 和客户文档 / 交付包实现。
+- 后端 `Settings` 新增 `project_id`、`project_name`、`product_name`、`customer_name`、`scenario_name`、`assistant_name`, 并支持从客户 `runtime.yaml` 的 `project` 段覆盖。
+- `/api/demo/config` 新增项目 / 客户展示字段, 供前端只读展示使用。
+- 前端首页 eyebrow / H1 和 Ops 客户显示改为读取配置字段; 未加载配置时使用通用默认文案。
+- 运维日志导出标题改为当前生效 `project_name`, 客户行改为 `customer_name (customer_id)`。
+- 根目录默认配置和 `.env.example` 改为通用默认; 中天证券实例配置补充 `project` 元数据。
+- 新增 ADR-0023 记录通用可配置数字人项目定位。
+
+#### Changed Files
+
+- `.env.example`
+- `apps/api/app/config.py`
+- `apps/api/app/main.py`
+- `apps/api/app/models.py`
+- `apps/web/src/App.vue`
+- `apps/web/src/types.ts`
+- `config/README.md`
+- `config/demo-cases.yaml`
+- `config/screen-actions.yaml`
+- `config/customers/zt-securities/README.md`
+- `config/customers/zt-securities/runtime.yaml`
+- `docs/00_INDEX.md`
+- `docs/01_PROJECT_BRIEF.md`
+- `docs/02_PRODUCT_BLUEPRINT.md`
+- `docs/03_ARCHITECTURE.md`
+- `docs/06_API_CONTRACT.md`
+- `docs/07_DATA_CONTRACT.md`
+- `docs/08_CONFIG_GUIDE.md`
+- `docs/09_LOCAL_DEPLOY.md`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/14_ENHANCEMENT_ROADMAP.md`
+- `docs/15_MAINLINE_ARCHITECTURE_DIAGRAM.md`
+- `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`
+- `docs/CHANGELOG.md`
+- `docs/CODEX_CONTEXT.md`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/integrations/FVS_INTEGRATION.md`
+- `docs/decisions/ADR-0022-capability-routing-and-config-center.md`
+- `docs/decisions/ADR-0023-generic-configurable-digital-human-positioning.md`
+
+#### Verification
+
+- `corepack.cmd pnpm --dir apps/web build` 通过。
+- `python -m compileall apps/api/app` 通过。
+- `git diff --check` 通过。
+- 对核心默认配置、运行代码和接口 / FVS 契约执行客户实例关键词搜索, 中天证券 / 党建大屏 / 张书记相关内容无命中; `.env.example` 仅保留中天证券客户 profile 的注释示例。
+
+#### Notes
+
+- 历史交付包、历史 DEV_LOG / CHANGELOG 和 `docs/customers/zt-securities/` 中的中天证券内容保留为历史事实或客户实例内容, 不批量改写。
+- 下一轮阶段 0A 应先把默认启动入口和根模板不得写死客户实例固化为可重复检查; `AskMetricsService` 遗留硬编码等阶段 2 Provider 抽象后再移除。
+
+### 主线清洁基线与配置中心方案修正
+
+#### Completed
+
+- 删除本地临时宣传分支, 当前本地分支只保留 `main`。
+- 清理主线工作树中的临时录屏页面、专用数字人组件、专用资产、临时客户配置、财务录屏动作白名单和临时 ADR。
+- 回退 `apps/web`、`config/screen-actions.yaml`、`config/customers/zt-securities/screen-actions.yaml` 和集成说明中属于临时录屏链路的改动。
+- 保留并更新主线架构图、能力路由与配置中心方案和 ADR-0022。
+- 将配置中心优化路线修正为: 阶段 0A 默认入口 / 根模板清洁门禁, 阶段 1 只读脱敏 effective config 和 schema, 后续再做数据库问数、知识库直连、控屏 resolver、可写配置和审计。
+- 明确当前实际代码约束: 尚未实现 `/api/config/*`; `/api/screen/execute` 尚未返回完整授权 action; 前端仍依赖缓存动作列表执行 FVS; Compose 当前把 `config/` 只读挂载。
+
+#### Changed Files
+
+- `docs/00_INDEX.md`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/15_MAINLINE_ARCHITECTURE_DIAGRAM.md`
+- `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`
+- `docs/CHANGELOG.md`
+- `docs/CODEX_CONTEXT.md`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/decisions/ADR-0022-capability-routing-and-config-center.md`
+
+#### Verification
+
+- 临时宣传分支检查无输出。
+- 对 `apps`、`config` 和 `docs` 执行临时录屏污染关键词搜索, 结果无命中。
+- `corepack.cmd pnpm --dir apps/web build` 通过。
+- `python -m compileall apps/api/app` 通过。
+- `git diff --check` 通过。
+
+#### Notes
+
+- 本轮未实现配置中心 API 或前端页面; 仅完成主线清洁、方案修正和文档同步。
+- 下一轮如开始实现, 应先落地阶段 0A / 阶段 1, 不直接做可写配置或数据库 / 知识库直连。
+
 ## 2026-06-11
 
 ### 本地问数确认播报顺序修复

@@ -4,11 +4,11 @@
 
 ## Project
 
-中天证券党建大屏对话数字人本地 POC 工程。
+通用可配置数字人本地 POC 工程。中天证券党建大屏是当前客户配置实例, 不是项目本体。
 
 ## Goal
 
-构建一套可复用给客户的本地 POC 模板, 完整跑通:
+构建一套可复用给多个客户和多个大屏场景的本地 POC 模板, 通过配置完整跑通:
 
 ```text
 语音唤醒 -> ASR -> 文本问题 -> Dora Agent
@@ -17,11 +17,21 @@
 -> TTS -> 前端播报 + 字幕 + 动效 + FVS 控制
 ```
 
+中天证券需求通过 `config/customers/zt-securities/`、`docs/customers/zt-securities/` 和客户交付包实现。
+
 ## Current Phase
 
-V1.0 POC 验收交付包已输出, 下一步为客户现场验收复演和签收。
+V1.0 POC 验收交付包已输出。当前主线优化任务已切到通用可配置数字人定位和能力路由与配置中心: 先保持主线清洁基线, 再做只读 effective config 和配置页。
 
 ## Latest Update
+
+2026-06-15 已完成通用可配置数字人阶段 2: 抽象 `AskMetricsProvider`, 新增配置驱动 `ExcelAskMetricsProvider`, 并将旧 `AskMetricsService` 中的客户实例问数规则迁移到 `config/customers/zt-securities/ask-metrics.yaml`。`apps/api/app/services/ask_metrics.py` 现在只做 provider 编排和 `ChatResponse` 包装, 不再包含客户实例 allowlist。根级 `config/ask-metrics.yaml` 保持通用空 metric 模板; `ASK_METRICS_MODE=excel|dora|auto` 行为不退化; `/api/config/effective` 和 `/api/config/schema` 已同步显示 AskMetricsProvider / Excel Provider implemented、Database Provider not_implemented。Database Provider 本轮未连接数据库、未执行 SQL, 也未开放可写配置、Prompt 编辑、KnowledgeDirectAdapter、LLM summarizer 或控屏授权响应增强。验证通过: 阶段 2 前 11 个问数基线 11/11; 迁移后 11/11; `corepack.cmd pnpm --dir apps/web build`; `python -m compileall apps/api/app`; uv + FastAPI TestClient 阶段 2 smoke; 验收搜索; `git diff --check`。
+
+2026-06-15 已完成通用可配置数字人阶段 0A: `docker-compose.yml` 默认 `CUSTOMER_ID=default` 且 `CUSTOMER_CONFIG_DIR` 为空, API / Web 镜像名、容器名和包名均改为 `configurable-digital-human-*`; 根级唤醒词、演示用例、问数模板、前端 Mock 大屏、README 和脚本默认 smoke 均改为通用示例。中天证券内容继续保留在 `config/customers/zt-securities/` 等客户实例位置。阶段 0A 当时将 `apps/api/app/services/ask_metrics.py` 记录为阶段 2 前临时遗留 allowlist, 该遗留已在阶段 2 移除。未跟踪 `outputs/manual-20260614-212600/` 已标注为历史 / 手工输出, 不作为阶段 1 输入。验证通过: `corepack.cmd pnpm --dir apps/web build`; `python -m compileall apps/api/app`; `git diff --check`; 相关验收搜索通过。
+
+2026-06-15 已按用户要求调整项目定位: 项目本体从“中天证券党建大屏数字人”改为“通用可配置数字人”。中天证券党建大屏只作为 `zt-securities` 客户 profile, 通过客户配置覆盖项目名称、客户名称、助手名称、Dora Agent、知识库、问数数据、FVS 看板、动作白名单、唤醒词和演示话术。代码侧已新增项目展示字段到 `Settings` 和 `/api/demo/config`, 前端首页标题和 Ops 客户显示改为读取配置, 运维日志导出标题改为配置化项目名; 根目录默认配置和 `.env.example` 改为通用默认, `config/customers/zt-securities/runtime.yaml` 保留中天证券实例元数据。新增 ADR-0023 记录该定位决策。
+
+2026-06-15 已按用户要求恢复主线清洁基线: 本地临时宣传分支已删除, 主线工作树中的录屏页面、专用数字人组件、专用资产、临时客户配置、财务录屏动作白名单和临时 ADR 已移除。当前保留并更新主线架构图 `docs/15_MAINLINE_ARCHITECTURE_DIAGRAM.md`、能力路由与配置中心方案 `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md` 和 ADR-0022。方案已基于实际代码修正: 当前尚无 `/api/config/*`; `/api/screen/execute` 尚未返回完整授权 action; 前端仍依赖缓存动作列表执行 FVS; Compose 仍把 `config/` 只读挂载。阶段 0A 已完成后, 下一推荐 goal 是阶段 1: 新增脱敏只读 effective config 和 schema, 不直接开放可写配置, 不改变现有问答、问数、语音、TTS 或控屏行为。
 
 2026-06-11 已实现“播报中长唤醒词确认打断”。新增 wake 配置 `barge_in_enabled`、`barge_in_wake_words`、`barge_in_vad_threshold`、`barge_in_min_audio_ms`、`barge_in_silence_ms`、`barge_in_max_audio_ms` 和 `barge_in_ignore_after_tts_start_ms`; 默认和中天证券客户配置启用播报中打断, 但只认长唤醒词“小天小天”“你好小天”, 不认短词“小天”。前端在 `speaking` 状态继续用 VAD 截短片段并调用 ASR 做 `barge_in` 确认; 命中后调用 `cleanupAudio()` 停止当前 TTS, 播放“您好。”并进入正式指令录音, 同句包含指令时剥离唤醒词后直接处理; 未命中、空识别或 ASR 失败时继续播报, 不进入 cooldown 或 `/api/chat`。新增 ADR-0017。验证通过: `python -m compileall apps/api/app`; `corepack pnpm --dir apps/web build`。当前仍需真实麦克风复测播报中打断成功率和外放误打断率。
 

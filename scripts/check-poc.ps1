@@ -14,7 +14,7 @@ $results = @()
 
 $results += New-PocCheckResult -Category "files" -Name ".env" -Status ($(if (Test-Path -LiteralPath $config.EnvPath) { "ok" } else { "warning" })) -Message ($(if (Test-Path -LiteralPath $config.EnvPath) { ".env found" } else { ".env not found; start-poc.ps1 can copy .env.example" }))
 $results += New-PocCheckResult -Category "files" -Name "config" -Status ($(if (Test-Path -LiteralPath (Join-Path $root "config")) { "ok" } else { "error" })) -Message "config directory"
-$results += New-PocCheckResult -Category "files" -Name "customer config" -Status ($(if (Test-Path -LiteralPath (Join-Path $root "config\customers\zt-securities")) { "ok" } else { "warning" })) -Message "config/customers/zt-securities"
+$results += New-PocCheckResult -Category "files" -Name "customer profiles" -Status ($(if (Test-Path -LiteralPath (Join-Path $root "config\customers")) { "ok" } else { "warning" })) -Message "config/customers"
 $results += New-PocCheckResult -Category "files" -Name "ask metrics data" -Status ($(if (Test-Path -LiteralPath (Join-Path $root "docs\demo_data\ask_metrics")) { "ok" } else { "error" })) -Message "docs/demo_data/ask_metrics"
 
 if (Test-PocCommand -Name "docker") {
