@@ -27,6 +27,19 @@ config/customers/<customer-id>/
 - `dora`: Excel Adapter 不抢答。
 - `auto`: Dora / Mock Dora 失败或兜底时回退 Excel。
 
+知识库直连由 `KNOWLEDGE_MODE=dora|local_ragflow_llm|auto` 控制:
+
+- `dora`: 默认路径, 保持 Dora -> RAGFlow MCP -> Dora 生成最终回答。
+- `local_ragflow_llm`: Gateway 本地调用 RAGFlow 检索 chunks/metadata, 再由后端受控 `source_bound_extractive` summarizer 基于来源回答。
+- `auto`: 知识类问题优先尝试本地来源约束回答; 配置缺失时回到 Dora 路径。
+
+KnowledgeDirectAdapter 规则:
+
+- RAGFlow 只做检索, 固定 `keyword=false`, 不使用 RAGFlow chat / assistant 生成最终回答。
+- Summarizer 必须 `KNOWLEDGE_REQUIRE_SOURCES=true` 且 `KNOWLEDGE_NO_EVIDENCE_POLICY=fallback`。
+- 无检索结果或依据不足时返回 fallback, 不编造。
+- 本阶段不启用可写 Prompt、不开放配置写入、不让模型输出或执行 SQL/Python/JavaScript/shell。
+
 TTS 真流式由以下配置控制:
 
 - `TTS_STREAMING_ENABLED=true`: 启用 `POST /api/tts/stream`。

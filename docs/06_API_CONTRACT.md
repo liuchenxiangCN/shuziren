@@ -34,6 +34,8 @@
 - V0.8 已实现 `ASK_METRICS_MODE=excel|dora|auto`。`excel` 保持 V0.7 行为; `dora` 不让 Excel Adapter 抢答, 由 Dora / Mock Dora 承接; `auto` 优先 Dora / Mock Dora, Dora 请求失败或返回 `fallback` 时回退 Excel。
 - 阶段 2 已移除运行代码中的客户实例问数 allowlist; 客户 Excel 文件、关键词、字段、模板和来源说明来自客户 profile, 根级默认配置保持通用空 metric 模板。
 - Database Provider 仅预留 `not_implemented` 状态; 当前不会连接数据库、执行 SQL 或让 LLM 生成 SQL。
+- 阶段 3 新增 KnowledgeDirectAdapter。`KNOWLEDGE_MODE=dora` 保持既有 Dora -> RAGFlow MCP 路径; `local_ragflow_llm` 由 Gateway 调用 RAGFlow 只检索 chunks/metadata, 再由后端受控 source-bound summarizer 基于来源回答; `auto` 在本地直连配置缺失或检索异常时回到 Dora。
+- KnowledgeDirectAdapter 的 summarizer 当前为后端受控 `source_bound_extractive`, 不调用外部 LLM; `require_sources=true`, `no_evidence_policy=fallback`, 无检索依据时返回 fallback, 不编造。
 - `ENABLE_MOCK_DORA=true`: 继续使用 V0.1 Mock Dora, 不依赖外部 Dora。
 - `ENABLE_MOCK_DORA=false`: 后端使用 `.env` 中的 `DORA_BASE_URL`、`DORA_API_KEY`、`DORA_AGENT_ID` / `DORA_AGENT_NAME`、`DORA_CHANNEL_TYPE` 调用 Dora OpenClaw SSE。
 - `DEMO_STABLE_MODE=true`: Dora 请求失败时优先尝试本地 Excel 问数和 Mock Dora 演示兜底; 未命中时仍返回安全 `fallback`。该模式只用于演示稳态, 不能替代真实外部依赖验收。
@@ -99,6 +101,59 @@
 }
 ```
 
+### Response: local knowledge answer
+
+阶段 3 本地知识库直连命中后仍返回标准 `answer`, 不新增前端响应类型。回答必须包含来源列表和来源摘要。
+
+```json
+{
+  "session_id": "demo-session-001",
+  "message_id": "msg-001",
+  "type": "answer",
+  "title": "入党流程",
+  "speak_text": "根据知识库资料，入党流程包括递交入党申请书、党组织谈话、确定入党积极分子等环节。",
+  "display": {
+    "mode": "text",
+    "summary": "基于 join_party_process.md 的检索结果回答。",
+    "bullets": [
+      "入党流程包括递交入党申请书、党组织谈话、确定入党积极分子等环节",
+      "来源：join_party_process.md"
+    ],
+    "sources": [
+      {
+        "document_name": "join_party_process.md",
+        "chunk_id": "chunk-001",
+        "similarity": 0.91
+      }
+    ],
+    "source_summary": "join_party_process.md",
+    "source": "join_party_process.md",
+    "audit": {
+      "capability": "knowledge",
+      "provider": "local_ragflow_direct",
+      "require_sources": true,
+      "no_evidence_policy": "fallback"
+    }
+  }
+}
+```
+
+无检索结果或依据不足时:
+
+```json
+{
+  "session_id": "demo-session-001",
+  "message_id": "msg-002",
+  "type": "fallback",
+  "speak_text": "知识库未找到可靠依据，请补充资料后再试。",
+  "reason": "KNOWLEDGE_NO_SOURCES",
+  "error": {
+    "code": "KNOWLEDGE_NO_SOURCES",
+    "message": "知识库未找到可靠依据，请补充资料后再试。"
+  }
+}
+```
+
 ### Response: screen_control
 
 ```json
@@ -151,7 +206,7 @@
 
 ### Response
 
-响应为 `text/event-stream`。
+响应为 `text/event-stream`。阶段 3 本地 KnowledgeDirect 命中时也沿用同一事件结构: `metadata -> dora_delta -> answer -> tts_ready -> end`, 其中 `answer.display.sources` 包含来源列表。
 
 ```text
 event: metadata
@@ -401,19 +456,40 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
       }
     },
     "knowledge": {
+      "mode": {"value": "dora", "source": "code_default", "sensitive": false},
       "current_provider": {"value": "dora_ragflow_mcp", "source": "derived", "sensitive": false},
-      "implemented_providers": ["dora_ragflow_mcp"],
-      "planned_providers": ["local_ragflow_llm"],
+      "implemented_providers": ["dora_ragflow_mcp", "local_ragflow_direct"],
+      "planned_providers": ["external_llm_summarizer"],
+      "retrieval": {
+        "provider": {"value": "ragflow", "source": "code_default", "sensitive": false},
+        "transport": {"value": "api", "source": "code_default", "sensitive": false},
+        "keyword": {"value": false, "source": "code_default", "sensitive": false},
+        "page_size": {"value": 3, "source": "code_default", "sensitive": false},
+        "top_k": {"value": 16, "source": "code_default", "sensitive": false},
+        "similarity_threshold": {"value": 0.35, "source": "code_default", "sensitive": false},
+        "max_chunk_chars": {"value": 1200, "source": "code_default", "sensitive": false}
+      },
+      "summarizer": {
+        "provider": {"value": "source_bound_extractive", "source": "code_default", "sensitive": false},
+        "require_sources": {"value": true, "source": "code_default", "sensitive": false},
+        "no_evidence_policy": {"value": "fallback", "source": "code_default", "sensitive": false}
+      },
       "knowledge_direct_adapter": {
+        "status": "implemented",
+        "source": "code_default",
+        "sensitive": false
+      },
+      "llm_summarizer": {
         "status": "not_implemented",
         "source": "code_default",
         "sensitive": false
       }
     },
     "screen_control": {
-      "resolver": {"value": "dora_or_mock", "source": "derived", "sensitive": false},
+      "resolver": {"value": "local_rules_then_dora_or_mock", "source": "derived", "sensitive": false},
       "executor": {"value": "fvs_whitelist", "source": "root_config", "sensitive": false},
-      "execute_returns_authorized_action": {"value": false, "source": "code_default", "sensitive": false},
+      "execute_returns_authorized_action": {"value": true, "source": "code_default", "sensitive": false},
+      "param_validation": {"value": "backend_schema_allowlist", "source": "code_default", "sensitive": false},
       "writable_action_config": {"status": "not_implemented", "source": "code_default", "sensitive": false}
     }
   },
@@ -430,10 +506,10 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
     },
     "knowledge_summarizer": {
       "profile": {
-        "value": null,
-        "source": "unknown",
+        "value": "source_bound_extractive",
+        "source": "code_default",
         "sensitive": false,
-        "notes": "阶段 3 前未实现本地 knowledge summarizer prompt profile。"
+        "notes": "阶段 3 当前为后端受控 summarizer profile, 不提供 Prompt 编辑或写入。"
       },
       "writable": false
     }
@@ -445,7 +521,8 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
     "ask_metrics_provider_interface": "implemented",
     "excel_ask_metrics_provider": "implemented",
     "database_provider": "not_implemented",
-    "knowledge_direct_adapter": "not_implemented",
+    "knowledge_direct_adapter": "implemented",
+    "source_bound_summarizer": "implemented",
     "llm_summarizer": "not_implemented",
     "writable_prompt": "not_implemented"
   },
@@ -466,7 +543,7 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
 - `source` 只能来自显式来源构造; 无法精确判断时必须使用 `derived` / `unknown` 并说明限制。
 - sensitive 字段只返回 `configured` / `source` / `masked` / `sensitive`, 不返回 API Key、Token、密码、DSN、Bearer、`sk-*`、`ak-*` 或供应商原始响应。
 - URL 字段如包含 `token`、`key`、`secret`、`password` 等查询参数, 返回前必须脱敏。
-- 当前 `KnowledgeDirectAdapter`、Database Provider、可写 action 配置、LLM summarizer、可写 Prompt 均必须显示为 `not_implemented`。
+- 当前 Database Provider、可写 action 配置、外部 LLM summarizer、可写 Prompt 均必须显示为 `not_implemented`; KnowledgeDirectAdapter 和 source-bound summarizer 显示为 `implemented`。
 - 本接口不得改变 `/api/chat`、`/api/chat/stream`、`/api/tts/stream`、`/api/screen/execute` 行为。
 
 ## GET /api/config/schema
@@ -794,7 +871,7 @@ V0.8 第三阶段已实现。运维监控和日志看板接口。所有 Ops 接�
 
 ## POST /api/screen/execute
 
-校验大屏动作。V0.6 中真实 FVS 仍不由模型直接控制: 后端只根据白名单确认 `action_id` 是否允许, 前端再把已确认的动作应用到 FVS iframe。当前测试看板的分页动作会改写 iframe URL 的 `page_number`; 复杂动作才使用 `postMessage`。
+校验并授权大屏动作。阶段 4 起, 真实 FVS 仍不由模型或前端直接控制: 后端根据本次 `action_id` 白名单校验、`target` 校验和 params allowlist / schema 校验生成 `authorized_action` / `resolved_action`, 前端只能执行本次响应中的授权动作配置。`GET /api/screen/actions` 仍可用于按钮展示, 不能作为真实执行参数来源。
 
 ### Request
 
@@ -802,6 +879,7 @@ V0.8 第三阶段已实现。运维监控和日志看板接口。所有 Ops 接�
 {
   "session_id": "demo-session-001",
   "action_id": "SWITCH_TAB_ORG",
+  "target": "page_number_2",
   "params": {}
 }
 ```
@@ -812,7 +890,79 @@ V0.8 第三阶段已实现。运维监控和日志看板接口。所有 Ops 接�
 {
   "success": true,
   "action_id": "SWITCH_TAB_ORG",
-  "speak_text": "已为您切换到成品库存页面。"
+  "speak_text": "已为您切换到成品库存页面。",
+  "target": "page_number_2",
+  "provider": "screen_action_whitelist",
+  "authorized_action": {
+    "id": "SWITCH_TAB_ORG",
+    "action_id": "SWITCH_TAB_ORG",
+    "label": "成品库存",
+    "type": "page",
+    "description": "切换到成品库存页",
+    "target": "page_number_2",
+    "provider": "screen_action_whitelist",
+    "fvs_function": "gotoPage",
+    "fvs_routing": {
+      "provider": "fvs",
+      "mode": "iframe_page_number",
+      "function": "gotoPage",
+      "page_param": "page_number",
+      "page_number": 2
+    },
+    "params": {
+      "pageNumber": 2
+    },
+    "speak_text": "已为您切换到成品库存页面。",
+    "validation": {
+      "status": "authorized",
+      "code": "AUTHORIZED",
+      "params_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pageNumber": {
+            "type": "integer",
+            "required_value": 2,
+            "client_override": "must_match_backend_value",
+            "minimum": 1
+          }
+        }
+      },
+      "sanitized_params": {
+        "pageNumber": 2
+      },
+      "rejected_params": []
+    }
+  },
+  "resolved_action": {
+    "id": "SWITCH_TAB_ORG",
+    "action_id": "SWITCH_TAB_ORG",
+    "label": "成品库存",
+    "type": "page",
+    "description": "切换到成品库存页",
+    "target": "page_number_2",
+    "provider": "screen_action_whitelist",
+    "fvs_function": "gotoPage",
+    "fvs_routing": {
+      "provider": "fvs",
+      "mode": "iframe_page_number",
+      "function": "gotoPage",
+      "page_param": "page_number",
+      "page_number": 2
+    },
+    "params": {
+      "pageNumber": 2
+    },
+    "speak_text": "已为您切换到成品库存页面。",
+    "validation": {
+      "status": "authorized",
+      "code": "AUTHORIZED"
+    }
+  },
+  "validation": {
+    "status": "authorized",
+    "code": "AUTHORIZED"
+  }
 }
 ```
 
@@ -823,6 +973,16 @@ V0.8 第三阶段已实现。运维监控和日志看板接口。所有 Ops 接�
   "success": false,
   "action_id": "UNKNOWN_ACTION",
   "speak_text": "当前大屏暂不支持这个切换动作。",
+  "provider": "screen_action_whitelist",
+  "authorized_action": null,
+  "resolved_action": null,
+  "validation": {
+    "status": "rejected",
+    "code": "ACTION_NOT_ALLOWED",
+    "reason": "Action is not in whitelist",
+    "rejected_params": []
+  },
+  "rejection_reason": "Action is not in whitelist",
   "request_id": "req-001",
   "error": {
     "code": "ACTION_NOT_ALLOWED",
@@ -830,3 +990,17 @@ V0.8 第三阶段已实现。运维监控和日志看板接口。所有 Ops 接�
   }
 }
 ```
+
+其他安全拒绝:
+
+- `PARAM_NOT_ALLOWED`: 请求包含后端动作配置未声明的 params, 例如任意 FVS URL。
+- `PARAM_VALUE_NOT_ALLOWED`: 请求试图覆盖后端白名单中的固定参数值, 例如把 `pageNumber=2` 改为 `99`。
+- `PARAM_INVALID`: 参数类型、长度或内容不符合后端 allowlist。
+- `TARGET_NOT_ALLOWED`: 请求 `target` 与该 action 的后端授权目标不匹配。
+
+规则:
+
+- `action_id` 必须存在于后端白名单。
+- 前端或模型传入的 `params` 不会直接进入 FVS; 后端只返回已净化的 `authorized_action.params`。
+- 当前后端只允许标量参数, 不允许嵌套对象、URL、脚本、命令或任意代码内容。
+- 前端 FVS Adapter 只能使用 `authorized_action` / `resolved_action` 中的 `fvs_function`、`fvs_routing` 和 `params`。

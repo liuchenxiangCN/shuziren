@@ -11,8 +11,8 @@
 ### 已确认的真实代码约束
 
 - 尚未实现 `/api/config/*`; 现有配置可观测入口主要是 `/api/demo/config`、`/api/ops/*` 和各业务 API。
-- `POST /api/screen/execute` 当前只返回 `success`、`action_id`、`speak_text`、`request_id` 和 `error`, 尚未返回完整授权 action 配置。
-- 前端当前仍依赖 `GET /api/screen/actions` 的缓存动作配置执行 FVS `page_number` / `postMessage`。
+- 阶段 4 已增强 `POST /api/screen/execute`: 在兼容 `success`、`action_id`、`speak_text`、`request_id` 和 `error` 的同时, 返回本次 `authorized_action` / `resolved_action`、FVS routing、schema / allowlist 校验状态和拒绝原因。
+- 阶段 4 已将前端真实 FVS 执行依据切到 `/api/screen/execute` 本次响应中的授权动作; `GET /api/screen/actions` 只保留为只读按钮展示。
 - Docker Compose 当前把 `./config:/app/config:ro` 只读挂载; 可写配置页必须先引入独立覆盖目录, 不能直接改默认 YAML。
 - 当前 FVS 配置存在前后端来源分裂: 后端会从客户 `fvs.yaml` / 环境变量得到 `settings.fvs_*`, 但浏览器实际执行由 `VITE_FVS_*` 构建参数和 URL 参数 `?fvs_url=` / `?fvs_mode=` 决定。
 - 阶段 2 已完成问数 Provider 抽象: `AskMetricsService` 仅做 provider 编排, Excel 问数由配置驱动 `ExcelAskMetricsProvider` 承接; 客户实例 metric 规则位于客户 profile。
@@ -538,9 +538,10 @@ GET  /api/config/audit
       "planned_providers": ["local_ragflow_llm"]
     },
     "screen_control": {
-      "resolver": "dora_or_mock",
+      "resolver": "local_rules_then_dora_or_mock",
       "executor": "fvs_whitelist",
-      "execute_returns_authorized_action": false
+      "execute_returns_authorized_action": true,
+      "param_validation": "backend_schema_allowlist"
     }
   },
   "dashboard": {
@@ -757,9 +758,9 @@ Ops 看板应展示脱敏后的 provider、fallback、来源和执行状态, 便
 - 页面能看到项目名称、客户名称、场景名称、助手名称、看板地址、三类能力 provider 和配置来源。
 - `effective` 的字段来源不得凭最终值硬猜; 无法精确判定来源时必须标注为 `derived` / `unknown` 并附说明。
 - API 不返回 API Key、Token、密码、DSN、Bearer、`sk-*`、`ak-*` 或供应商完整原始响应。
-- `effective` 中明确标注当前知识库仍是 `dora_ragflow_mcp`, `KnowledgeDirectAdapter` 未实现。
+- `effective` 中明确标注当前知识库 provider、KnowledgeDirectAdapter 和 source-bound summarizer 状态。
 - `effective` 中明确标注当前问数 `excel|dora|auto` 来自 `ASK_METRICS_MODE`, Database Provider 未实现。
-- `effective` 中明确标注 `/api/screen/execute` 尚未返回完整授权 action, action 写入不可用。
+- `effective` 中明确标注 `/api/screen/execute` 已返回完整授权 action, action 写入仍不可用。
 - 前端配置页无保存按钮、无 reload 按钮、无 action 编辑入口。
 - 不改变 `/api/chat`、`/api/chat/stream`、`/api/tts/stream`、`/api/screen/execute` 的既有行为。
 
@@ -781,12 +782,18 @@ Ops 看板应展示脱敏后的 provider、fallback、来源和执行状态, 便
 - `dora` 模式不返回 Excel 来源, `auto` 模式在 Dora / Mock Dora fallback 时回退 Excel。
 - `/api/config/effective` 和 `/api/config/schema` 明确 Provider 接口 / Excel Provider 已实现, Database Provider 未实现。
 
-### 阶段 3: KnowledgeDirectAdapter + LLM Summarizer
+### 阶段 3: KnowledgeDirectAdapter + 来源约束 Summarizer
+
+状态: 2026-06-16 已完成本阶段代码边界。当前实现采用后端受控 `source_bound_extractive` summarizer, 不调用外部 LLM; 外部 LLM summarizer 仍保留为后续增强项。
 
 - 新增 RAGFlow Retriever。
-- 新增受控 LLM Summarizer。
+- 新增受控来源约束 Summarizer。
 - 支持 `knowledge.mode=local_ragflow_llm|dora|auto`。
 - 输出 `answer_with_sources`。
+- 默认 `knowledge.mode=dora`, 现有 Dora -> RAGFlow MCP 路径不退化。
+- `local_ragflow_llm` 只检索 chunks/metadata, summarizer 只能基于来源回答。
+- `require_sources=true`, `no_evidence_policy=fallback`; 无检索结果或依据不足时 fallback, 不编造。
+- 本阶段未实现可写 Prompt、外部 LLM summarizer、配置写入、配置 validate/test/reload/audit 或控屏授权 action 响应增强。
 
 验收:
 
@@ -796,19 +803,20 @@ Ops 看板应展示脱敏后的 provider、fallback、来源和执行状态, 便
 
 ### 阶段 4: 控屏 resolver 与授权 action 增强
 
-- 新增本地关键词 / 规则 resolver。
-- Dora resolver 继续保留。
-- `/api/screen/execute` 返回完整授权 action。
-- 前端只执行本次授权 action。
-- `ScreenExecuteResponse` 增加 `authorized_action`, 包含 `id`、`label`、`type`、`fvs_function`、`params`、`speak_text` 和 schema 校验结果。
-- 前端 `applyFvsAction` 不再从 `GET /api/screen/actions` 缓存中取执行参数, 只使用 `authorized_action`。
-- `GET /api/screen/actions` 可继续用于只读展示按钮, 但不能作为真实执行依据。
-- action 可写配置、action dry-run 和 action reload 必须等本阶段完成后才能进入阶段 5。
+状态: 2026-06-16 已完成。本阶段只增强 resolver、授权响应和前端执行依据; 未开放 action 写入、配置保存、reload、validate/test/audit 或 Prompt 编辑。
+
+- 已新增本地关键词 / 规则 resolver: `ScreenControlResolver` 只根据白名单 action label / description 解析候选 `action_id`, 不生成 FVS URL、脚本或执行参数。
+- Dora resolver 继续保留: 未命中本地规则时仍走既有 Dora / Mock Dora 归一化路径。
+- `/api/screen/execute` 已返回完整授权 action, 包含 `action_id`、`target`、`provider`、`fvs_function`、`fvs_routing`、净化后的 `params`、`speak_text` 和校验结果。
+- 前端 `applyFvsAction` 已不再从 `GET /api/screen/actions` 缓存中取执行参数, 只使用本次响应的 `authorized_action` / `resolved_action`。
+- `GET /api/screen/actions` 继续用于只读展示按钮, 但不能作为真实执行依据。
+- action 可写配置、action dry-run 和 action reload 必须另开阶段 5, 不属于本阶段。
 
 验收:
 
 - “返回总览”等固定控屏命令可不经 Dora 解析。
 - 非白名单 action 仍被拦截。
+- 非法 params、参数值覆盖和未知 target 会安全拒绝, 不执行 FVS 控制。
 - 修改或新增 action 后, 前端执行依据来自本次 `/api/screen/execute` 响应, 不会执行旧缓存 action。
 - 本阶段完成后, 阶段 5 才允许配置页新增 action 并通过 dry-run 检查。
 
@@ -836,7 +844,7 @@ Ops 看板应展示脱敏后的 provider、fallback、来源和执行状态, 便
 | FVS 展示配置与浏览器实际执行不一致 | 配置页同时展示后端 effective 配置和前端 runtime 配置来源 |
 | 在 Excel Provider 中继续堆数据库问数 | 阶段 2 只做 Provider 抽象和 Excel 迁移; Database Provider 真实查询必须另开阶段, 且只读表 / 字段白名单先行 |
 | 数据库问数越权 | 只读账号; 表 / 字段白名单; 参数化查询; 超时和 limit |
-| LLM summarizer 编造 | require_sources; no_evidence_policy=fallback; 输出 schema 校验 |
+| Summarizer 编造 | 阶段 3 当前使用后端受控 `source_bound_extractive`, require_sources=true; no_evidence_policy=fallback; 外部 LLM summarizer 后续如接入必须继续 schema 校验 |
 | 控屏误执行 | Resolver 只产 action_id; Executor 永远本地白名单; 二次 `/api/screen/execute` |
 | action 可写早于授权 action 响应增强 | 阶段 4 前配置页不得写 action; 前端必须先切到执行本次授权 action |
 | 配置改坏现场环境 | validate + dry-run + audit + 可回滚 history |
@@ -850,4 +858,4 @@ Ops 看板应展示脱敏后的 provider、fallback、来源和执行状态, 便
 
 阶段 2 已完成: 已抽象 `AskMetricsProvider`, 将当前 Excel 问数迁移到配置驱动 `ExcelAskMetricsProvider`, 并移除旧 `AskMetricsService` 客户实例 allowlist; Database Provider 仍未实现。
 
-下一轮优先执行阶段 3: 若用户确认进入 KnowledgeDirectAdapter, 先做 RAGFlow 检索来源约束和 summarizer 输出 schema, 不得混入数据库问数、可写配置、Prompt 编辑或控屏授权响应增强。
+阶段 4 已完成。下一轮如继续主线, 可以进入阶段 5: 可写配置页与审计, 但必须另开 goal, 先设计 `data/config-overrides/`、validate / dry-run / audit 和访问控制边界; 不得把密钥、任意脚本、自由 SQL 或 Prompt 生成代码执行能力放入配置页。

@@ -86,6 +86,14 @@ export interface ScreenActionsResponse {
   actions: ScreenAction[];
 }
 
+export interface AuthorizedScreenAction extends ScreenAction {
+  action_id: string;
+  target?: string | null;
+  provider: string;
+  fvs_routing: Record<string, unknown>;
+  validation: Record<string, unknown>;
+}
+
 export interface AsrTranscribeRequest {
   session_id: string;
   mock_text?: string | null;
@@ -211,6 +219,12 @@ export interface ScreenExecuteResponse {
   success: boolean;
   action_id: string;
   speak_text: string;
+  target?: string | null;
+  provider?: string | null;
+  authorized_action?: AuthorizedScreenAction | null;
+  resolved_action?: AuthorizedScreenAction | null;
+  validation?: Record<string, unknown> | null;
+  rejection_reason?: string | null;
   request_id?: string | null;
   error?: ErrorDetail | null;
 }

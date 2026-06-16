@@ -14,6 +14,10 @@ V1.0 POC 验收交付版已输出。
 
 2026-06-15 已完成通用可配置数字人阶段 2: 新增 `AskMetricsProvider` 抽象与配置驱动 `ExcelAskMetricsProvider`, `apps/api/app/services/ask_metrics.py` 仅保留 provider 编排, 不再包含客户实例 allowlist 规则。当前 Excel 问数的关键词、字段、模板、来源和口径说明已迁移到 `config/customers/zt-securities/ask-metrics.yaml` 客户 profile; 根级 `config/ask-metrics.yaml` 保持通用空 metric 模板。`ASK_METRICS_MODE=excel|dora|auto` 行为保持不退化: excel 模式继续本地优先, dora 模式不被 Excel 抢答, auto 模式在 Dora / Mock Dora fallback 时回退 Excel。Database Provider 仅在配置快照中保留 `not_implemented` 状态, 未连接数据库、未执行 SQL、未开放写配置或 dry-run 接口。
 
+2026-06-16 已完成通用可配置数字人阶段 3: 新增 `KnowledgeDirectProvider`、`RagflowKnowledgeRetriever` 和后端受控 `SourceBoundSummarizer`。默认 `KNOWLEDGE_MODE=dora`, 保持既有 Dora -> RAGFlow MCP 知识库路径; 显式启用 `local_ragflow_llm` 时, Gateway 只调用 RAGFlow 检索 chunks/metadata, summarizer 只基于来源回答, `require_sources=true`, `no_evidence_policy=fallback`。KnowledgeDirect 命中返回标准 `answer` 且包含 `display.sources` / `source_summary`; 无检索结果或依据不足时返回 fallback, 不编造。当前 summarizer 不调用外部 LLM; 外部 LLM summarizer、Database Provider、Prompt 编辑、可写配置、配置 validate/test/reload/audit、控屏授权 action 响应增强均未实现。新增 ADR-0024。
+
+2026-06-16 已完成通用可配置数字人阶段 4: 新增本地 `ScreenControlResolver`, 固定控屏命令可先按白名单 action label / description 解析为候选 `action_id`, 未命中仍走 Dora / Mock Dora。`/api/screen/execute` 已返回本次 `authorized_action` / `resolved_action`, 包含 `target`、`provider`、`fvs_function`、`fvs_routing`、净化后的 `params`、校验状态和拒绝原因; 前端 FVS 执行路径只使用本次授权动作响应, `GET /api/screen/actions` 仅用于只读按钮展示。非法 action_id、非法 params、参数值覆盖和未知 target 均安全拒绝。本阶段未实现可写配置、Prompt 编辑、可写 action 配置、配置 validate/test/reload/audit、Database Provider 真实查询或外部 LLM summarizer。
+
 2026-06-11 已补充客户汇报用项目管理计划和实施甘特图 Excel: `outputs/customer-report-20260617/zt_project_plan_gantt_20260610_0630.xlsx`。该材料按用户指定的客户汇报口径, 将 `2026-06-10` 到 `2026-06-17` 表述为已完成 Mock 链路联调与端到端流程验证, 将 `2026-06-18` 到 `2026-06-30` 表述为自定义新闻爬虫及导入知识库、RAGFlow 知识库调用、性能优化、安全优化、测试验收上线的专项计划。`2026-06-13`、`2026-06-14`、`2026-06-19`、`2026-06-20`、`2026-06-21`、`2026-06-27`、`2026-06-28` 在材料中标为非工作日, 仅保留风险响应 / 问题跟进。
 
 2026-06-11 针对普通唤醒完全无法触发的问题完成热修: 前端 VAD 增加连续两帧超过阈值才正式开始收音的启动确认, 避免单帧环境 / 外放噪声触发空 ASR; 普通唤醒 `vad_threshold` 从 0.014 回调到 0.018, 播报中 `barge_in_vad_threshold` 保持 0.018。验证通过: `corepack pnpm --dir apps/web build`; `python -m compileall apps/api/app`; `docker compose up -d --build api web`; `GET /api/wake/config`; `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`; `git diff --check`; Codex Browser 加载新 bundle。下一步需用户刷新页面、重新开启后台监听并做真实麦克风复测。
@@ -48,21 +52,22 @@ V1.0 验收交付包已输出到 `docs/delivery/v1.0/`, 包含交付包索引、
 
 ## Next Task
 
-V1.0 验收交付包、阶段 0A 默认入口和根模板清洁、阶段 1 只读 effective config / schema、阶段 2 AskMetricsProvider 抽象与 Excel 问数迁移均已完成。下一推荐 goal:
+V1.0 验收交付包、阶段 0A 默认入口和根模板清洁、阶段 1 只读 effective config / schema、阶段 2 AskMetricsProvider 抽象与 Excel 问数迁移、阶段 3 KnowledgeDirectAdapter + 来源约束回答、阶段 4 控屏 resolver 与授权 action 响应增强均已完成。下一推荐 goal:
 
 ```text
-执行通用可配置数字人阶段 3: KnowledgeDirectAdapter 设计与实现准备。先确认是否需要在 Gateway 本地直连 RAGFlow 检索并由受控 summarizer 回答; 若开始实现, 必须坚持 require_sources、no_evidence_policy=fallback 和不生成 / 不执行 SQL、Python、JavaScript 或 shell。
+执行通用可配置数字人阶段 5: 可写配置页与审计。先设计并实现 data/config-overrides/ 覆盖层、配置 validate / dry-run / audit 和最小访问控制边界; 仍不得暴露密钥、不得执行模型生成代码、不得开放自由 SQL。
 ```
 
 本 goal 的边界:
 
-- 阶段 3 不应回头新增数据库问数真实查询; Database Provider 仍保持 `not_implemented`, 除非用户另开数据库问数阶段。
-- KnowledgeDirectAdapter 若实施, RAGFlow 只能检索 chunks, summarizer 只能基于来源回答, 无依据时必须 fallback。
-- 不实现可写 Prompt、Prompt 编辑、可写配置、action 写入、配置 validate/test/reload/audit。
+- 阶段 5 才允许新增配置覆盖层、validate / dry-run / audit 和受控 reload; 必须先限定非敏感字段和访问边界。
+- 阶段 5 不应回头新增数据库问数真实查询; Database Provider 仍保持 `not_implemented`, 除非用户另开数据库问数阶段。
+- 阶段 5 不应继续扩展 KnowledgeDirectAdapter; 外部 LLM summarizer 仍未实现, 除非用户另开知识库总结增强阶段。
+- 可写 Prompt、Prompt 编辑和可写 action 配置如进入阶段 5, 必须只保存非敏感配置, 先 validate / dry-run, 并保留审计; 不得把 API Key、Token、DSN、任意脚本或可执行代码写入配置。
 - 不让 LLM 生成或执行 SQL、Python、JavaScript 或 shell。
-- FVS 控制继续使用 `action_id` + 后端白名单校验; 不改变 `/api/screen/execute` 既有响应结构, 授权 action 响应增强留到阶段 4。
+- FVS 控制继续使用 `action_id` + 后端白名单校验; 阶段 5 如开放 action 写入, 必须复用阶段 4 的 `authorized_action` 响应和 params allowlist。
 
-Go / No-Go: 阶段 3 可以开始, 但只能在阶段 3 边界内推进 KnowledgeDirectAdapter / 来源约束设计; 不得顺带实现数据库问数、可写配置、Prompt 编辑或控屏授权响应增强。
+Go / No-Go: 阶段 5 可以开始, 但必须另开 goal 且先做安全设计、validate / dry-run / audit 和访问控制; 数据库问数真实查询、外部 LLM summarizer、自由 SQL 和模型生成代码执行仍 No-Go。
 
 客户现场验收复演仍可按 `docs/delivery/v1.0/` 执行, 但不与本轮配置中心主线优化混在同一个 goal 中推进。
 

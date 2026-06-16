@@ -48,8 +48,11 @@ from app.services.ask_metrics import AskMetricsService
 from app.services.config_snapshot import build_config_effective, build_config_schema
 from app.services.dora_client import DoraClient, DoraClientError
 from app.services.dora_normalizer import dora_error_response, normalize_dora_output
+from app.services.knowledge import build_knowledge_service, knowledge_error_response
+from app.services.knowledge_provider import KnowledgeProviderError
 from app.services.mock_dora import MockDoraService
 from app.services.screen_actions import ScreenActionService
+from app.services.screen_resolver import ScreenControlResolver
 from app.services.session_log import SessionLogStore
 from app.services.tts_provider import TtsProviderError, build_tts_provider
 from app.services.wake_words import WakeWordService
@@ -60,9 +63,11 @@ logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
 
 action_service = ScreenActionService(settings.action_whitelist_path)
+screen_resolver = ScreenControlResolver(action_service)
 mock_dora = MockDoraService(settings.demo_cases_path, action_service)
 wake_words = WakeWordService(settings.wake_words_path)
 ask_metrics = AskMetricsService(settings.ask_metrics_data_dir, settings.ask_metrics_config_path)
+knowledge_service = build_knowledge_service(settings)
 asr_provider = build_asr_provider(
     enable_mock=settings.enable_mock_asr,
     provider_name=settings.asr_provider,
@@ -459,23 +464,49 @@ async def _tts_stream_events(request: TtsSynthesizeRequest):
 
 
 def _chat_response(request: ChatRequest) -> ChatResponse:
+    screen_response = _safe_screen_control_response(request)
+    if screen_response is not None:
+        return screen_response
+
     metrics_mode = _ask_metrics_mode()
 
     if metrics_mode == "excel":
         metrics_response = _safe_ask_metrics_response(request)
         if metrics_response is not None:
             return metrics_response
-        return _dora_or_mock_response(request)
+        return _knowledge_or_dora_response(request)
 
     if metrics_mode == "dora":
-        return _dora_or_mock_response(request)
+        return _knowledge_or_dora_response(request)
 
-    response = _dora_or_mock_response(request)
-    if response.type == "fallback":
+    response = _knowledge_or_dora_response(request)
+    if response.type == "fallback" and _should_auto_metrics_fallback(response):
         metrics_response = _safe_ask_metrics_response(request, message_id=response.message_id)
         if metrics_response is not None:
             return metrics_response
     return response
+
+
+def _knowledge_or_dora_response(request: ChatRequest, *, message_id: str | None = None) -> ChatResponse:
+    knowledge_response = _safe_knowledge_response(request, message_id=message_id)
+    if knowledge_response is not None:
+        return knowledge_response
+    return _dora_or_mock_response(request, message_id=message_id)
+
+
+def _safe_screen_control_response(request: ChatRequest, *, message_id: str | None = None) -> ChatResponse | None:
+    try:
+        resolved = screen_resolver.resolve(request.text)
+        if resolved is None:
+            return None
+        return screen_resolver.to_chat_response(
+            request,
+            resolved,
+            message_id=message_id or f"msg-{uuid4().hex[:12]}",
+        )
+    except Exception:
+        logger.warning("Screen control resolver failed", exc_info=True)
+        return None
 
 
 def _dora_or_mock_response(request: ChatRequest, *, message_id: str | None = None) -> ChatResponse:
@@ -518,6 +549,23 @@ def _safe_ask_metrics_response(request: ChatRequest, *, message_id: str | None =
         )
 
 
+def _safe_knowledge_response(request: ChatRequest, *, message_id: str | None = None) -> ChatResponse | None:
+    try:
+        return knowledge_service.respond(request, message_id=message_id)
+    except KnowledgeProviderError as exc:
+        logger.warning("Knowledge direct adapter failed with code %s", exc.code)
+        return knowledge_error_response(request, message_id=message_id, exc=exc)
+    except Exception:
+        logger.warning("Knowledge direct adapter failed unexpectedly", exc_info=True)
+        return dora_error_response(
+            request=request,
+            message_id=message_id or f"msg-{uuid4().hex[:12]}",
+            code="KNOWLEDGE_DIRECT_ERROR",
+            speak_text="知识库直连暂不可用，请稍后重试。",
+            reason="KNOWLEDGE_DIRECT_ERROR",
+        )
+
+
 def _demo_stable_response(request: ChatRequest, *, message_id: str, cause_code: str) -> ChatResponse:
     metrics_response = _safe_ask_metrics_response(request, message_id=message_id)
     if metrics_response is not None and metrics_response.type != "fallback":
@@ -548,6 +596,12 @@ def _ask_metrics_mode() -> str:
         logger.warning("Unsupported ASK_METRICS_MODE=%s, fallback to excel", settings.ask_metrics_mode)
         return "excel"
     return mode
+
+
+def _should_auto_metrics_fallback(response: ChatResponse) -> bool:
+    if response.error and response.error.code.startswith("KNOWLEDGE_"):
+        return False
+    return True
 
 
 def _chat_stream_events(request: ChatRequest):
@@ -624,7 +678,13 @@ def _chat_stream_events(request: ChatRequest):
                     sleep(0.05)
 
         try:
-            metrics_mode = _ask_metrics_mode()
+            screen_response = _safe_screen_control_response(request, message_id=message_id)
+            if screen_response is not None:
+                response = screen_response
+                yield _sse("dora_delta", {"text": response.speak_text})
+                metrics_mode = ""
+            else:
+                metrics_mode = _ask_metrics_mode()
             metrics_response = None
             if metrics_mode == "excel":
                 metrics_response = _safe_ask_metrics_response(request, message_id=message_id)
@@ -634,6 +694,10 @@ def _chat_stream_events(request: ChatRequest):
                 yield _sse("dora_delta", {"text": response.speak_text})
             elif metrics_mode == "auto":
                 response = _chat_response(request).model_copy(update={"message_id": message_id})
+                if response.type in {"answer", "screen_control"}:
+                    yield _sse("dora_delta", {"text": response.speak_text})
+            elif (knowledge_response := _safe_knowledge_response(request, message_id=message_id)) is not None:
+                response = knowledge_response
                 if response.type in {"answer", "screen_control"}:
                     yield _sse("dora_delta", {"text": response.speak_text})
             elif settings.enable_mock_dora:
@@ -1229,6 +1293,7 @@ def execute_screen_action(request: ScreenExecuteRequest, fastapi_request: Reques
         request.action_id,
         request_id=_request_id(fastapi_request),
         params=request.params,
+        target=request.target,
     )
     _safe_log_chat(
         session_id=request.session_id,
@@ -1239,6 +1304,13 @@ def execute_screen_action(request: ScreenExecuteRequest, fastapi_request: Reques
         screen_action={
             "action_id": response.action_id,
             "success": response.success,
+            "target": response.target,
+            "provider": response.provider,
+            "validation_status": response.validation.get("status") if response.validation else None,
+            "rejection_reason": response.rejection_reason,
+            "authorized_action": response.authorized_action.model_dump(mode="json")
+            if response.authorized_action
+            else None,
         },
         error=response.error.model_dump() if response.error else None,
         started_at=started_at,

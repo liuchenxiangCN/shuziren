@@ -2,6 +2,105 @@
 
 本文件记录每轮开发的事实结果。不要写愿望, 只写已经发生的变更、验证和遗留问题。
 
+## 2026-06-16
+
+### 通用可配置数字人阶段 4 控屏 resolver 与授权 action 响应增强
+
+#### Completed
+
+- 新增 `ScreenControlResolver`, 本地规则只根据当前白名单 action 的 label / description 解析候选 `action_id`, 固定控屏命令可不经 Dora 先命中本地 resolver。
+- Dora / Mock Dora resolver 继续保留; 未命中本地规则时仍走既有归一化路径。
+- `/api/screen/execute` 在保留 `success`、`action_id`、`speak_text`、`request_id`、`error` 兼容字段的同时, 返回本次 `authorized_action` / `resolved_action`。
+- `authorized_action` 包含 `action_id`、`target`、`provider`、`fvs_function`、`fvs_routing`、净化后的 `params`、`speak_text` 和 validation 结果。
+- `ScreenActionService.execute()` 已成为 action_id、target 和 params 的唯一授权出口; 非白名单 action、未知 target、未声明 params、参数值覆盖、URL / 脚本 / 命令类参数和嵌套参数均安全拒绝。
+- 前端 `applyFvsAction()` 已改为只使用 `/api/screen/execute` 本次响应中的 `authorized_action` / `resolved_action`; `GET /api/screen/actions` 仅继续用于只读按钮展示。
+- 前端 FVS Adapter 优先使用授权动作中的 `fvs_routing` 执行 iframe `page_number` 路由, 再兼容净化后的 `params.pageNumber`。
+- `/api/config/effective` 和 `/api/config/schema` 同步标注 ScreenControlResolver、授权 action 响应和 params allowlist 已实现; 可写 action 配置仍为未实现。
+- 本轮未实现可写配置、Prompt 编辑、可写 Prompt、可写 action 配置、配置 validate/test/reload/audit、Database Provider 真实查询、SQL 执行、外部 LLM summarizer 或 KnowledgeDirect 扩展。
+
+#### Changed Files
+
+- `apps/api/app/models.py`
+- `apps/api/app/main.py`
+- `apps/api/app/services/screen_actions.py`
+- `apps/api/app/services/screen_resolver.py`
+- `apps/api/app/services/config_snapshot.py`
+- `apps/web/src/App.vue`
+- `apps/web/src/api.ts`
+- `apps/web/src/fvsAdapter.ts`
+- `apps/web/src/types.ts`
+- `docs/06_API_CONTRACT.md`
+- `docs/07_DATA_CONTRACT.md`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`
+- `docs/CHANGELOG.md`
+- `docs/CODEX_CONTEXT.md`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/decisions/ADR-0022-capability-routing-and-config-center.md`
+
+#### Verification
+
+- `corepack.cmd pnpm --dir apps/web build` 通过。
+- `python -m compileall apps/api/app` 通过。
+- uv + FastAPI TestClient 阶段 4 smoke 通过 85 项: `/api/screen/execute` 合法 action 返回 `authorized_action`; 非法 action_id、非法 params、参数值覆盖和未知 target 均拒绝且不返回授权 action; `/api/config/effective`、`/api/config/schema` 返回阶段 4 状态; `/api/chat` 本地 resolver 命中 `SWITCH_HOME`; 11 个固定问数 smoke 11/11 通过并保留来源; `/api/chat/stream` 返回 `answer` / `end`; KnowledgeDirect source-bound summarizer 命中和无来源 fallback 行为通过。
+- 静态搜索通过: 后端没有新增配置写入路由; 前端没有新增配置写入调用; 未发现 `Settings.model_dump()` 直接作为配置响应输出; 未发现新增明文 secret 输出、动态代码执行、子进程调用或 SQL 执行路径。
+- `git diff --check` 通过。
+
+#### Notes
+
+- 阶段 5 可以另开, 但必须先设计 `data/config-overrides/`、validate / dry-run / audit 和访问控制边界; 不得把密钥、任意脚本、自由 SQL 或模型生成代码执行能力放入配置页。
+
+### 通用可配置数字人阶段 3 KnowledgeDirectAdapter + 来源约束回答
+
+#### Completed
+
+- 新增 `KnowledgeDirectProvider`、`RagflowKnowledgeRetriever`、`SourceBoundSummarizer` 和 `KnowledgeService`。
+- 默认 `KNOWLEDGE_MODE=dora`, 保持既有 Dora -> RAGFlow MCP -> Dora 最终回答路径不退化。
+- 支持 `KNOWLEDGE_MODE=local_ragflow_llm|auto`: 本地直连只调用 RAGFlow 检索 chunks/metadata, 固定 `keyword=false`, 不使用 RAGFlow chat / assistant 生成最终回答。
+- 当前 summarizer 为后端受控 `source_bound_extractive`, 不调用外部 LLM; 只从检索 chunk 中抽取来源句子组织回答。
+- KnowledgeDirect 命中时返回标准 `answer`, `display.sources`、`display.source_summary` 和 `display.audit` 包含来源与审计信息。
+- 检索无结果或依据不足时返回 `fallback`, `error.code=KNOWLEDGE_NO_SOURCES|KNOWLEDGE_NO_EVIDENCE`, 不转交模型编造。
+- `auto` 模式下, 本地直连配置缺失或检索异常会回到 Dora; 但本地检索无依据仍 fallback。
+- `/api/chat` 和 `/api/chat/stream` 保持既有响应类型和事件结构; 问数 `ASK_METRICS_MODE=excel|dora|auto` 路由语义保持不变。
+- `/api/config/effective` 和 `/api/config/schema` 已同步 KnowledgeDirectAdapter / source-bound summarizer 状态, Database Provider、外部 LLM summarizer、可写 Prompt、可写配置和授权 action 响应增强仍为未实现。
+- `config/customers/zt-securities/ragflow.yaml` 显式保持 `knowledge.mode=dora`, 避免客户 profile 默认绕过 Dora 知识库路径。
+- 新增 ADR-0024 记录 KnowledgeDirect 来源约束回答边界。
+- 本轮未实现 Database Provider 真实查询, 未执行 SQL, 未让 LLM 生成 SQL/Python/JavaScript/shell, 未实现 Prompt 编辑、可写 Prompt、可写 action 配置或可写配置中心, 未新增 `PUT /api/config/overrides`、`POST /api/config/validate`、`POST /api/config/test`、`POST /api/config/reload`、`GET /api/config/audit`, 未改变 `/api/screen/execute` 响应结构。
+
+#### Changed Files
+
+- `.env.example`
+- `apps/api/app/config.py`
+- `apps/api/app/main.py`
+- `apps/api/app/services/config_snapshot.py`
+- `apps/api/app/services/knowledge.py`
+- `apps/api/app/services/knowledge_provider.py`
+- `config/README.md`
+- `config/customers/zt-securities/ragflow.yaml`
+- `docs/06_API_CONTRACT.md`
+- `docs/07_DATA_CONTRACT.md`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`
+- `docs/CHANGELOG.md`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/decisions/ADR-0022-capability-routing-and-config-center.md`
+- `docs/decisions/ADR-0024-knowledge-direct-source-bound-summarizer.md`
+
+#### Verification
+
+- `corepack.cmd pnpm --dir apps/web build` 通过。
+- `python -m compileall apps/api/app` 通过。
+- uv + FastAPI TestClient smoke 通过: `/api/config/effective`、`/api/config/schema`; 写配置接口仍 404; 11 个固定问数 smoke 11/11 通过; KnowledgeDirect 命中返回 `answer` 且包含 sources / source summary; KnowledgeDirect 无依据返回 fallback; `/api/chat/stream` 本地知识库路径返回 `metadata` 和最终 `answer`; `ASK_METRICS_MODE=dora` 不返回 Excel 来源且不走 KnowledgeDirect 本地 sources。
+- 静态搜索通过: 后端仅存在 `GET /api/config/effective` 和 `GET /api/config/schema`; 前端只调用这两个只读接口; 未发现 `Settings.model_dump()` 直接输出; KnowledgeDirect 代码未发现 SQL / `eval` / `exec` / `subprocess` / 外部 LLM Provider 关键词; secret 命中仅为 `.env.example` 占位值、后端 provider 使用和配置快照脱敏逻辑。
+- `git diff --check` 通过。
+
+#### Notes
+
+- 当前 source-bound summarizer 是 POC 阶段来源边界实现, 表达能力弱于外部 LLM 总结; 如后续接入 LLM summarizer, 必须继续走后端受控 Provider、schema 校验、require_sources 和 no_evidence_policy=fallback。
+- 阶段 4 可以开始, 但只能推进控屏 resolver 与 `/api/screen/execute` 授权 action 响应增强; 阶段 5 可写配置、Prompt 编辑、配置 validate/test/reload/audit 仍不可开始。
+
 ## 2026-06-15
 
 ### 通用可配置数字人阶段 2 AskMetricsProvider 抽象与 Excel 问数迁移

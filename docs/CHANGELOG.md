@@ -4,6 +4,12 @@
 
 ### Added
 
+- 新增 `ScreenControlResolver`, 固定控屏命令可按当前白名单 action label / description 先解析为候选 `action_id`, 未命中仍走 Dora / Mock Dora。
+- `/api/screen/execute` 新增 `authorized_action` / `resolved_action`、`target`、`provider`、`fvs_routing`、validation 和 `rejection_reason` 响应字段。
+- 新增 `KnowledgeDirectProvider`、`RagflowKnowledgeRetriever`、`SourceBoundSummarizer` 和 `KnowledgeService`, 支持阶段 3 KnowledgeDirectAdapter + 来源约束回答。
+- 新增 `KNOWLEDGE_MODE=dora|local_ragflow_llm|auto` 及本地 RAGFlow 检索参数配置; 默认 `dora` 保持既有 Dora -> RAGFlow MCP 路径。
+- 新增 KnowledgeDirect answer 的 `display.sources`、`display.source_summary` 和 `display.audit` 输出。
+- 新增 ADR-0024, 记录 KnowledgeDirect 来源约束回答边界和当前后端受控 extractive summarizer 决策。
 - 新增 `AskMetricsProvider` 抽象、`MetricResult` / provider status 数据结构和配置驱动 `ExcelAskMetricsProvider`。
 - 新增客户 profile 级 `ask-metrics.yaml` metric 定义: 由配置声明关键词、workbook、sheet、字段、transform、回答模板和来源说明。
 - 新增只读脱敏配置 API: `GET /api/config/effective` 和 `GET /api/config/schema`。
@@ -41,6 +47,12 @@
 
 ### Changed
 
+- 前端 FVS 执行路径改为只使用 `/api/screen/execute` 本次响应中的 `authorized_action` / `resolved_action`; FVS Adapter 优先使用授权动作内的 `fvs_routing`, `GET /api/screen/actions` 仅用于只读按钮展示。
+- `/api/config/effective` 和 `/api/config/schema` 同步标注 ScreenControlResolver、授权 action 响应和 params allowlist 已实现, 可写 action 配置仍为 `not_implemented`。
+- `/api/chat` 和 `/api/chat/stream` 接入 KnowledgeDirectAdapter 分支: ask metrics 路由语义保持不变, 非问数知识类问题可在显式启用本地直连时由 Gateway 检索 + 来源约束回答。
+- `/api/config/effective` 和 `/api/config/schema` 同步标注 `KnowledgeDirectAdapter` / `source_bound_summarizer` 已实现, 外部 LLM summarizer、Database Provider、可写配置和授权 action 响应增强仍未实现。
+- `config/customers/zt-securities/ragflow.yaml` 显式保持 `knowledge.mode=dora`, 避免当前客户 profile 默认绕过既有 Dora 知识库路径。
+- 阶段 3 将无检索结果或依据不足固定为 KnowledgeDirect fallback, 不转交模型编造; `auto` 仅在本地配置缺失或检索异常时回到 Dora。
 - `apps/api/app/services/ask_metrics.py` 不再包含客户实例问数 allowlist, 仅负责 provider 编排和 `ChatResponse` 包装。
 - 当前 Excel 问数能力迁移到 `config/customers/zt-securities/ask-metrics.yaml`; 根级 `config/ask-metrics.yaml` 保持通用空 metric 模板。
 - `/api/config/effective` 和 `/api/config/schema` 同步标注 `AskMetricsProvider` / `ExcelAskMetricsProvider` 已实现, Database Provider 仍为 `not_implemented`。
@@ -70,6 +82,7 @@
 - `docs/00_INDEX.md` 增加 V1.0 验收交付包入口。
 - `NEXT_ACTIONS` 当前阶段更新为 V1.0 POC 验收交付包已输出, 下一推荐 goal 改为客户现场验收复演、补齐截图附件、确认真实依赖并完成签收。
 - `docs/12_CUSTOMER_HANDOFF.md` 补充 V1.0 交付包路径和现场签收建议。
+
 - `docs/13_RISKS_AND_TODO.md` 增加 V1.0 现场截图、真实依赖和签字待补齐风险。
 - `DEMO_STABLE_MODE=true` 时, Dora 请求失败会优先尝试本地 Excel 问数和 Mock Dora 演示兜底; 未命中时仍返回安全 fallback。
 - Excel 问数数据缺失、Dora 流式异常和 TTS 分段异常不再向前端暴露系统堆栈或供应商异常原文。
@@ -88,8 +101,20 @@
 - 前端播报按钮和语音自动播报路径优先尝试 `/api/tts/stream`; 真流式失败后继续使用 `/api/chat/stream` 的 `tts_ready` 分段音频或完整 `/api/tts` 文件。
 - `SessionLogStore` 新增最近会话、单会话明细、错误列表和耗时聚合查询, 并对导出摘要做截断和常见密钥模式脱敏。
 
+### Security
+
+- `/api/screen/execute` 的请求 params 现在必须匹配后端白名单动作配置; 未声明参数、参数值覆盖、URL、脚本、命令类内容和嵌套对象会被拒绝。
+- 拒绝响应不回显非法 params 原始值, 只返回键名和类型摘要, 避免把调用方传入的危险内容写回前端或日志。
+- 本轮未新增可写配置、Prompt 编辑、可写 action 配置、配置 validate/test/reload/audit、Database Provider 真实查询、SQL 执行、外部 LLM summarizer 或模型生成代码执行路径。
+
 ### Verified
 
+- 阶段 4 `corepack.cmd pnpm --dir apps/web build` 和 `python -m compileall apps/api/app` 通过。
+- 阶段 4 使用 uv + FastAPI TestClient 完成 85 项 smoke: `/api/screen/execute` 合法 action 返回 `authorized_action`; 非法 action_id、非法 params、参数值覆盖和未知 target 均拒绝; `/api/config/effective`、`/api/config/schema`、`/api/chat`、`/api/chat/stream`、11 个固定问数和 KnowledgeDirect summarizer 命中 / fallback 均通过。
+- 阶段 4 静态验收搜索和 `git diff --check` 通过。
+- 阶段 3 使用 uv + FastAPI TestClient 完成请求级 smoke: `/api/config/effective` 和 `/api/config/schema` 返回 200; 阶段 5 前禁止的配置写入 / validate / test / reload / audit 路由返回 404; 11 个固定问数 smoke 11/11 通过; KnowledgeDirect 命中返回 `answer` 且包含 sources / source summary; KnowledgeDirect 无依据返回 fallback; `/api/chat/stream` 本地知识库路径返回 `metadata` 和最终 `answer`; `ASK_METRICS_MODE=dora` 不返回 Excel 来源且不走 KnowledgeDirect 本地 sources。
+- 阶段 3 `corepack.cmd pnpm --dir apps/web build`、`python -m compileall apps/api/app` 和 `git diff --check` 通过。
+- 阶段 3 静态验收搜索确认: 后端仅存在 `GET /api/config/effective` 和 `GET /api/config/schema`; 前端只调用这两个只读接口; 未发现 `Settings.model_dump()` 直接输出; KnowledgeDirect 代码未发现 SQL / 代码执行 / 外部 LLM Provider 关键词; secret 命中仅为 `.env.example` 占位值、后端 provider 使用和配置快照脱敏逻辑。
 - 阶段 2 开始前使用 uv + FastAPI TestClient 建立 11 个固定问数 smoke 基线, 11/11 通过。
 - 阶段 2 迁移后同一 11 个固定问数 smoke 11/11 通过。
 - 阶段 2 迁移后, `corepack.cmd pnpm --dir apps/web build`、`python -m compileall apps/api/app` 和 `git diff --check` 通过。

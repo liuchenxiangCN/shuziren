@@ -62,6 +62,21 @@ class Settings(BaseSettings):
     ragflow_base_url: str = ""
     ragflow_mcp_url: str = ""
     ragflow_api_key: str = ""
+    knowledge_mode: str = "dora"
+    knowledge_retrieval_transport: str = "api"
+    knowledge_dataset_ids: str = ""
+    knowledge_dataset_name: str = ""
+    knowledge_page_size: int = 3
+    knowledge_top_k: int = 16
+    knowledge_similarity_threshold: float = 0.35
+    knowledge_max_chunk_chars: int = 1200
+    knowledge_timeout_seconds: int = 15
+    knowledge_require_sources: bool = True
+    knowledge_no_evidence_policy: str = "fallback"
+    knowledge_fallback_text: str = "知识库未找到可靠依据，请补充资料后再试。"
+    knowledge_summarizer_provider: str = "source_bound_extractive"
+    knowledge_summarizer_profile: str = "source_bound_extractive"
+    knowledge_max_answer_chars: int = 800
 
     fvs_integration_mode: str = "mock"
     fvs_url: str = ""
@@ -324,6 +339,150 @@ def _overlay_ragflow_config(overrides: dict[str, Any], env_vars: dict[str, str],
         return
     _overlay_value(overrides, env_vars, "ragflow_base_url", "RAGFLOW_BASE_URL", data.get("base_url"))
     _overlay_value(overrides, env_vars, "ragflow_mcp_url", "RAGFLOW_MCP_URL", data.get("mcp_url"))
+    _overlay_value(
+        overrides,
+        env_vars,
+        "knowledge_dataset_name",
+        "KNOWLEDGE_DATASET_NAME",
+        data.get("dataset_name"),
+    )
+    _overlay_value(
+        overrides,
+        env_vars,
+        "knowledge_dataset_ids",
+        "KNOWLEDGE_DATASET_IDS",
+        data.get("dataset_ids"),
+        normalizer=_normalize_csv,
+    )
+    knowledge = data.get("knowledge")
+    if isinstance(knowledge, dict):
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_mode",
+            "KNOWLEDGE_MODE",
+            knowledge.get("mode"),
+            normalizer=_normalize_knowledge_mode,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_fallback_text",
+            "KNOWLEDGE_FALLBACK_TEXT",
+            knowledge.get("fallback_text"),
+        )
+    retrieval = data.get("retrieval")
+    if isinstance(retrieval, dict):
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_retrieval_transport",
+            "KNOWLEDGE_RETRIEVAL_TRANSPORT",
+            retrieval.get("transport"),
+            normalizer=_normalize_knowledge_transport,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_dataset_name",
+            "KNOWLEDGE_DATASET_NAME",
+            retrieval.get("dataset_name"),
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_dataset_ids",
+            "KNOWLEDGE_DATASET_IDS",
+            retrieval.get("dataset_ids"),
+            normalizer=_normalize_csv,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_page_size",
+            "KNOWLEDGE_PAGE_SIZE",
+            retrieval.get("page_size"),
+            normalizer=_to_int,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_top_k",
+            "KNOWLEDGE_TOP_K",
+            retrieval.get("top_k"),
+            normalizer=_to_int,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_similarity_threshold",
+            "KNOWLEDGE_SIMILARITY_THRESHOLD",
+            retrieval.get("similarity_threshold"),
+            normalizer=_to_float,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_max_chunk_chars",
+            "KNOWLEDGE_MAX_CHUNK_CHARS",
+            retrieval.get("max_chunk_chars"),
+            normalizer=_to_int,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_timeout_seconds",
+            "KNOWLEDGE_TIMEOUT_SECONDS",
+            retrieval.get("timeout_seconds"),
+            normalizer=_to_int,
+        )
+    summarizer = data.get("summarizer")
+    if isinstance(summarizer, dict):
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_summarizer_provider",
+            "KNOWLEDGE_SUMMARIZER_PROVIDER",
+            summarizer.get("provider"),
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_summarizer_profile",
+            "KNOWLEDGE_SUMMARIZER_PROFILE",
+            summarizer.get("prompt_profile") or summarizer.get("profile"),
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_require_sources",
+            "KNOWLEDGE_REQUIRE_SOURCES",
+            summarizer.get("require_sources"),
+            normalizer=_to_bool,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_no_evidence_policy",
+            "KNOWLEDGE_NO_EVIDENCE_POLICY",
+            summarizer.get("no_evidence_policy"),
+            normalizer=_normalize_no_evidence_policy,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_max_answer_chars",
+            "KNOWLEDGE_MAX_ANSWER_CHARS",
+            summarizer.get("max_answer_chars"),
+            normalizer=_to_int,
+        )
+        _overlay_value(
+            overrides,
+            env_vars,
+            "knowledge_fallback_text",
+            "KNOWLEDGE_FALLBACK_TEXT",
+            summarizer.get("fallback_text"),
+        )
 
 
 def _overlay_fvs_config(overrides: dict[str, Any], env_vars: dict[str, str], path: Path) -> None:
@@ -543,9 +702,48 @@ def _normalize_fvs_mode(value: Any) -> str | None:
     return mode
 
 
+def _normalize_knowledge_mode(value: Any) -> str | None:
+    mode = str(value or "").strip().lower()
+    if mode in {"dora", "auto"}:
+        return mode
+    if mode in {"local", "local_ragflow", "local_ragflow_llm", "knowledge_direct"}:
+        return "local_ragflow_llm"
+    return None
+
+
+def _normalize_knowledge_transport(value: Any) -> str | None:
+    transport = str(value or "").strip().lower()
+    if transport in {"api", "ragflow_api", "retrieval_api"}:
+        return "api"
+    if transport in {"mcp", "streamable_http"}:
+        return "mcp"
+    return None
+
+
+def _normalize_no_evidence_policy(value: Any) -> str | None:
+    policy = str(value or "").strip().lower()
+    if policy == "fallback":
+        return policy
+    return None
+
+
+def _normalize_csv(value: Any) -> str | None:
+    if isinstance(value, list):
+        return ",".join(str(item).strip() for item in value if str(item).strip())
+    text = str(value or "").strip()
+    return text or None
+
+
 def _to_int(value: Any) -> int | None:
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return None
 

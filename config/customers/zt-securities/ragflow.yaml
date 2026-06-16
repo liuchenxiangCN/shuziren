@@ -2,11 +2,24 @@ version: 0.8.0
 base_url: http://host.docker.internal:9380
 mcp_url: http://host.docker.internal:9382/mcp
 dataset_name: zt_party_building_demo
+knowledge:
+  mode: dora
+  fallback_text: 知识库未找到可靠依据，请补充资料后再试。
 retrieval:
+  transport: api
   keyword: false
   page_size: 3
   top_k: 16
   similarity_threshold: 0.35
+  max_chunk_chars: 1200
+  timeout_seconds: 15
+summarizer:
+  provider: source_bound_extractive
+  prompt_profile: source_bound_extractive
+  require_sources: true
+  no_evidence_policy: fallback
+  max_answer_chars: 800
 notes:
   - RAGFlow API Key 不写入 YAML, 仅放本地 .env 或 RAGFlow 部署环境。
-  - 当前 V0.5/V0.8 第一阶段仍由 Dora 直接配置并调用 MCP。
+  - 默认保持 Dora -> RAGFlow MCP 知识库路径; 阶段 3 如需本地直连, 通过环境变量 KNOWLEDGE_MODE=local_ragflow_llm 或客户配置显式启用。
+  - KnowledgeDirectAdapter 只检索 chunks/metadata, summarizer 必须 require_sources=true 且无依据 fallback。

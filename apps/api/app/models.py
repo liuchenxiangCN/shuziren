@@ -162,13 +162,35 @@ class ScreenActionsResponse(BaseModel):
 class ScreenExecuteRequest(BaseModel):
     session_id: str = Field(default_factory=lambda: f"demo-session-{uuid4().hex[:8]}")
     action_id: str = Field(min_length=1, max_length=100)
+    target: str | None = Field(default=None, max_length=120)
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuthorizedScreenAction(BaseModel):
+    id: str
+    action_id: str
+    label: str
+    type: str
+    description: str = ""
+    target: str | None = None
+    provider: str
+    fvs_function: str
+    fvs_routing: dict[str, Any]
+    params: dict[str, Any] = Field(default_factory=dict)
+    speak_text: str
+    validation: dict[str, Any] = Field(default_factory=dict)
 
 
 class ScreenExecuteResponse(BaseModel):
     success: bool
     action_id: str
     speak_text: str
+    target: str | None = None
+    provider: str | None = None
+    authorized_action: AuthorizedScreenAction | None = None
+    resolved_action: AuthorizedScreenAction | None = None
+    validation: dict[str, Any] | None = None
+    rejection_reason: str | None = None
     request_id: str | None = None
     error: ErrorDetail | None = None
 

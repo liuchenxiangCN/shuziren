@@ -24,6 +24,11 @@ interface FvsActionMessage {
   params: Record<string, unknown>;
 }
 
+type ExecutableFvsAction = ScreenAction & {
+  action_id?: string;
+  fvs_routing?: Record<string, unknown>;
+};
+
 const PLACEHOLDER_URLS = new Set(['https://your-fvs-url', 'http://your-fvs-url']);
 
 export function getFvsConfig(): FvsConfig {
@@ -41,7 +46,7 @@ export function getFvsConfig(): FvsConfig {
 }
 
 export function executeFvsAction(
-  action: ScreenAction,
+  action: ExecutableFvsAction,
   config: FvsConfig,
   iframe?: HTMLIFrameElement | null,
 ): FvsActionResult {
@@ -53,11 +58,12 @@ export function executeFvsAction(
     };
   }
 
+  const actionId = action.action_id || action.id;
   const message: FvsActionMessage = {
     type: 'FVS_ACTION',
     source: 'configurable-digital-human',
-    action_id: action.id,
-    actionId: action.id,
+    action_id: actionId,
+    actionId,
     functionName: action.fvs_function,
     params: action.params,
   };
@@ -71,13 +77,13 @@ export function executeFvsAction(
           message: 'FVS iframe is not ready.',
         };
       }
-      const pageNumber = getPageNumber(action);
-      if (pageNumber !== null) {
-        iframe.src = buildPageUrl(iframe.getAttribute('src') || config.url, pageNumber);
+      const pageRouting = getPageRouting(action);
+      if (pageRouting) {
+        iframe.src = buildPageUrl(iframe.getAttribute('src') || config.url, pageRouting.pageNumber, pageRouting.pageParam);
         return {
           success: true,
           mode: config.mode,
-          message: `FVS iframe navigated to page_number=${pageNumber}.`,
+          message: `FVS iframe navigated to ${pageRouting.pageParam}=${pageRouting.pageNumber}.`,
         };
       }
       iframe.contentWindow?.postMessage(message, config.targetOrigin);
@@ -110,8 +116,25 @@ export function executeFvsAction(
   }
 }
 
-function getPageNumber(action: ScreenAction): number | null {
-  const raw = action.params.pageNumber ?? action.params.page_number;
+function getPageRouting(action: ExecutableFvsAction): { pageNumber: number; pageParam: string } | null {
+  const routing = action.fvs_routing || {};
+  const routeMode = String(routing.mode || '');
+  if (routeMode === 'iframe_page_number') {
+    const pageNumber = normalizePageNumber(routing.page_number);
+    if (pageNumber !== null) {
+      const pageParam = String(routing.page_param || 'page_number').trim() || 'page_number';
+      return { pageNumber, pageParam };
+    }
+  }
+
+  const pageNumber = normalizePageNumber(action.params.pageNumber ?? action.params.page_number);
+  if (pageNumber !== null) {
+    return { pageNumber, pageParam: 'page_number' };
+  }
+  return null;
+}
+
+function normalizePageNumber(raw: unknown): number | null {
   const pageNumber = Number(raw);
   if (!Number.isInteger(pageNumber) || pageNumber < 1) {
     return null;
@@ -119,15 +142,17 @@ function getPageNumber(action: ScreenAction): number | null {
   return pageNumber;
 }
 
-function buildPageUrl(currentUrl: string, pageNumber: number): string {
+function buildPageUrl(currentUrl: string, pageNumber: number, pageParam: string): string {
   try {
     const url = new URL(currentUrl, window.location.href);
-    url.searchParams.set('page_number', String(pageNumber));
-    url.searchParams.delete('page');
+    url.searchParams.set(pageParam, String(pageNumber));
+    if (pageParam !== 'page') {
+      url.searchParams.delete('page');
+    }
     return url.toString();
   } catch {
     const separator = currentUrl.includes('?') ? '&' : '?';
-    return `${currentUrl}${separator}page_number=${pageNumber}`;
+    return `${currentUrl}${separator}${encodeURIComponent(pageParam)}=${encodeURIComponent(String(pageNumber))}`;
   }
 }
 

@@ -158,6 +158,95 @@ V0.8 已实现。问数模式由 `ASK_METRICS_MODE` 控制:
 - Dora 问数回答应包含来源、口径、时间范围或无法确认说明。
 - Gateway 不执行 Dora 生成的 SQL、Python、JavaScript 或 shell。
 
+## KnowledgeDirectProvider
+
+阶段 3 已实现。KnowledgeDirectAdapter 只负责知识库检索和来源约束回答, 不执行控屏、不查询数据库、不执行模型生成代码。
+
+```json
+{
+  "mode": "local_ragflow_llm",
+  "retriever": {
+    "provider": "ragflow",
+    "transport": "api",
+    "keyword": false,
+    "page_size": 3,
+    "top_k": 16,
+    "similarity_threshold": 0.35,
+    "max_chunk_chars": 1200
+  },
+  "summarizer": {
+    "provider": "source_bound_extractive",
+    "require_sources": true,
+    "no_evidence_policy": "fallback"
+  }
+}
+```
+
+运行模式:
+
+- `dora`: 默认保持既有 Dora -> RAGFlow MCP -> Dora 生成最终回答。
+- `local_ragflow_llm`: Gateway 本地检索 RAGFlow chunks/metadata, 后端 summarizer 只基于来源回答。
+- `auto`: 知识类问题优先尝试本地来源约束回答; 本地直连配置缺失或检索异常时回到 Dora。
+
+RAGFlow chunk 归一化结构:
+
+```json
+{
+  "content": "入党流程包括递交入党申请书、党组织谈话、确定入党积极分子。",
+  "source": {
+    "document_name": "join_party_process.md",
+    "document_id": "doc-001",
+    "dataset_id": "dataset-001",
+    "chunk_id": "chunk-001",
+    "similarity": 0.91
+  },
+  "metadata": {
+    "document_name": "join_party_process.md"
+  }
+}
+```
+
+KnowledgeDirect answer 仍是标准 `answer`:
+
+```json
+{
+  "type": "answer",
+  "title": "入党流程",
+  "speak_text": "根据知识库资料，入党流程包括递交入党申请书、党组织谈话、确定入党积极分子等环节。",
+  "display": {
+    "mode": "text",
+    "summary": "基于 join_party_process.md 的检索结果回答。",
+    "bullets": [
+      "入党流程包括递交入党申请书、党组织谈话、确定入党积极分子等环节",
+      "来源：join_party_process.md"
+    ],
+    "sources": [
+      {
+        "document_name": "join_party_process.md",
+        "chunk_id": "chunk-001",
+        "similarity": 0.91
+      }
+    ],
+    "source_summary": "join_party_process.md",
+    "source": "join_party_process.md",
+    "audit": {
+      "capability": "knowledge",
+      "provider": "local_ragflow_direct",
+      "require_sources": true,
+      "no_evidence_policy": "fallback"
+    }
+  }
+}
+```
+
+规则:
+
+- RAGFlow 只检索 chunks 和 metadata, 不生成最终自然语言回答。
+- 当前 summarizer 是后端受控 `source_bound_extractive`, 不调用外部 LLM。
+- `require_sources=true`; 没有检索结果或依据不足时返回 `fallback`, `error.code=KNOWLEDGE_NO_SOURCES` 或 `KNOWLEDGE_NO_EVIDENCE`。
+- Summarizer 不输出控屏动作, 不输出 SQL/Python/JavaScript/shell。
+- 外部 LLM summarizer 仍未实现; 如果后续实现, 只能通过后端受控 Provider 调用, 不向前端暴露 API Key。
+
 ## Demo Stable Mode
 
 V0.9 已实现。演示稳态模式由 `DEMO_STABLE_MODE` 控制, 前端构建状态可由 `VITE_DEMO_STABLE_MODE` 显示:
@@ -282,8 +371,8 @@ V0.9 已实现。演示稳态模式由 `DEMO_STABLE_MODE` 控制, 前端构建�
 - 项目、客户、场景、助手字段。
 - 看板 backend effective 配置和 frontend runtime 契约。
 - 问数当前 `excel|dora|auto` 状态, 并标注 Database Provider 未实现。
-- 知识库当前 `dora_ragflow_mcp` 状态, 并标注 `KnowledgeDirectAdapter` 和 LLM summarizer 未实现。
-- 控屏当前 `dora_or_mock -> fvs_whitelist` 状态, 并标注 `/api/screen/execute` 尚未返回完整授权 action。
+- 知识库当前 `dora_ragflow_mcp` / `local_ragflow_direct` 状态, 并标注 `KnowledgeDirectAdapter` 与 source-bound summarizer 已实现、外部 LLM summarizer 未实现。
+- 控屏当前 `local_rules_then_dora_or_mock -> fvs_whitelist` 状态, 并标注 `/api/screen/execute` 已返回完整授权 action。
 - 可写配置、可写 Prompt、可写 action 配置、validate/test/reload/audit 均未实现。
 
 ## Chart Answer
@@ -323,8 +412,9 @@ V0.9 已实现。演示稳态模式由 `DEMO_STABLE_MODE` 控制, 前端构建�
 规则:
 
 - `action.id` 必须存在于白名单。
-- 后端负责校验。
-- 前端只执行后端已确认的动作。
+- `/api/chat` 阶段可由本地 `ScreenControlResolver` 或 Dora / Mock Dora 解析为候选 `action.id`。
+- 后端负责校验候选 `action.id`。
+- 前端收到 `screen_control` 后仍必须调用 `/api/screen/execute`, 并只执行该接口本次返回的 `authorized_action` / `resolved_action`。
 - 禁止将模型生成的 JavaScript 直接传给前端执行。
 
 ## Clarify
@@ -672,10 +762,86 @@ actions:
 }
 ```
 
+## AuthorizedScreenAction
+
+阶段 4 已实现。`/api/screen/execute` 成功时返回本次后端授权后的完整动作配置。前端 FVS Adapter 只能使用该对象执行真实 FVS 控制, 不再从 `GET /api/screen/actions` 缓存中读取执行参数。
+
+```json
+{
+  "id": "SWITCH_TAB_ORG",
+  "action_id": "SWITCH_TAB_ORG",
+  "label": "成品库存",
+  "type": "page",
+  "description": "切换到成品库存页",
+  "target": "page_number_2",
+  "provider": "screen_action_whitelist",
+  "fvs_function": "gotoPage",
+  "fvs_routing": {
+    "provider": "fvs",
+    "mode": "iframe_page_number",
+    "function": "gotoPage",
+    "page_param": "page_number",
+    "page_number": 2
+  },
+  "params": {
+    "pageNumber": 2
+  },
+  "speak_text": "已为您切换到成品库存页面。",
+  "validation": {
+    "status": "authorized",
+    "code": "AUTHORIZED",
+    "params_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pageNumber": {
+          "type": "integer",
+          "required_value": 2,
+          "client_override": "must_match_backend_value",
+          "minimum": 1
+        }
+      }
+    },
+    "sanitized_params": {
+      "pageNumber": 2
+    },
+    "rejected_params": []
+  }
+}
+```
+
+拒绝时:
+
+```json
+{
+  "success": false,
+  "action_id": "SWITCH_TAB_ORG",
+  "provider": "screen_action_whitelist",
+  "authorized_action": null,
+  "resolved_action": null,
+  "validation": {
+    "status": "rejected",
+    "code": "PARAM_VALUE_NOT_ALLOWED",
+    "reason": "Param pageNumber does not match the backend whitelist value",
+    "rejected_params": ["pageNumber"]
+  },
+  "rejection_reason": "Param pageNumber does not match the backend whitelist value"
+}
+```
+
+规则:
+
+- `action_id` 必须在后端白名单中。
+- `target` 若由调用方传入, 必须匹配后端从动作配置推导出的目标。
+- 请求 params 只能包含后端动作配置声明的键, 且值必须匹配后端白名单值; 当前不允许前端覆盖 `pageNumber` 等执行参数。
+- 后端只返回净化后的 `authorized_action.params`; 拒绝响应不回显非法参数原始值。
+- params 不允许 URL、脚本、命令、嵌套对象或任意可执行代码内容。
+- `GET /api/screen/actions` 只用于只读展示和按钮列表, 不作为真实执行依据。
+
 数字人前端执行 FVS 动作:
 
-- 若动作包含 `params.pageNumber`, 前端 Adapter 会在 `/api/screen/execute` 成功后改写 iframe URL 中的 `page_number`。
-- 若动作不包含 `pageNumber`, 前端 Adapter 才向 FVS iframe 发送动作消息。
+- 若本次 `authorized_action.params` 包含 `pageNumber`, 前端 Adapter 会改写 iframe URL 中的 `page_number`。
+- 若本次 `authorized_action.params` 不包含 `pageNumber`, 前端 Adapter 才向 FVS iframe 发送动作消息。
 
 动作消息结构:
 

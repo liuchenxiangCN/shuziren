@@ -578,6 +578,7 @@ async function submitQuestion(
       const executeResponse = await executeScreenAction({
         session_id: response.session_id,
         action_id: response.action.id,
+        target: response.action.target,
       });
       await applyFvsAction(executeResponse);
     }
@@ -1711,11 +1712,11 @@ function wait(ms: number) {
 }
 
 async function applyFvsAction(result: ScreenExecuteResponse) {
-  const action = actions.value.find((item) => item.id === result.action_id);
+  const action = result.authorized_action ?? result.resolved_action ?? null;
   let adapterResult: FvsActionResult = {
     success: false,
     mode: fvsConfig.mode,
-    message: result.error?.message || 'Action was blocked by Gateway.',
+    message: result.rejection_reason || result.error?.message || 'Action was blocked by Gateway.',
   };
 
   if (result.success && action) {

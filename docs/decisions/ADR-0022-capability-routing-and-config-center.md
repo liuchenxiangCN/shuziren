@@ -97,3 +97,11 @@ Proposed
 - 配置页如果开放给客户现场使用, 后续需要访问控制; 当前 Ops 看板仍按本地 POC 内网前提运行。
 - 历史 DEV_LOG、CHANGELOG、客户目录和已交付材料中的客户名称是历史事实或客户实例内容, 不应批量改写。
 - 在阶段 2 完成前, `AskMetricsService` 中的党建问数硬编码是已知遗留, 不应继续扩展; 新数据库问数必须等 Provider 抽象后接入。
+
+## Implementation Notes
+
+- 2026-06-15 已完成阶段 1 只读 effective config / schema 和 `/ops/config`。
+- 2026-06-15 已完成阶段 2 `AskMetricsProvider` 抽象和配置驱动 `ExcelAskMetricsProvider`; Database Provider 保持 `not_implemented`。
+- 2026-06-16 已完成阶段 3 KnowledgeDirectAdapter。当前采用后端受控 `source_bound_extractive` summarizer, 只基于 RAGFlow chunks/metadata 生成带来源回答; 外部 LLM summarizer 未实现。该边界另见 ADR-0024。
+- 2026-06-16 已完成阶段 4: 新增本地 `ScreenControlResolver`, `/api/screen/execute` 返回本次 `authorized_action` / `resolved_action`、FVS routing、params schema / allowlist 校验状态和拒绝原因; 前端真实 FVS 执行路径已切换为只使用本次授权动作响应。
+- 阶段 5 仍未开始: 可写配置、Prompt 编辑、validate/test/reload/audit 均未实现。

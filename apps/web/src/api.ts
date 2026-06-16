@@ -218,6 +218,7 @@ export function toApiUrl(path: string): string {
 export function executeScreenAction(payload: {
   session_id: string;
   action_id: string;
+  target?: string | null;
   params?: Record<string, unknown>;
 }): Promise<ScreenExecuteResponse> {
   return requestJson<ScreenExecuteResponse>('/api/screen/execute', {

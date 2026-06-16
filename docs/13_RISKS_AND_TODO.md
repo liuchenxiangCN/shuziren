@@ -37,11 +37,12 @@
 | R-029 | RAGFlow 导入解析状态不稳定或耗时不可控 | 新增资料无法按时进入 MCP 检索, 影响 6/30 上线验收 | 导入 Adapter 需记录批次日志、轮询解析状态、失败重试和小批量导入; 验收前准备人工导入兜底 | Open |
 | R-030 | 临时宣传分支内容污染主线 | 后续架构和配置中心设计可能误把临时录屏页面、专用资产或临时动作白名单当成主线能力 | 2026-06-15 已删除本地临时宣传分支, 清理主线运行目录中的录屏页面、专用组件、临时客户配置、临时资产、临时 ADR 和财务录屏动作白名单; 后续阶段 0A 固化主线清洁搜索门禁 | Mitigated |
 | R-031 | 配置页泄露敏感配置 | Dora / ASR / TTS Key、Token、数据库 DSN 或供应商密钥可能通过前端泄露 | 阶段 1 已新增脱敏只读 `GET /api/config/effective` 和 `/ops/config`; sensitive 字段只返回 configured / source / masked, API 不返回 Key、Token、密码、DSN、Bearer、`sk-*`、`ak-*`, 且不直接返回 `Settings.model_dump()` | Mitigated |
-| R-032 | 可写 action 配置早于授权执行响应增强 | 前端仍可能根据旧缓存动作执行 FVS, 不能保证“本次后端授权结果”是唯一执行依据 | 可写 action 配置必须等阶段 4: `/api/screen/execute` 返回完整授权 action, 前端只执行该响应, 且 `params` 通过 schema 校验 | Open |
-| R-033 | 数据库问数和知识库直连引入越权或编造 | 后续扩展如果允许自由 SQL 或无来源 summarizer, 会破坏当前安全边界 | 阶段 2 仅预留 Database Provider `not_implemented` 状态, 未连接数据库、未执行 SQL; 后续数据库问数仍必须只允许只读账号、表 / 字段白名单、参数化查询、超时和 limit; KnowledgeDirect summarizer 必须 require_sources 且 no_evidence_policy=fallback | Open |
+| R-032 | 可写 action 配置早于授权执行响应增强 | 前端仍可能根据旧缓存动作执行 FVS, 不能保证“本次后端授权结果”是唯一执行依据 | 阶段 4 已完成: `/api/screen/execute` 返回完整 `authorized_action` / `resolved_action`, 前端只执行该响应, 且 `params` 通过后端 schema / allowlist 校验和净化; 可写 action 配置仍需等阶段 5 单独实现 validate / dry-run / audit | Mitigated |
+| R-033 | 数据库问数和外部 LLM summarizer 引入越权或编造 | 后续扩展如果允许自由 SQL、模型生成 SQL / 代码或无来源 summarizer, 会破坏当前安全边界 | 阶段 2 仅预留 Database Provider `not_implemented` 状态, 未连接数据库、未执行 SQL; 阶段 3 已实现 KnowledgeDirectAdapter + `source_bound_extractive` summarizer, 固定 `require_sources=true` 和 `no_evidence_policy=fallback`; 后续数据库问数仍必须只允许只读账号、表 / 字段白名单、参数化查询、超时和 limit; 外部 LLM summarizer 仍必须走后端受控 Provider 且不得输出可执行代码或控屏动作 | Open |
 | R-034 | 通用项目主线重新被客户实例污染 | 后续新增客户时可能继续把某个客户名称、场景、Prompt 或看板动作写回核心代码 / 默认模板 | 2026-06-15 已完成阶段 0A 默认入口和根模板清洁; 阶段 2 已移除 `apps/api/app/services/ask_metrics.py` 客户实例硬编码, 客户 Excel 问数规则仅保留在 `config/customers/zt-securities/ask-metrics.yaml` 客户 profile 中 | Mitigated |
 | R-036 | 配置驱动问数定义缺少独立校验器 | 后续新增客户 metric 配置时, YAML 字段、模板或 workbook/sheet 名写错会导致问数 fallback | 阶段 2 已用 11 个固定问数 smoke 覆盖当前客户 profile, 并保持异常安全 fallback; 后续可在阶段 5 validate/test API 中增加 ask-metrics dry-run 校验, 当前不得开放写配置接口 | Open |
 | R-035 | 配置来源误标导致排障误判 | 只读配置页可能把合并后的最终值误标为来自 env / customer_config, 误导现场排障或配置治理 | 阶段 1 已新增来源构造服务, 按 env / customer_config / root_config / code_default / frontend_runtime 契约显式标注; 对 action_count、provider 组合、Prompt 未实现项等无法精确追踪字段标 `derived` / `unknown` 并说明限制 | Mitigated |
+| R-037 | KnowledgeDirect 真实 RAGFlow 参数和来源质量未现场复验 | 本地直连检索可能因为 dataset、API / MCP 参数或资料切片不匹配而频繁 fallback, 或返回来源质量不足 | 阶段 3 默认仍为 `knowledge.mode=dora`, 不影响既有 Dora -> RAGFlow MCP 路径; KnowledgeDirect 命中必须带 sources / source_summary, 无依据必须 fallback; 切换 `local_ragflow_llm` 或 `auto` 前需用客户 RAGFlow 环境做现场检索、来源质量和延迟复验 | Open |
 
 ## 当前遗留事项
 
@@ -51,8 +52,10 @@
 - 2026-06-15 已完成阶段 1 只读 effective config 和 schema: 新增 `/api/config/effective`、`/api/config/schema` 和 `/ops/config` 只读页面, 只展示脱敏白名单配置快照和 schema, 不提供保存、reload、action 编辑或写入入口。
 - 2026-06-15 已确认本机 `uv` 可用但当前 PowerShell PATH 尚未刷新; 阶段 1 请求级 smoke 使用 `C:\Users\nifen\.local\bin\uv.exe` 绝对路径完成。
 - 未跟踪目录 `outputs/manual-20260614-212600/` 已清点为历史 / 手工输出, 不作为阶段 1 配置模型、schema、页面或 Provider 设计输入。
-- 能力路由与配置中心方案已调整为先做阶段 0A 默认入口 / 根模板清洁和阶段 1 只读 effective config; 可写配置、数据库问数和知识库直连均不属于下一轮首步。
+- 能力路由与配置中心方案已完成阶段 0A 默认入口 / 根模板清洁、阶段 1 只读 effective config、阶段 2 AskMetricsProvider 抽象、阶段 3 KnowledgeDirectAdapter 和阶段 4 控屏 resolver / 授权 action 响应增强; 可写配置和数据库问数真实查询仍不属于已完成范围。
 - 2026-06-15 已完成阶段 2 AskMetricsProvider 抽象: `apps/api/app/services/ask_metrics.py` 不再包含客户实例硬编码, Excel 问数由配置驱动 `ExcelAskMetricsProvider` 承接; 当前 Database Provider 仅保留 `not_implemented` 状态, 未连接数据库或执行 SQL。
+- 2026-06-16 已完成阶段 3 KnowledgeDirectAdapter + 来源约束回答: 新增本地 RAGFlow 检索适配边界和 `source_bound_extractive` summarizer, 只基于检索 chunks / metadata 回答, 无来源或依据不足时 fallback; 默认 `knowledge.mode=dora`, 既有 Dora -> RAGFlow MCP 路径保持不变。
+- 2026-06-16 已完成阶段 4 控屏 resolver 与授权 action 响应增强: 本地 `ScreenControlResolver` 只解析候选 `action_id`, `/api/screen/execute` 返回本次 `authorized_action` / `resolved_action` 和 FVS routing, 前端真实执行只使用本次响应; 非白名单 action、非法 params、参数值覆盖和未知 target 均安全拒绝。
 - 当前 `Settings` 运行时仍只保留合并后最终值; 阶段 1 已通过独立 `ConfigSnapshot` 来源构造输出 `source` 字段, 对聚合或浏览器 runtime 字段标 `derived` / `frontend_runtime` / `unknown`。
 - V0.1 Mock 闭环已完成。
 - V0.2 Dora Adapter 已接入 OpenClaw `agents` 和 `sse/chat`, Mock 回退保留。
@@ -93,7 +96,7 @@
 - V1.0 已输出正式验收交付包到 `docs/delivery/v1.0/`, 包含验收报告、部署方案、用户手册、运维手册、配置手册、测试报告和客户移交清单。
 - V1.0 交付包已引用最新 smoke 结果 `logs/smoke/smoke-demo-20260611-011803.md` 和日志包 `logs/exports/zt-poc-logs-20260611-011813.zip`; 客户现场仍需补齐截图、真实外部依赖连通性和签字。
 - 已输出客户汇报用项目管理计划和实施甘特图 Excel: `outputs/customer-report-20260617/zt_project_plan_gantt_20260610_0630.xlsx`。
-- 自定义新闻爬虫、新闻整理、导入本地 RAGFlow 知识库、RAGFlow 知识库调用、性能优化和安全优化仍为计划专项, 尚未实现代码。
+- 自定义新闻爬虫、新闻整理、自动导入本地 RAGFlow 知识库、性能优化和专项安全加固仍为计划专项; 阶段 3 仅完成 KnowledgeDirect 检索和来源约束回答边界。
 
 ## 待确认问题
 

@@ -29,6 +29,7 @@ SENSITIVE_ENV_KEYS = {
     "ASR_API_KEY": "ASR API Key",
     "TTS_API_KEY": "TTS API Key",
     "METRICS_DB_DSN": "Metrics database DSN",
+    "LLM_API_KEY": "LLM API Key",
 }
 
 SECRET_QUERY_KEYS = {
@@ -155,6 +156,18 @@ class ConfigSourceTracker:
         if self.ragflow.get(yaml_key) is not None:
             return "customer_config"
         return "code_default"
+
+    def knowledge_source(self, env_key: str, *yaml_path: str) -> str:
+        if self.env_source(env_key):
+            return "env"
+        value: Any = self.ragflow
+        for part in yaml_path:
+            if not isinstance(value, dict) or part not in value:
+                if len(yaml_path) > 1 and self.ragflow.get(yaml_path[-1]) is not None:
+                    return "customer_config"
+                return "code_default"
+            value = value[part]
+        return "customer_config"
 
     def fvs_source(self, env_key: str, yaml_key: str, *aliases: str) -> str:
         if self.env_source(env_key, *aliases):
@@ -300,9 +313,13 @@ def build_config_effective(
                 ),
             },
             "knowledge": {
-                "current_provider": _field("dora_ragflow_mcp", "derived"),
-                "implemented_providers": ["dora_ragflow_mcp"],
-                "planned_providers": ["local_ragflow_llm"],
+                "mode": _field(
+                    settings.knowledge_mode,
+                    tracker.knowledge_source("KNOWLEDGE_MODE", "knowledge", "mode"),
+                ),
+                "current_provider": _field(_knowledge_current_provider(settings.knowledge_mode), "derived"),
+                "implemented_providers": ["dora_ragflow_mcp", "local_ragflow_direct"],
+                "planned_providers": ["external_llm_summarizer"],
                 "ragflow_base_url": _field(
                     _redact_text(settings.ragflow_base_url),
                     tracker.ragflow_source("RAGFLOW_BASE_URL", "base_url"),
@@ -311,23 +328,99 @@ def build_config_effective(
                     _redact_text(settings.ragflow_mcp_url),
                     tracker.ragflow_source("RAGFLOW_MCP_URL", "mcp_url"),
                 ),
+                "retrieval": {
+                    "provider": _field("ragflow", "code_default"),
+                    "transport": _field(
+                        settings.knowledge_retrieval_transport,
+                        tracker.knowledge_source("KNOWLEDGE_RETRIEVAL_TRANSPORT", "retrieval", "transport"),
+                    ),
+                    "dataset_name": _field(
+                        settings.knowledge_dataset_name,
+                        tracker.knowledge_source("KNOWLEDGE_DATASET_NAME", "retrieval", "dataset_name"),
+                    ),
+                    "dataset_ids_configured": _field(
+                        bool(str(settings.knowledge_dataset_ids or "").strip()),
+                        tracker.knowledge_source("KNOWLEDGE_DATASET_IDS", "retrieval", "dataset_ids"),
+                    ),
+                    "keyword": _field(
+                        False,
+                        "code_default",
+                        notes="KnowledgeDirect 固定 keyword=false, 不启用 RAGFlow keyword search 或 RAGFlow chat。",
+                    ),
+                    "page_size": _field(
+                        settings.knowledge_page_size,
+                        tracker.knowledge_source("KNOWLEDGE_PAGE_SIZE", "retrieval", "page_size"),
+                    ),
+                    "top_k": _field(
+                        settings.knowledge_top_k,
+                        tracker.knowledge_source("KNOWLEDGE_TOP_K", "retrieval", "top_k"),
+                    ),
+                    "similarity_threshold": _field(
+                        settings.knowledge_similarity_threshold,
+                        tracker.knowledge_source(
+                            "KNOWLEDGE_SIMILARITY_THRESHOLD",
+                            "retrieval",
+                            "similarity_threshold",
+                        ),
+                    ),
+                    "max_chunk_chars": _field(
+                        settings.knowledge_max_chunk_chars,
+                        tracker.knowledge_source("KNOWLEDGE_MAX_CHUNK_CHARS", "retrieval", "max_chunk_chars"),
+                    ),
+                },
+                "summarizer": {
+                    "provider": _field(
+                        settings.knowledge_summarizer_provider,
+                        tracker.knowledge_source("KNOWLEDGE_SUMMARIZER_PROVIDER", "summarizer", "provider"),
+                        notes="当前实现为后端受控 extractive summarizer, 不调用外部 LLM。",
+                    ),
+                    "profile": _field(
+                        settings.knowledge_summarizer_profile,
+                        tracker.knowledge_source("KNOWLEDGE_SUMMARIZER_PROFILE", "summarizer", "prompt_profile"),
+                    ),
+                    "require_sources": _field(
+                        settings.knowledge_require_sources,
+                        tracker.knowledge_source("KNOWLEDGE_REQUIRE_SOURCES", "summarizer", "require_sources"),
+                    ),
+                    "no_evidence_policy": _field(
+                        settings.knowledge_no_evidence_policy,
+                        tracker.knowledge_source(
+                            "KNOWLEDGE_NO_EVIDENCE_POLICY",
+                            "summarizer",
+                            "no_evidence_policy",
+                        ),
+                    ),
+                    "max_answer_chars": _field(
+                        settings.knowledge_max_answer_chars,
+                        tracker.knowledge_source("KNOWLEDGE_MAX_ANSWER_CHARS", "summarizer", "max_answer_chars"),
+                    ),
+                },
                 "knowledge_direct_adapter": _status_field(
+                    "implemented",
+                    "阶段 3 已实现 KnowledgeDirectAdapter: RAGFlow 只检索 chunks/metadata, 后端 SourceBoundSummarizer 只基于来源回答。",
+                ),
+                "llm_summarizer": _status_field(
                     "not_implemented",
-                    "阶段 3 前未实现 KnowledgeDirectAdapter 或 LLM summarizer。",
+                    "本轮未启用外部 LLM summarizer; 当前 summarizer 为后端受控 extractive 实现。",
                 ),
             },
             "screen_control": {
                 "resolver": _field(
-                    "dora_or_mock",
+                    "local_rules_then_dora_or_mock",
                     "derived",
-                    notes="当前没有本地 ScreenControlResolver; Dora/Mock 仅产出 action_id。",
+                    notes="阶段 4 已新增本地 ScreenControlResolver; resolver 只产出 action_id, 执行仍通过白名单授权。",
                 ),
                 "executor": _field("fvs_whitelist", "root_config" if action_count else "derived"),
                 "execute_api": _field("/api/screen/execute", "code_default"),
                 "execute_returns_authorized_action": _field(
-                    False,
+                    True,
                     "code_default",
-                    notes="阶段 4 前响应不包含完整 authorized_action。",
+                    notes="阶段 4 响应包含本次 authorized_action / resolved_action, 前端应只执行该响应。",
+                ),
+                "param_validation": _field(
+                    "backend_schema_allowlist",
+                    "code_default",
+                    notes="请求 params 必须匹配后端白名单动作配置; 未声明参数、URL、脚本或命令类内容会拒绝。",
                 ),
                 "writable_action_config": _status_field(
                     "not_implemented",
@@ -387,17 +480,17 @@ def build_config_effective(
             },
             "knowledge_summarizer": {
                 "profile": _field(
-                    None,
-                    "unknown",
-                    notes="阶段 3 前未实现本地 knowledge summarizer prompt profile。",
+                    settings.knowledge_summarizer_profile,
+                    tracker.knowledge_source("KNOWLEDGE_SUMMARIZER_PROFILE", "summarizer", "prompt_profile"),
+                    notes="阶段 3 当前为只读受控 summarizer profile; 不提供 Prompt 编辑或写入。",
                 ),
                 "writable": False,
             },
             "screen_resolver": {
                 "profile": _field(
-                    None,
-                    "unknown",
-                    notes="阶段 4 前未实现本地 screen resolver prompt profile。",
+                    "local_rules_from_action_labels",
+                    "code_default",
+                    notes="阶段 4 本地 resolver 使用白名单 action label/description 做只读规则匹配, 不提供 Prompt 编辑或写入。",
                 ),
                 "writable": False,
             },
@@ -413,10 +506,13 @@ def build_config_effective(
             "ask_metrics_provider_interface": "implemented",
             "excel_ask_metrics_provider": "implemented",
             "database_provider": "not_implemented",
-            "knowledge_direct_adapter": "not_implemented",
+            "knowledge_direct_adapter": "implemented",
+            "source_bound_summarizer": "implemented",
             "llm_summarizer": "not_implemented",
             "writable_prompt": "not_implemented",
-            "screen_execute_authorized_action_response": "not_implemented",
+            "screen_control_resolver": "implemented",
+            "screen_execute_authorized_action_response": "implemented",
+            "screen_action_param_validation": "implemented",
         },
         "sensitive": _sensitive_snapshot(settings, tracker),
     }
@@ -448,15 +544,18 @@ def build_config_schema() -> dict[str, Any]:
                 "notes": "阶段 2 已实现配置驱动 Excel Provider; Database Provider 仍为 not_implemented。",
             },
             "knowledge": {
-                "description": "当前 Dora -> RAGFlow MCP 知识库路径与后续本地直连状态。",
+                "description": "当前 Dora -> RAGFlow MCP 知识库路径与 KnowledgeDirectAdapter 本地直连状态。",
                 "editable_stage": 3,
-                "planned": ["KnowledgeDirectAdapter", "LLM summarizer"],
+                "implemented": ["KnowledgeDirectAdapter", "source_bound_summarizer"],
+                "planned": ["external_llm_summarizer"],
                 "sensitive": False,
+                "notes": "KnowledgeDirectAdapter 默认可保持 dora 模式; 启用 local_ragflow_llm/auto 后只检索 chunks/metadata, require_sources=true, no_evidence_policy=fallback。",
             },
             "screen_control": {
                 "description": "action_id 白名单执行现状。",
                 "editable_stage": 4,
-                "planned": ["authorized_action response", "local resolver", "writable action config"],
+                "implemented": ["authorized_action response", "local resolver", "backend param allowlist"],
+                "planned": ["writable action config"],
                 "sensitive": False,
             },
             "mock_switches": {
@@ -508,6 +607,7 @@ def _sensitive_snapshot(settings: Settings, tracker: ConfigSourceTracker) -> dic
         "ASR_API_KEY": settings.asr_api_key,
         "TTS_API_KEY": settings.tts_api_key,
         "METRICS_DB_DSN": env.get("METRICS_DB_DSN", ""),
+        "LLM_API_KEY": env.get("LLM_API_KEY", ""),
     }
     return {
         key.lower(): {
@@ -537,6 +637,15 @@ def _ask_metrics_current_provider(mode: str) -> str:
     if normalized == "auto":
         return "dora_then_excel_fallback"
     return "excel"
+
+
+def _knowledge_current_provider(mode: str) -> str:
+    normalized = str(mode or "").strip().lower()
+    if normalized in {"local", "local_ragflow", "local_ragflow_llm", "knowledge_direct"}:
+        return "local_ragflow_direct"
+    if normalized == "auto":
+        return "local_ragflow_direct_then_dora"
+    return "dora_ragflow_mcp"
 
 
 def _action_count(action_service: ScreenActionService) -> int:
