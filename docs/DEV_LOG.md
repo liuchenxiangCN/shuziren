@@ -4,6 +4,129 @@
 
 ## 2026-06-16
 
+### 上线前风险处理、完整 smoke、安全负测与核心回归
+
+#### Completed
+
+- 本地 `.env` 已配置 `CONFIG_ADMIN_TOKEN`（未输出明文）, 写配置接口在当前运行态要求 `X-Config-Admin-Token`; 无 token、错误 token、非本机 Host / Origin 写入均返回 403。
+- Docker Compose 默认端口已收敛到 `127.0.0.1`, 避免 `/ops`、`/ops/config`、API 和 Web 默认裸露到外网接口; 正式跨机器访问仍需反向代理鉴权或网关 ACL。
+- Docker Compose 已透出后端 RAGFlow / Knowledge / FVS 运行参数, 并将 AskMetrics / Knowledge / DemoStable 等可写运行态字段的空默认交由后端默认值 / 客户配置 / runtime override 处理; `Settings` 已启用 `env_ignore_empty=True`。
+- 修复阶段 5 runtime override 被 compose 默认 `ASK_METRICS_MODE=excel` 遮蔽的问题; 复测 `ASK_METRICS_MODE=dora` 不再返回 Excel source。
+- 配置安全校验补充拒绝 `python -c` / `python3 -c` / `python.exe` 可执行文本。
+- 完成无害 runtime override 的 validate / dry-run / save / reload / effective / audit / rollback 验证; 最终 `data/config-overrides/active.yaml` 已回滚为空覆盖, `ask_metrics.mode` 来源恢复为 `customer_config`。
+- 完成 17 项配置安全负测: API Key、Token、password、Bearer、DSN、RAGFlow MCP Key、URL secret query、自由 SQL、`mode=database`、`query` / `sql` 字段、数据库配置、脚本、shell、Python、JavaScript、任意 FVS function 均被拒绝。
+- 完成控屏安全负测: 非白名单 action、未知 target、URL / script 参数、嵌套 params、`pageNumber` 参数值覆盖均被 `/api/screen/execute` 拒绝; 合法 action 返回本次 `authorized_action`。
+- 完成 11 个固定 Excel 问数 smoke; 完成 `ASK_METRICS_MODE=excel|dora|auto` 路由回归; `dora` / `auto` 均未返回 Excel source。
+- 默认 `KNOWLEDGE_MODE=dora` 下, 固定知识问题“入党流程是什么?”通过 Dora 路径返回 `answer`; 本轮未启用 `local_ragflow_llm` / `auto`, 因客户 RAGFlow 资料的检索命中、来源质量、fallback 和延迟仍未现场复验。
+- 归档 Ops 导出、config audit、effective/schema、浏览器截图 / CDP 控制台结果、日志包和最终风险摘要到 `logs/prelaunch-20260616-161620/`; 另生成 `logs/exports/zt-poc-logs-20260616-205839.zip`。
+
+#### Changed Files
+
+- `.env.example`
+- `apps/api/app/config.py`
+- `apps/api/app/services/config_overrides.py`
+- `docker-compose.yml`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/CHANGELOG.md`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+
+#### Verification
+
+- `python -m compileall apps/api/app` 通过。
+- `corepack.cmd pnpm --dir apps/web build` 通过。
+- `git diff --check` 通过。
+- `scripts/start-poc.ps1 -Build -SkipCheck` 通过; API / Web 容器启动成功。
+- `scripts/check-poc.ps1 -RequireServices -Json` 已归档, exit code 为 1: Docker、端口、API、Web、配置、SQLite、screen actions、ASR / TTS 配置和 Mock FVS 正常; Ops aggregate 为 error, Dora 探测超时, RAGFlow 探测失败, 外部 RAGFlow healthz 无法连接。
+- 归档脚本 `regression-security.json` 共 54 项断言, failures=0。
+- 浏览器 / CDP 验证: `/ops` 无应用 console error; `/ops/config` 可渲染配置页, 仅有 Chrome 对 token/password 输入框的建议级提示; `/` 首页 iframe 当前返回 `/webroot/...` 502 Bad Gateway, 说明正式 FVS / 本机 FVS 代理未就绪。
+- `/api/config/effective`、`/api/config/schema`、`/api/ops/export` 和 `apps/web/dist` 未发现本地实际 secret 值; `.env` 仍为 ignored 且 untracked。
+
+#### Remaining Risks
+
+- 无法在本机替用户完成供应商控制台 API Key 轮换; 本轮仅验证 `.env` 不入 Git, 前端 bundle / Ops 导出 / config API 不返回本地明文 secret。上线前仍需在百炼 / RAGFlow / 其他供应商控制台轮换曾出现在对话上下文中的 Key。
+- 客户网络下 Dora、RAGFlow MCP、ASR、TTS、正式 FVS、麦克风权限和浏览器自动播放仍需现场复测; 本机 `check-poc -RequireServices` 已明确记录 Dora 超时和 RAGFlow 不可达。
+- 当前正式 FVS iframe 策略未通过本机 smoke: `/webroot/...` 返回 502; 需恢复本机 FVS、接入客户 FVS 同源代理, 或由 FVS 侧放开嵌入策略后复测。
+- ASR 本轮只验证当前真实模式在无音频时返回结构化错误; 未进行真实浏览器麦克风、连续追问、播报中长唤醒词打断、等待提示音和 AI 结果打断等待提示音人工复测。
+
+### 上线前风险处理与全链路 E2E 验证任务包文档化
+
+#### Completed
+
+- 将下一轮新对话目标固定为“上线前风险处理 + 完整启动 smoke + 安全负测 + 核心业务回归 + 全链路 E2E 验证”。
+- `docs/NEXT_ACTIONS.md` 已补充执行顺序、完成标准、硬边界和可复制的新对话提示词。
+- `docs/13_RISKS_AND_TODO.md` 已新增 R-039, 并补充上线前风险处理与 E2E 验证任务包。
+- `docs/CODEX_CONTEXT.md` 已更新当前阶段和 Latest Update, 方便新对话恢复。
+- 本轮仅更新文档, 未实现 Database Provider、外部 LLM summarizer、Prompt 内容编辑、自由 SQL 或模型生成代码执行。
+
+#### Changed Files
+
+- `docs/CODEX_CONTEXT.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/CHANGELOG.md`
+- `docs/DEV_LOG.md`
+- `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`
+
+#### Verification
+
+- `git diff --check` 通过。
+
+### 通用可配置数字人阶段 5 可写配置页与审计
+
+#### Completed
+
+- 新增 `data/config-overrides/` 运行时覆盖层; Git 只跟踪 `.gitkeep` 和 README, `active.yaml`、`history/`、`audit.jsonl` 作为本地运行数据忽略。
+- 新增 `ConfigOverrideService`, 支持读取 / 保存 `active.yaml`、保存历史版本、追加 JSONL 审计和计算覆盖摘要。
+- `Settings` 已接入覆盖层, 优先级为默认 / 根配置 -> 客户 profile -> `data/config-overrides/active.yaml` -> `.env` / 环境变量; 环境变量仍最高优先级。
+- 新增阶段 5 配置 API: `GET /api/config/overrides`、`POST /api/config/validate`、`POST /api/config/test`、`PUT /api/config/overrides`、`POST /api/config/reload`、`GET /api/config/audit`。
+- 写接口加入最小访问边界: 配置 `CONFIG_ADMIN_TOKEN` 时要求 `X-Config-Admin-Token`; 未配置 token 时仅允许 localhost / testserver origin 的本地 POC 写入。
+- 配置保存只允许非敏感字段: 项目 / 客户展示字段、后端 FVS effective 非敏感字段、`ASK_METRICS_MODE=excel|dora|auto`、知识库 mode 与受控检索数值参数、source-bound summarizer profile 标签、`demo_stable_mode`、`gotoPage/pageNumber` action 映射。
+- action 覆盖保存前复用 `ScreenActionService` 和阶段 4 params allowlist 做 dry-run; 前端真实执行仍只使用 `/api/screen/execute` 本次返回的 `authorized_action` / `resolved_action`。
+- 前端 `/ops/config` 新增受控编辑面板、validate、dry-run、保存覆盖、reload、审计列表和 operator / reason / admin token 输入; admin token 只在本次浏览器内存中使用。
+- `/api/config/effective` / `/api/config/schema` 已同步 `runtime_override` 来源、阶段 5 enabled endpoints、写入范围和仍然 blocked 的密钥 / SQL / 脚本 / 外部 LLM / Database Provider 边界。
+- 新增 ADR-0025 记录 runtime config overrides、访问边界和审计决策。
+- 本轮未实现 Database Provider 真实查询、自由 SQL、模型生成 SQL/Python/JavaScript/shell、外部 LLM summarizer、Prompt 内容编辑或任意 FVS 函数写入。
+
+#### Changed Files
+
+- `.gitignore`
+- `apps/api/app/config.py`
+- `apps/api/app/main.py`
+- `apps/api/app/models.py`
+- `apps/api/app/services/config_overrides.py`
+- `apps/api/app/services/config_snapshot.py`
+- `apps/api/app/services/screen_actions.py`
+- `apps/web/src/App.vue`
+- `apps/web/src/api.ts`
+- `apps/web/src/style.css`
+- `apps/web/src/types.ts`
+- `data/config-overrides/.gitkeep`
+- `data/config-overrides/README.md`
+- `docs/06_API_CONTRACT.md`
+- `docs/07_DATA_CONTRACT.md`
+- `docs/13_RISKS_AND_TODO.md`
+- `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md`
+- `docs/CHANGELOG.md`
+- `docs/CODEX_CONTEXT.md`
+- `docs/DEV_LOG.md`
+- `docs/NEXT_ACTIONS.md`
+- `docs/decisions/ADR-0022-capability-routing-and-config-center.md`
+- `docs/decisions/ADR-0025-runtime-config-overrides-and-audit.md`
+
+#### Verification
+
+- `python -m compileall apps/api/app` 通过。
+- `corepack.cmd pnpm --dir apps/web build` 通过。
+- uv + FastAPI TestClient 阶段 5 smoke 通过: `/api/config/schema` 返回阶段 5 enabled endpoints; `/api/config/effective` 标注 writable config implemented 且 Database Provider 仍 `not_implemented`; validate / dry-run 对合法覆盖返回 ok; save 写入隔离测试覆盖目录; reload 后新增 action 可由 `/api/screen/actions` 读取并由 `/api/screen/execute` 返回授权 action; API Key 样式字段被 `SENSITIVE_FIELD_BLOCKED` 拒绝; database/free SQL payload 被拒绝; `/api/config/audit` 返回审计事件。
+- TestClient 使用 `CONFIG_OVERRIDES_DIR=data/config-overrides-test` 隔离运行, 验证后已清理该测试目录。
+- `git diff --check` 通过。
+
+#### Notes
+
+- `CONFIG_ADMIN_TOKEN` 不返回前端明文, `/api/config/effective` 只显示 configured/source/masked。
+- 正式跨机器部署仍应配置 `CONFIG_ADMIN_TOKEN` 或在反向代理层加访问控制; 默认 local-origin 写入仅面向本地 POC。
+
 ### 通用可配置数字人阶段 4 控屏 resolver 与授权 action 响应增强
 
 #### Completed

@@ -104,4 +104,4 @@ Proposed
 - 2026-06-15 已完成阶段 2 `AskMetricsProvider` 抽象和配置驱动 `ExcelAskMetricsProvider`; Database Provider 保持 `not_implemented`。
 - 2026-06-16 已完成阶段 3 KnowledgeDirectAdapter。当前采用后端受控 `source_bound_extractive` summarizer, 只基于 RAGFlow chunks/metadata 生成带来源回答; 外部 LLM summarizer 未实现。该边界另见 ADR-0024。
 - 2026-06-16 已完成阶段 4: 新增本地 `ScreenControlResolver`, `/api/screen/execute` 返回本次 `authorized_action` / `resolved_action`、FVS routing、params schema / allowlist 校验状态和拒绝原因; 前端真实 FVS 执行路径已切换为只使用本次授权动作响应。
-- 阶段 5 仍未开始: 可写配置、Prompt 编辑、validate/test/reload/audit 均未实现。
+- 2026-06-16 已完成阶段 5: 新增 `data/config-overrides/active.yaml` runtime override、validate/test/save/reload/audit API 和 `/ops/config` 受控编辑; Prompt 内容编辑、Database Provider、外部 LLM summarizer 仍未实现。该边界另见 ADR-0025。

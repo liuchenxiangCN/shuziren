@@ -7,6 +7,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.config import PROJECT_ROOT, Settings
+from app.services.config_overrides import ConfigOverrideService, RUNTIME_OVERRIDE_SOURCE
 from app.services.screen_actions import ScreenActionService
 from app.services.yaml_loader import load_yaml_file
 
@@ -16,6 +17,7 @@ SOURCES = [
     "code_default",
     "root_config",
     "customer_config",
+    RUNTIME_OVERRIDE_SOURCE,
     "env",
     "frontend_build",
     "frontend_runtime",
@@ -30,6 +32,7 @@ SENSITIVE_ENV_KEYS = {
     "TTS_API_KEY": "TTS API Key",
     "METRICS_DB_DSN": "Metrics database DSN",
     "LLM_API_KEY": "LLM API Key",
+    "CONFIG_ADMIN_TOKEN": "Config admin token",
 }
 
 SECRET_QUERY_KEYS = {
@@ -62,6 +65,7 @@ class ConfigSourceTracker:
         self.fvs = _load_optional_yaml(self.customer_dir / "fvs.yaml")
         self.voice = _load_optional_yaml(self.customer_dir / "voice.yaml")
         self.ask_metrics = _load_optional_yaml(self.customer_dir / "ask-metrics.yaml")
+        self.overrides = ConfigOverrideService(settings.config_overrides_dir).read_active_overrides()
 
     def env_source(self, *keys: str) -> str | None:
         for key in keys:
@@ -72,6 +76,10 @@ class ConfigSourceTracker:
     def project_source(self, setting_name: str, env_key: str) -> str:
         if self.env_source(env_key):
             return "env"
+        if _has_path(self.overrides, ("project", setting_name)):
+            return RUNTIME_OVERRIDE_SOURCE
+        if _has_path(self.overrides, ("customer", setting_name)):
+            return RUNTIME_OVERRIDE_SOURCE
         project = self.runtime.get("project")
         if isinstance(project, dict) and project.get(setting_name) is not None:
             return "customer_config"
@@ -92,6 +100,8 @@ class ConfigSourceTracker:
     def demo_stable_source(self) -> str:
         if self.env_source("DEMO_STABLE_MODE"):
             return "env"
+        if _has_path(self.overrides, ("mock_switches", "demo_stable_mode")):
+            return RUNTIME_OVERRIDE_SOURCE
         demo = self.runtime.get("demo")
         if self.runtime.get("demo_stable_mode") is not None:
             return "customer_config"
@@ -102,6 +112,8 @@ class ConfigSourceTracker:
     def ask_metrics_mode_source(self) -> str:
         if self.env_source("ASK_METRICS_MODE"):
             return "env"
+        if _has_path(self.overrides, ("capabilities", "ask_metrics", "mode")):
+            return RUNTIME_OVERRIDE_SOURCE
         runtime_ask = self.runtime.get("ask_metrics")
         if isinstance(runtime_ask, dict) and runtime_ask.get("mode") is not None:
             return "customer_config"
@@ -160,6 +172,9 @@ class ConfigSourceTracker:
     def knowledge_source(self, env_key: str, *yaml_path: str) -> str:
         if self.env_source(env_key):
             return "env"
+        override_path = _knowledge_override_path(yaml_path)
+        if override_path and _has_path(self.overrides, override_path):
+            return RUNTIME_OVERRIDE_SOURCE
         value: Any = self.ragflow
         for part in yaml_path:
             if not isinstance(value, dict) or part not in value:
@@ -172,6 +187,13 @@ class ConfigSourceTracker:
     def fvs_source(self, env_key: str, yaml_key: str, *aliases: str) -> str:
         if self.env_source(env_key, *aliases):
             return "env"
+        override_key = {
+            "integration_mode": "fvs_integration_mode",
+            "url": "fvs_url",
+            "target_origin": "fvs_target_origin",
+        }.get(yaml_key)
+        if override_key and _has_path(self.overrides, ("dashboard", override_key)):
+            return RUNTIME_OVERRIDE_SOURCE
         if self.fvs.get(yaml_key) is not None:
             return "customer_config"
         return "code_default"
@@ -207,7 +229,7 @@ def build_config_effective(
             "sources": SOURCES,
             "notes": [
                 "本接口按白名单构造 ConfigSnapshot, 不返回 Settings 全量 dump。",
-                "当前配置加载器仍以合并后 Settings 驱动运行; 阶段 1 对部分聚合字段只能标 derived 或 unknown。",
+                "阶段 5 已支持 data/config-overrides/active.yaml 非敏感覆盖层; 环境变量仍优先于 runtime_override。",
                 "前端浏览器 URL 参数和 Vite 构建变量由前端页面单独展示, 后端只能描述其契约。",
             ],
         },
@@ -423,8 +445,8 @@ def build_config_effective(
                     notes="请求 params 必须匹配后端白名单动作配置; 未声明参数、URL、脚本或命令类内容会拒绝。",
                 ),
                 "writable_action_config": _status_field(
-                    "not_implemented",
-                    "阶段 5 前不开放 action 写入、reload 或 dry-run。",
+                    "implemented",
+                    "阶段 5 已允许通过覆盖层写入受控 gotoPage/pageNumber action 映射; 保存前必须 validate / dry-run, 执行仍走 /api/screen/execute 授权响应。",
                 ),
             },
             "dora": {
@@ -498,18 +520,18 @@ def build_config_effective(
         "implementation_status": {
             "readonly_config_api": "implemented",
             "readonly_config_page": "implemented",
-            "writable_config": "not_implemented",
-            "config_validate_api": "not_implemented",
-            "config_test_api": "not_implemented",
-            "config_reload_api": "not_implemented",
-            "config_audit_api": "not_implemented",
+            "writable_config": "implemented",
+            "config_validate_api": "implemented",
+            "config_test_api": "implemented",
+            "config_reload_api": "implemented",
+            "config_audit_api": "implemented",
             "ask_metrics_provider_interface": "implemented",
             "excel_ask_metrics_provider": "implemented",
             "database_provider": "not_implemented",
             "knowledge_direct_adapter": "implemented",
             "source_bound_summarizer": "implemented",
             "llm_summarizer": "not_implemented",
-            "writable_prompt": "not_implemented",
+            "writable_prompt": "profile_label_only",
             "screen_control_resolver": "implemented",
             "screen_execute_authorized_action_response": "implemented",
             "screen_action_param_validation": "implemented",
@@ -522,11 +544,11 @@ def build_config_schema() -> dict[str, Any]:
     return {
         "version": CONFIG_SNAPSHOT_VERSION,
         "generated_at": _now_iso(),
-        "read_only": True,
+        "read_only": False,
         "sources": SOURCES,
         "sections": {
             "project": {
-                "description": "项目、客户、场景和助手展示字段。",
+                "description": "项目、客户、场景和助手展示字段; 阶段 5 可通过 runtime override 写入非敏感展示字段。",
                 "editable_stage": 5,
                 "sensitive": False,
             },
@@ -534,28 +556,28 @@ def build_config_schema() -> dict[str, Any]:
                 "description": "后端 FVS effective 配置和前端 runtime 配置契约。",
                 "editable_stage": 5,
                 "sensitive": False,
-                "notes": "阶段 1 不允许保存或 reload; 浏览器 runtime 由前端展示。",
+                "notes": "阶段 5 可写入后端 FVS effective 非敏感字段; 浏览器 URL 参数仍由前端 runtime 决定。",
             },
             "ask_metrics": {
                 "description": "当前 ASK_METRICS_MODE、AskMetricsProvider 抽象与 Excel/Dora/auto 实现状态。",
-                "editable_stage": 2,
+                "editable_stage": 5,
                 "planned": ["database_provider"],
                 "sensitive": False,
-                "notes": "阶段 2 已实现配置驱动 Excel Provider; Database Provider 仍为 not_implemented。",
+                "notes": "阶段 5 仅允许切换 excel/dora/auto; Database Provider 仍为 not_implemented, 不开放 SQL。",
             },
             "knowledge": {
                 "description": "当前 Dora -> RAGFlow MCP 知识库路径与 KnowledgeDirectAdapter 本地直连状态。",
-                "editable_stage": 3,
+                "editable_stage": 5,
                 "implemented": ["KnowledgeDirectAdapter", "source_bound_summarizer"],
                 "planned": ["external_llm_summarizer"],
                 "sensitive": False,
-                "notes": "KnowledgeDirectAdapter 默认可保持 dora 模式; 启用 local_ragflow_llm/auto 后只检索 chunks/metadata, require_sources=true, no_evidence_policy=fallback。",
+                "notes": "阶段 5 可调整 mode 和受控检索数值参数; 外部 LLM summarizer 和 Prompt 内容写入仍未实现。",
             },
             "screen_control": {
-                "description": "action_id 白名单执行现状。",
-                "editable_stage": 4,
+                "description": "action_id 白名单执行现状和受控 gotoPage/pageNumber 覆盖。",
+                "editable_stage": 5,
                 "implemented": ["authorized_action response", "local resolver", "backend param allowlist"],
-                "planned": ["writable action config"],
+                "planned": [],
                 "sensitive": False,
             },
             "mock_switches": {
@@ -569,13 +591,34 @@ def build_config_schema() -> dict[str, Any]:
                 "sensitive": True,
             },
         },
-        "disabled_endpoints": [
+        "disabled_endpoints": [],
+        "enabled_endpoints": [
             "PUT /api/config/overrides",
             "POST /api/config/validate",
             "POST /api/config/test",
             "POST /api/config/reload",
             "GET /api/config/audit",
         ],
+        "writable": {
+            "override_path": "data/config-overrides/active.yaml",
+            "access_control": "CONFIG_ADMIN_TOKEN header if configured; otherwise localhost/origin-bound local POC access.",
+            "allowed": [
+                "project_name/product_name/customer_name/scenario_name/assistant_name",
+                "fvs_integration_mode/fvs_url/fvs_target_origin",
+                "ask_metrics mode excel|dora|auto",
+                "knowledge mode and bounded retrieval numeric parameters",
+                "source_bound_extractive profile label",
+                "gotoPage action label/description/speak_text/pageNumber",
+                "demo_stable_mode",
+            ],
+            "blocked": [
+                "API Key/Token/password/DSN/Bearer",
+                "free SQL or database provider query config",
+                "script/code/shell/Python/JavaScript",
+                "external LLM summarizer provider/model/key",
+                "arbitrary FVS function or URL action params",
+            ],
+        },
     }
 
 
@@ -608,6 +651,7 @@ def _sensitive_snapshot(settings: Settings, tracker: ConfigSourceTracker) -> dic
         "TTS_API_KEY": settings.tts_api_key,
         "METRICS_DB_DSN": env.get("METRICS_DB_DSN", ""),
         "LLM_API_KEY": env.get("LLM_API_KEY", ""),
+        "CONFIG_ADMIN_TOKEN": getattr(settings, "config_admin_token", ""),
     }
     return {
         key.lower(): {
@@ -684,6 +728,30 @@ def _load_optional_yaml(path: Path) -> dict[str, Any]:
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _has_path(value: dict[str, Any], path: tuple[str, ...]) -> bool:
+    current: Any = value
+    for part in path:
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    return True
+
+
+def _knowledge_override_path(yaml_path: tuple[str, ...]) -> tuple[str, ...] | None:
+    if not yaml_path:
+        return None
+    if yaml_path[0] == "knowledge":
+        return ("capabilities", "knowledge", *yaml_path[1:])
+    if yaml_path[0] == "retrieval":
+        return ("capabilities", "knowledge", "retrieval", *yaml_path[1:])
+    if yaml_path[0] == "summarizer":
+        mapped = tuple("profile" if part == "prompt_profile" else part for part in yaml_path[1:])
+        return ("capabilities", "knowledge", "summarizer", *mapped)
+    if len(yaml_path) == 1:
+        return ("capabilities", "knowledge", yaml_path[0])
+    return None
 
 
 def _safe_path(value: str | None) -> Path | None:

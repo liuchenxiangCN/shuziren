@@ -299,9 +299,97 @@ V0.9 已实现。演示稳态模式由 `DEMO_STABLE_MODE` 控制, 前端构建�
 }
 ```
 
+## Runtime Config Override
+
+阶段 5 已实现。运行时覆盖层位于 `data/config-overrides/active.yaml`, 只保存非敏感配置。该文件不进入 Git, history 和 audit 也作为本地运行数据保留。
+
+```yaml
+version: 1
+updated_at: "2026-06-16T20:00:00+08:00"
+updated_by: local-admin
+reason: 现场配置调整
+overrides:
+  project:
+    project_name: 通用可配置数字人 POC
+    product_name: 可配置大屏对话数字人
+  customer:
+    customer_name: 默认客户
+    scenario_name: 通用大屏交互
+    assistant_name: 小智
+  dashboard:
+    fvs_integration_mode: mock
+    fvs_url: ""
+    fvs_target_origin: ""
+  capabilities:
+    ask_metrics:
+      mode: excel
+    knowledge:
+      mode: dora
+      retrieval:
+        page_size: 3
+        top_k: 16
+        similarity_threshold: 0.35
+        max_chunk_chars: 1200
+      summarizer:
+        profile: source_bound_extractive
+        require_sources: true
+        no_evidence_policy: fallback
+    screen_control:
+      actions:
+        SWITCH_HOME:
+          label: 总览
+          type: page
+          description: 切换到总览页
+          fvs_function: gotoPage
+          params:
+            pageNumber: 1
+          speak_text: 已为您切换到总览页面。
+  mock_switches:
+    demo_stable_mode: false
+```
+
+规则:
+
+- 优先级: 代码默认 / 根配置 -> 客户 profile -> `data/config-overrides/active.yaml` -> `.env` / 环境变量。
+- 保存前必须经过 `POST /api/config/validate` 或 `POST /api/config/test` 同一套规则。
+- action 覆盖只允许 `gotoPage` + 固定 `pageNumber`, 并复用 `ScreenActionService` 的 params allowlist dry-run。
+- 不允许 API Key、Token、密码、DSN、Bearer、RAGFlow MCP Key、任意脚本、自由 SQL、Python、JavaScript、shell、外部 LLM provider / model / key 或任意 FVS 函数。
+- `profile` 当前只是 source-bound summarizer profile 标签; 不写 Prompt 文件内容, 不启用外部 LLM summarizer。
+- Database Provider 仍为 `not_implemented`; `mode=database` 或 SQL / query 字段必须被拒绝。
+
+## Config Override Audit
+
+阶段 5 已实现。审计文件为 `data/config-overrides/audit.jsonl`, 每行一个 JSON 事件。
+
+```json
+{
+  "event_id": "e3b0c44298fc1c14",
+  "created_at": "2026-06-16T20:00:00+08:00",
+  "operator": "local-admin",
+  "action": "save",
+  "reason": "现场配置调整",
+  "ok": true,
+  "summary": {
+    "changed_paths": ["project.project_name"],
+    "changed_count": 1,
+    "action_override_count": 0,
+    "database_provider": "not_implemented",
+    "llm_summarizer": "not_implemented",
+    "secrets_allowed": false
+  },
+  "errors": [],
+  "active_sha256": "9ad1..."
+}
+```
+
+规则:
+
+- audit 不记录密钥、DSN、原始非法参数值或供应商响应。
+- `reload_rejected` / `save_rejected` 也要写审计, 便于追溯失败原因。
+
 ## Config Snapshot
 
-阶段 1 已实现。配置快照用于只读展示当前生效配置和来源, 不作为可写配置存储格式。
+阶段 1 已实现。配置快照用于展示当前生效配置和来源, 不作为可写配置存储格式。阶段 5 后, `source` 可包含 `runtime_override`。
 
 ### Config Field
 
@@ -319,6 +407,7 @@ V0.9 已实现。演示稳态模式由 `DEMO_STABLE_MODE` 控制, 前端构建�
 - `code_default`
 - `root_config`
 - `customer_config`
+- `runtime_override`
 - `env`
 - `frontend_build`
 - `frontend_runtime`
@@ -373,7 +462,8 @@ V0.9 已实现。演示稳态模式由 `DEMO_STABLE_MODE` 控制, 前端构建�
 - 问数当前 `excel|dora|auto` 状态, 并标注 Database Provider 未实现。
 - 知识库当前 `dora_ragflow_mcp` / `local_ragflow_direct` 状态, 并标注 `KnowledgeDirectAdapter` 与 source-bound summarizer 已实现、外部 LLM summarizer 未实现。
 - 控屏当前 `local_rules_then_dora_or_mock -> fvs_whitelist` 状态, 并标注 `/api/screen/execute` 已返回完整授权 action。
-- 可写配置、可写 Prompt、可写 action 配置、validate/test/reload/audit 均未实现。
+- 可写配置、validate/test/reload/audit 已在阶段 5 实现, 但只覆盖非敏感 runtime overrides。
+- Database Provider、外部 LLM summarizer、Prompt 内容编辑和任意可执行代码配置仍未实现。
 
 ## Chart Answer
 

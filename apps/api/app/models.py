@@ -123,6 +123,60 @@ class ConfigSchemaResponse(BaseModel):
     sources: list[str]
     sections: dict[str, Any]
     disabled_endpoints: list[str]
+    enabled_endpoints: list[str] = Field(default_factory=list)
+    writable: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConfigOverridePayload(BaseModel):
+    overrides: dict[str, Any] = Field(default_factory=dict)
+    operator: str | None = Field(default=None, max_length=80)
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class ConfigOverrideResponse(BaseModel):
+    version: int
+    path: str
+    exists: bool
+    updated_at: str | None = None
+    updated_by: str | None = None
+    reason: str | None = None
+    sha256: str
+    access: dict[str, Any] = Field(default_factory=dict)
+    overrides: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConfigValidateResponse(BaseModel):
+    ok: bool
+    dry_run: bool
+    summary: dict[str, Any] = Field(default_factory=dict)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+    normalized_overrides: dict[str, Any] = Field(default_factory=dict)
+    effective_preview: dict[str, Any] = Field(default_factory=dict)
+    action_preview: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ConfigReloadResponse(BaseModel):
+    success: bool
+    reloaded_at: str
+    summary: dict[str, Any] = Field(default_factory=dict)
+    error: ErrorDetail | None = None
+
+
+class ConfigAuditEvent(BaseModel):
+    event_id: str
+    created_at: str
+    operator: str
+    action: str
+    reason: str = ""
+    ok: bool
+    summary: dict[str, Any] = Field(default_factory=dict)
+    errors: list[dict[str, Any]] = Field(default_factory=list)
+    active_sha256: str | None = None
+
+
+class ConfigAuditResponse(BaseModel):
+    events: list[ConfigAuditEvent]
 
 
 class TtsSynthesizeRequest(BaseModel):

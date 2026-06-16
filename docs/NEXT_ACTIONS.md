@@ -18,6 +18,8 @@ V1.0 POC 验收交付版已输出。
 
 2026-06-16 已完成通用可配置数字人阶段 4: 新增本地 `ScreenControlResolver`, 固定控屏命令可先按白名单 action label / description 解析为候选 `action_id`, 未命中仍走 Dora / Mock Dora。`/api/screen/execute` 已返回本次 `authorized_action` / `resolved_action`, 包含 `target`、`provider`、`fvs_function`、`fvs_routing`、净化后的 `params`、校验状态和拒绝原因; 前端 FVS 执行路径只使用本次授权动作响应, `GET /api/screen/actions` 仅用于只读按钮展示。非法 action_id、非法 params、参数值覆盖和未知 target 均安全拒绝。本阶段未实现可写配置、Prompt 编辑、可写 action 配置、配置 validate/test/reload/audit、Database Provider 真实查询或外部 LLM summarizer。
 
+2026-06-16 已完成通用可配置数字人阶段 5: 新增 `data/config-overrides/` 运行时覆盖层、配置 validate / dry-run / save / reload / audit API 和 `/ops/config` 受控编辑面板。覆盖层只允许保存非敏感字段: 项目 / 客户展示字段、后端 FVS effective 字段、`ASK_METRICS_MODE=excel|dora|auto`、知识库 mode 与受控检索数值参数、source-bound summarizer profile 标签、`demo_stable_mode`、`gotoPage/pageNumber` action 映射。写接口支持 `CONFIG_ADMIN_TOKEN` / `X-Config-Admin-Token`; 未配置 token 时仅允许 localhost / testserver origin 的本地 POC 写入。action 覆盖保存前复用阶段 4 `ScreenActionService` allowlist dry-run, 前端执行仍只使用 `/api/screen/execute` 本次授权响应。本阶段未实现 Database Provider 真实查询、自由 SQL、模型生成代码执行、外部 LLM summarizer、Prompt 内容编辑或任意 FVS 函数写入。新增 ADR-0025。
+
 2026-06-11 已补充客户汇报用项目管理计划和实施甘特图 Excel: `outputs/customer-report-20260617/zt_project_plan_gantt_20260610_0630.xlsx`。该材料按用户指定的客户汇报口径, 将 `2026-06-10` 到 `2026-06-17` 表述为已完成 Mock 链路联调与端到端流程验证, 将 `2026-06-18` 到 `2026-06-30` 表述为自定义新闻爬虫及导入知识库、RAGFlow 知识库调用、性能优化、安全优化、测试验收上线的专项计划。`2026-06-13`、`2026-06-14`、`2026-06-19`、`2026-06-20`、`2026-06-21`、`2026-06-27`、`2026-06-28` 在材料中标为非工作日, 仅保留风险响应 / 问题跟进。
 
 2026-06-11 针对普通唤醒完全无法触发的问题完成热修: 前端 VAD 增加连续两帧超过阈值才正式开始收音的启动确认, 避免单帧环境 / 外放噪声触发空 ASR; 普通唤醒 `vad_threshold` 从 0.014 回调到 0.018, 播报中 `barge_in_vad_threshold` 保持 0.018。验证通过: `corepack pnpm --dir apps/web build`; `python -m compileall apps/api/app`; `docker compose up -d --build api web`; `GET /api/wake/config`; `scripts/check-poc.ps1 -RequireServices -SkipExternal -Json`; `git diff --check`; Codex Browser 加载新 bundle。下一步需用户刷新页面、重新开启后台监听并做真实麦克风复测。
@@ -52,24 +54,30 @@ V1.0 验收交付包已输出到 `docs/delivery/v1.0/`, 包含交付包索引、
 
 ## Next Task
 
-V1.0 验收交付包、阶段 0A 默认入口和根模板清洁、阶段 1 只读 effective config / schema、阶段 2 AskMetricsProvider 抽象与 Excel 问数迁移、阶段 3 KnowledgeDirectAdapter + 来源约束回答、阶段 4 控屏 resolver 与授权 action 响应增强均已完成。下一推荐 goal:
+本轮已执行“上线前风险处理 + 完整启动 smoke + 安全负测 + 核心业务回归 + 全链路 E2E 验证”, 证据目录为 `logs/prelaunch-20260616-161620/`, 日志包为 `logs/exports/zt-poc-logs-20260616-205839.zip`。
 
-```text
-执行通用可配置数字人阶段 5: 可写配置页与审计。先设计并实现 data/config-overrides/ 覆盖层、配置 validate / dry-run / audit 和最小访问控制边界; 仍不得暴露密钥、不得执行模型生成代码、不得开放自由 SQL。
-```
+已完成并归档:
 
-本 goal 的边界:
+- `CONFIG_ADMIN_TOKEN` 本地配置和写接口 token 边界验证。
+- `/ops`、`/ops/config` 默认本机绑定边界; Docker Compose 默认端口绑定为 `127.0.0.1`。
+- 静态验证、真实启动链路、`check-poc -RequireServices`、Ops 导出、config audit / effective / schema 快照。
+- `/ops/config` validate / dry-run / save / reload / effective / audit / rollback; 最终覆盖层已清空, `ask_metrics.mode` 来源恢复为 `customer_config`。
+- 安全负测、控屏 action 负测、11 个 Excel 问数 smoke、`ASK_METRICS_MODE=excel|dora|auto` 路由、默认 Dora 知识库问题、TTS stream 接口级验证。
+- 浏览器 / CDP 证据: `/ops` 无应用 console error; `/ops/config` 可渲染配置页; `/` 当前 FVS iframe 返回 `/webroot/...` 502。
 
-- 阶段 5 才允许新增配置覆盖层、validate / dry-run / audit 和受控 reload; 必须先限定非敏感字段和访问边界。
-- 阶段 5 不应回头新增数据库问数真实查询; Database Provider 仍保持 `not_implemented`, 除非用户另开数据库问数阶段。
-- 阶段 5 不应继续扩展 KnowledgeDirectAdapter; 外部 LLM summarizer 仍未实现, 除非用户另开知识库总结增强阶段。
-- 可写 Prompt、Prompt 编辑和可写 action 配置如进入阶段 5, 必须只保存非敏感配置, 先 validate / dry-run, 并保留审计; 不得把 API Key、Token、DSN、任意脚本或可执行代码写入配置。
-- 不让 LLM 生成或执行 SQL、Python、JavaScript 或 shell。
-- FVS 控制继续使用 `action_id` + 后端白名单校验; 阶段 5 如开放 action 写入, 必须复用阶段 4 的 `authorized_action` 响应和 params allowlist。
+下一步只处理上线前剩余外部 / 现场项:
 
-Go / No-Go: 阶段 5 可以开始, 但必须另开 goal 且先做安全设计、validate / dry-run / audit 和访问控制; 数据库问数真实查询、外部 LLM summarizer、自由 SQL 和模型生成代码执行仍 No-Go。
+1. 在供应商控制台轮换曾出现在对话上下文中的百炼 / RAGFlow / 其他供应商 API Key; 本地已验证 `.env` 不入 Git, 前端 bundle / Ops 导出 / config API 未返回本地明文 secret。
+2. 在客户网络复测 Dora、RAGFlow MCP、ASR、TTS、正式 FVS、麦克风权限和浏览器自动播放; 本机 `check-poc -RequireServices` 仍显示 Dora 超时、RAGFlow 请求失败 / healthz 不可达。
+3. 确认正式 FVS iframe 策略并复测: 当前本机 `/webroot/...` 代理返回 502, 需要恢复本机 FVS、接入客户 FVS 同源代理, 或由 FVS 侧允许嵌入后重新截图。
+4. 做真实浏览器人工语音 E2E: 唤醒、连续追问、播报中长唤醒词打断、等待提示音和 AI 结果打断等待提示音; 本轮只完成 API / CDP / 页面级验证, 未采集真实麦克风录屏。
+5. 如要启用 `KNOWLEDGE_MODE=local_ragflow_llm|auto`, 先用客户 RAGFlow 资料复验检索命中、来源质量、fallback 和延迟; 否则继续保持默认 `dora`。
 
-客户现场验收复演仍可按 `docs/delivery/v1.0/` 执行, 但不与本轮配置中心主线优化混在同一个 goal 中推进。
+仍然 No-Go:
+
+- Database Provider 真实查询、自由 SQL、模型生成 SQL / Python / JavaScript / shell。
+- 外部 LLM summarizer、Prompt 内容编辑、Prompt 文件写入。
+- 任意 FVS 函数写入或绕过 `/api/screen/execute` 本次 `authorized_action` 响应。
 
 ## Context
 
@@ -110,7 +118,19 @@ V0.8 之后路线:
 ## Recommended Prompt
 
 ```text
-请先阅读 AGENTS.md、docs/CODEX_CONTEXT.md、docs/NEXT_ACTIONS.md、docs/05_DEVELOPMENT_PLAN.md、docs/delivery/v1.0/README.md、docs/06_API_CONTRACT.md、docs/07_DATA_CONTRACT.md 和 docs/13_RISKS_AND_TODO.md。当前 V0.5 RAGFlow MCP、V0.6 FVS 真实集成均已人工验收, V0.7 已完成本地 Excel 问数 Adapter 和 11 个问数 smoke。V0.8 已完成客户私有配置目录和 `ASK_METRICS_MODE=excel|dora|auto`、TTS 字节级真流式 `/api/tts/stream`、前端 PCM Web Audio 播放和分段 TTS fallback、只读脱敏 Ops API 与前端运维监控 / 日志看板。V0.9 已完成 `scripts/check-poc.ps1`、`start-poc.ps1`、`stop-poc.ps1`、`export-logs.ps1`、`smoke-demo.ps1`、`DEMO_STABLE_MODE`、`GET /api/demo/config`、日志包导出流程和关键异常兜底体验。V1.0 验收交付包已输出到 `docs/delivery/v1.0/`, 下一步执行客户现场验收复演、补齐截图附件、确认真实依赖、导出最终日志包并完成签字。继续不执行模型生成 SQL/Python/JavaScript/shell, 不绕过 action_id 白名单, 不在前端或运维页暴露 API Key。
+请先阅读 AGENTS.md、docs/CODEX_CONTEXT.md、docs/NEXT_ACTIONS.md、docs/DEV_LOG.md、docs/05_DEVELOPMENT_PLAN.md、docs/13_RISKS_AND_TODO.md、docs/06_API_CONTRACT.md、docs/07_DATA_CONTRACT.md、docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md 和 docs/delivery/v1.0/README.md。
+
+当前 main/origin/main 已完成 V1.0 验收交付包、阶段 0A 默认入口和根模板清洁、阶段 1 只读 effective config / schema、阶段 2 AskMetricsProvider 抽象与 Excel 问数迁移、阶段 3 KnowledgeDirectAdapter + 来源约束回答、阶段 4 控屏 resolver 与授权 action 响应增强、阶段 5 可写配置页与审计。
+
+本轮只执行“上线前风险处理 + 完整启动 smoke + 安全负测 + 核心业务回归 + 全链路 E2E 验证”。请先处理必须风险: 配置并验证 CONFIG_ADMIN_TOKEN; 确认 /ops 和 /ops/config 访问边界; 轮换曾出现在对话上下文中的供应商 API Key; 确认正式 FVS iframe 嵌入策略; 复测客户网络下 Dora、RAGFlow MCP、ASR、TTS、FVS、麦克风权限和浏览器自动播放; 如启用 KNOWLEDGE_MODE=local_ragflow_llm 或 auto, 必须先用客户 RAGFlow 资料复验检索命中、来源质量、fallback 和延迟, 否则保持默认 dora。
+
+然后跑完整启动 smoke: 记录 git 状态和当前 commit; 执行 python -m compileall apps/api/app、corepack.cmd pnpm --dir apps/web build、git diff --check; 使用真实启动链路启动, 优先 scripts/start-poc.ps1 -Build 或实际部署脚本; 执行 scripts/check-poc.ps1 -RequireServices 或等价检查; 打开 /、/ops、/ops/config 并确认页面渲染、控制台错误、Ops 脱敏和配置访问边界; 在 /ops/config 做一个无害 runtime override 的 validate / dry-run / save / reload / effective / audit / rollback 验证。
+
+继续做安全负测: API Key、Token、password、Bearer、DSN、RAGFlow MCP Key、URL secret query 必须被拒绝; 自由 SQL、mode=database、query/sql 字段和数据库连接配置必须被拒绝; 脚本、shell、Python、JavaScript、可执行代码和任意 FVS function 必须被拒绝; 非白名单 action、未知 target、非法 params、参数值覆盖、嵌套对象、URL / 脚本类参数必须被拒绝; 前端真实控屏必须只使用 /api/screen/execute 本次 authorized_action 响应; config/effective、config/schema、ops/export 不得返回明文密钥或未脱敏客户数据。
+
+继续做核心业务回归和完整 E2E: 11 个固定 Excel 问数 smoke; ASK_METRICS_MODE=excel|dora|auto 路由; 默认 Dora -> RAGFlow MCP 知识库问题; KnowledgeDirect 如启用则验证 sources / fallback / 不编造; 控屏 resolver、/api/screen/execute 和 FVS iframe 跳页; ASR/TTS 当前模式和 TTS stream fallback; 真实浏览器语音唤醒、连续追问、播报中长唤醒词打断、等待提示音和 AI 结果打断等待提示音; 文本输入链路、语音链路、配置链路、运维链路和异常场景 E2E。
+
+请归档 smoke 输出、Ops 导出、audit 片段、浏览器截图或录屏、控制台结果、最终风险状态和用户测试结论。若发现缺陷, 先做最小范围修复并重新跑对应回归。不得顺手实现 Database Provider 真实查询、外部 LLM summarizer、Prompt 内容编辑、自由 SQL、模型生成 SQL/Python/JavaScript/shell 或任意 FVS 函数写入。完成后同步更新 docs/DEV_LOG.md、docs/NEXT_ACTIONS.md、docs/CHANGELOG.md; 风险状态变化同步 docs/13_RISKS_AND_TODO.md; 如 API 或数据契约变化, 同步 docs/06_API_CONTRACT.md 和 docs/07_DATA_CONTRACT.md。
 ```
 
 ## Already Done

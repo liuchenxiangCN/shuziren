@@ -21,9 +21,13 @@
 
 ## Current Phase
 
-V1.0 POC 验收交付包已输出。当前主线优化任务已切到通用可配置数字人定位和能力路由与配置中心: 先保持主线清洁基线, 再做只读 effective config 和配置页。
+V1.0 POC 验收交付包已输出。通用可配置数字人阶段 0A 到阶段 5 已完成。下一轮固定进入上线前风险处理、完整启动 smoke、安全负测、核心业务回归和全链路 E2E 验证。
 
 ## Latest Update
+
+2026-06-16 已将下一轮新对话目标文档化为“上线前风险处理 + 完整启动 smoke + 安全负测 + 核心业务回归 + 全链路 E2E 验证”。下一轮必须先处理 `CONFIG_ADMIN_TOKEN`、`/ops` 与 `/ops/config` 访问边界、供应商 API Key 轮换、FVS 正式嵌入策略、客户网络真实依赖连通性和 KnowledgeDirect 启用前复验; 然后执行完整启动 smoke、安全负测、11 个 Excel 问数与能力路由回归、语音 / TTS / 控屏 / 配置 / 运维全链路 E2E 和异常场景验证。仍不得顺手实现 Database Provider、外部 LLM summarizer、Prompt 内容编辑、自由 SQL 或模型生成代码执行。
+
+2026-06-16 已完成通用可配置数字人阶段 5: 新增 `data/config-overrides/` 运行时覆盖层、配置 validate / dry-run / save / reload / audit API 和 `/ops/config` 受控编辑面板。覆盖层只允许保存非敏感字段: 项目 / 客户展示字段、后端 FVS effective 字段、`ASK_METRICS_MODE=excel|dora|auto`、知识库 mode 与受控检索数值参数、source-bound summarizer profile 标签、`demo_stable_mode`、`gotoPage/pageNumber` action 映射。写接口支持 `CONFIG_ADMIN_TOKEN` / `X-Config-Admin-Token`; 未配置 token 时仅允许 localhost / testserver origin 的本地 POC 写入。action 覆盖保存前复用阶段 4 `ScreenActionService` allowlist dry-run, 前端执行仍只使用 `/api/screen/execute` 本次授权响应。本轮未实现 Database Provider 真实查询、自由 SQL、模型生成 SQL/Python/JavaScript/shell、外部 LLM summarizer、Prompt 内容编辑或任意 FVS 函数写入。新增 ADR-0025。验证已通过: `corepack.cmd pnpm --dir apps/web build`; `python -m compileall apps/api/app`; uv + FastAPI TestClient 阶段 5 smoke; `git diff --check`。
 
 2026-06-16 已完成通用可配置数字人阶段 4: 新增本地 `ScreenControlResolver`, 固定控屏命令可先按后端白名单 action label / description 解析为候选 `action_id`, 未命中仍走 Dora / Mock Dora。`/api/screen/execute` 在保留 `success`、`action_id`、`speak_text`、`request_id`、`error` 兼容字段的同时, 返回本次 `authorized_action` / `resolved_action`, 包含 `target`、`provider`、`fvs_function`、`fvs_routing`、净化后的 `params`、schema / allowlist 校验状态和拒绝原因。前端 FVS 执行路径已改为只使用本次 execute 响应中的授权动作, 不再依赖 `GET /api/screen/actions` 缓存执行参数; 该接口继续用于只读按钮展示。非法 action_id、非法 params、参数值覆盖和未知 target 均安全拒绝。本轮未实现可写配置、Prompt 编辑、可写 action 配置、配置 validate/test/reload/audit、Database Provider 真实查询、SQL 执行、外部 LLM summarizer 或 KnowledgeDirect 扩展。验证已通过: `corepack.cmd pnpm --dir apps/web build`; `python -m compileall apps/api/app`; uv + FastAPI TestClient 阶段 4 smoke 85 项; 静态验收搜索; `git diff --check`。
 

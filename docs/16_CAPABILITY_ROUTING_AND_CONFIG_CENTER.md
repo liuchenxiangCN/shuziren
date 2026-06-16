@@ -10,7 +10,7 @@
 
 ### 已确认的真实代码约束
 
-- 尚未实现 `/api/config/*`; 现有配置可观测入口主要是 `/api/demo/config`、`/api/ops/*` 和各业务 API。
+- 阶段 1 已实现只读 `/api/config/effective` / `/api/config/schema`; 阶段 5 已实现 `/api/config/overrides`、`/api/config/validate`、`/api/config/test`、`/api/config/reload` 和 `/api/config/audit`。这些接口仅覆盖非敏感 runtime overrides, 不开放密钥、数据库查询、Prompt 内容编辑或任意脚本。
 - 阶段 4 已增强 `POST /api/screen/execute`: 在兼容 `success`、`action_id`、`speak_text`、`request_id` 和 `error` 的同时, 返回本次 `authorized_action` / `resolved_action`、FVS routing、schema / allowlist 校验状态和拒绝原因。
 - 阶段 4 已将前端真实 FVS 执行依据切到 `/api/screen/execute` 本次响应中的授权动作; `GET /api/screen/actions` 只保留为只读按钮展示。
 - Docker Compose 当前把 `./config:/app/config:ro` 只读挂载; 可写配置页必须先引入独立覆盖目录, 不能直接改默认 YAML。
@@ -475,14 +475,14 @@ Prompt 配置原则:
 
 ### API
 
-阶段 1 只实现:
+阶段 1 已实现:
 
 ```text
 GET  /api/config/effective
 GET  /api/config/schema
 ```
 
-阶段 5 才允许继续实现:
+阶段 5 已实现:
 
 ```text
 POST /api/config/validate
@@ -495,10 +495,10 @@ GET  /api/config/audit
 说明:
 
 - `effective`: 返回脱敏后的当前生效配置。
-- `schema`: 阶段 1 返回只读字段、枚举、说明、来源和风险等级; 阶段 5 才标注可编辑字段。
-- `validate`: 保存前校验 YAML / JSON / Prompt / action_id。
+- `schema`: 阶段 5 标注可编辑字段、enabled endpoints、访问边界和 blocked 字段。
+- `validate`: 保存前校验 runtime override; 当前不校验 Prompt 内容, 因为 Prompt 内容编辑未实现。
 - `overrides`: 写入运行时覆盖文件, 不直接改根目录默认配置。
-- `test`: 用临时配置做 dry-run, 例如问数查询、知识库检索、控屏动作解析。
+- `test`: 用临时配置做 dry-run; 当前重点覆盖非敏感字段和 action 映射授权校验。
 - `reload`: 热加载配置; 不可热加载项提示需要重启。
 - `audit`: 查看配置修改记录。
 
@@ -506,7 +506,7 @@ GET  /api/config/audit
 
 - 必须由显式白名单构造 `ConfigSnapshot`, 不允许直接返回 `Settings.model_dump()` 后再过滤。
 - 每个字段建议包含 `value`、`source`、`sensitive`、`editable_stage` 和 `notes`。
-- `source` 可取 `code_default`、`root_config`、`customer_config`、`env`、`frontend_build`、`frontend_runtime`、`derived`。
+- `source` 可取 `code_default`、`root_config`、`customer_config`、`runtime_override`、`env`、`frontend_build`、`frontend_runtime`、`derived`。
 - 当前 `Settings` 对象不保留字段来源。阶段 1 必须新增 `ConfigSourceTracker` / `ConfigSnapshotBuilder` 之类的显式来源构造逻辑, 或在配置加载时保留 provenance; 不能只凭最终值猜测精确来源。
 - 若某字段在阶段 1 只能可靠判断为“合并后值”, 必须把 `source` 标为 `derived` 或 `unknown` 并在 `notes` 中说明限制, 不能误标为 `env` / `customer_config`。
 - `sensitive=true` 的字段只返回是否已配置、来源和脱敏摘要, 不返回原值。
@@ -822,16 +822,23 @@ Ops 看板应展示脱敏后的 provider、fallback、来源和执行状态, 便
 
 ### 阶段 5: 可写配置页与审计
 
-- 新增 `data/config-overrides/active.yaml`。
-- 新增配置 validate / test / reload / audit API。
-- 配置页支持修改非敏感配置。
-- 加入配置修改审计。
+状态: 2026-06-16 已完成。当前实现是受控 runtime override, 不是完整配置 IDE。
+
+- 已新增 `data/config-overrides/active.yaml` 覆盖层; Git 只跟踪 `.gitkeep` 和 README, 不跟踪现场 active/history/audit。
+- 已新增配置 validate / test / save / reload / audit API。
+- `/ops/config` 已支持修改非敏感 runtime 配置。
+- 已加入配置修改审计和 history。
+- 写接口访问边界: 配置 `CONFIG_ADMIN_TOKEN` 时要求 `X-Config-Admin-Token`; 未配置 token 时仅允许 localhost / testserver origin 的本地 POC 写入。
+- 当前只允许项目 / 客户展示字段、后端 FVS effective 字段、`ASK_METRICS_MODE=excel|dora|auto`、知识库 mode 与受控检索数值参数、source-bound summarizer profile 标签、`demo_stable_mode`、`gotoPage/pageNumber` action 映射。
+- 当前明确不允许 API Key、Token、密码、DSN、自由 SQL、脚本、Prompt 内容、外部 LLM summarizer provider / model / key、Database Provider 查询配置或任意 FVS 函数写入。
 
 验收:
 
-- 用户可在前端修改项目名称、客户名称、看板地址、能力 provider、Prompt profile 和 action 映射。
-- 保存前可校验, 保存后可 reload 或提示重启。
-- 修改记录可追溯。
+- 用户可在前端修改项目名称、客户名称、看板地址、受控能力 mode、source-bound summarizer profile 标签和 `gotoPage/pageNumber` action 映射。
+- 保存前可 validate / dry-run, 保存后可受控 reload。
+- 修改记录可追溯, save / reload / rejected 均写 audit。
+- Database Provider 仍保持 `not_implemented`, 未连接数据库、未执行 SQL。
+- 外部 LLM summarizer 和 Prompt 内容编辑仍未实现。
 
 ## 风险与控制
 
@@ -846,8 +853,8 @@ Ops 看板应展示脱敏后的 provider、fallback、来源和执行状态, 便
 | 数据库问数越权 | 只读账号; 表 / 字段白名单; 参数化查询; 超时和 limit |
 | Summarizer 编造 | 阶段 3 当前使用后端受控 `source_bound_extractive`, require_sources=true; no_evidence_policy=fallback; 外部 LLM summarizer 后续如接入必须继续 schema 校验 |
 | 控屏误执行 | Resolver 只产 action_id; Executor 永远本地白名单; 二次 `/api/screen/execute` |
-| action 可写早于授权 action 响应增强 | 阶段 4 前配置页不得写 action; 前端必须先切到执行本次授权 action |
-| 配置改坏现场环境 | validate + dry-run + audit + 可回滚 history |
+| action 可写早于授权 action 响应增强 | 阶段 4 已完成授权响应增强; 阶段 5 action 覆盖仅限 `gotoPage/pageNumber`, 保存前复用同一白名单 dry-run |
+| 配置改坏现场环境 | validate + dry-run + audit + 可回滚 history; save 和 reload 分离 |
 | 客户信息仍散落在历史文档 | 新功能和模板走 project 配置; 历史日志保留事实不改写 |
 
 ## 推荐下一步
@@ -858,4 +865,4 @@ Ops 看板应展示脱敏后的 provider、fallback、来源和执行状态, 便
 
 阶段 2 已完成: 已抽象 `AskMetricsProvider`, 将当前 Excel 问数迁移到配置驱动 `ExcelAskMetricsProvider`, 并移除旧 `AskMetricsService` 客户实例 allowlist; Database Provider 仍未实现。
 
-阶段 4 已完成。下一轮如继续主线, 可以进入阶段 5: 可写配置页与审计, 但必须另开 goal, 先设计 `data/config-overrides/`、validate / dry-run / audit 和访问控制边界; 不得把密钥、任意脚本、自由 SQL 或 Prompt 生成代码执行能力放入配置页。
+阶段 3、阶段 4、阶段 5 均已完成。下一轮如继续主线, 需要由用户另开 goal 选择方向: 客户现场验收复演、数据库问数真实查询专项, 或外部 LLM summarizer / Prompt 管理专项。数据库问数、外部 LLM summarizer、Prompt 内容编辑、自由 SQL 和模型生成代码执行仍不得顺手推进。

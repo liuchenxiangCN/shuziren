@@ -195,6 +195,60 @@ export interface ConfigSchemaResponse {
   sources: string[];
   sections: ConfigSection;
   disabled_endpoints: string[];
+  enabled_endpoints: string[];
+  writable: ConfigSection;
+}
+
+export interface ConfigOverridePayload {
+  overrides: Record<string, unknown>;
+  operator?: string | null;
+  reason?: string | null;
+}
+
+export interface ConfigOverrideResponse {
+  version: number;
+  path: string;
+  exists: boolean;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  reason?: string | null;
+  sha256: string;
+  access: Record<string, unknown>;
+  overrides: Record<string, unknown>;
+}
+
+export interface ConfigValidateResponse {
+  ok: boolean;
+  dry_run: boolean;
+  summary: Record<string, unknown>;
+  errors: Array<Record<string, unknown>>;
+  warnings: Array<Record<string, unknown>>;
+  normalized_overrides: Record<string, unknown>;
+  effective_preview: Record<string, unknown>;
+  action_preview: Array<Record<string, unknown>>;
+}
+
+export interface ConfigReloadResponse {
+  success: boolean;
+  reloaded_at: string;
+  summary: Record<string, unknown>;
+  error?: ErrorDetail | null;
+}
+
+export interface ConfigAuditEvent {
+  event_id: string;
+  created_at: string;
+  operator: string;
+  action: string;
+  reason: string;
+  ok: boolean;
+  summary: Record<string, unknown>;
+  errors: Array<Record<string, unknown>>;
+  active_sha256?: string | null;
+}
+
+export interface ConfigAuditResponse {
+  events: ConfigAuditEvent[];
 }
 
 export interface TtsSynthesizeRequest {

@@ -4,6 +4,13 @@
 
 ### Added
 
+- 新增上线前风险处理与全链路 E2E 验证任务包, 覆盖 `CONFIG_ADMIN_TOKEN`、Ops 访问边界、密钥轮换、FVS 正式嵌入策略、真实依赖连通、完整启动 smoke、安全负测、核心业务回归、异常 E2E 和证据归档。
+- 新增风险 R-039, 跟踪上线前缺少完整风险处理和全链路 E2E 证据的问题。
+- 新增阶段 5 运行时配置覆盖层 `data/config-overrides/`; `active.yaml`、`history/`、`audit.jsonl` 为本地运行数据, 不进入 Git。
+- 新增 `ConfigOverrideService`, 支持非敏感配置覆盖、validate、dry-run、保存、history 和 audit。
+- 新增配置写接口: `GET /api/config/overrides`、`POST /api/config/validate`、`POST /api/config/test`、`PUT /api/config/overrides`、`POST /api/config/reload`、`GET /api/config/audit`。
+- 新增 `/ops/config` 受控编辑面板, 支持项目 / 客户展示字段、FVS 后端 effective 字段、能力模式、受控 KnowledgeDirect 检索参数、`gotoPage/pageNumber` action 映射、validate、dry-run、保存、reload 和审计查看。
+- 新增 ADR-0025, 记录 runtime config overrides、访问控制边界和审计决策。
 - 新增 `ScreenControlResolver`, 固定控屏命令可按当前白名单 action label / description 先解析为候选 `action_id`, 未命中仍走 Dora / Mock Dora。
 - `/api/screen/execute` 新增 `authorized_action` / `resolved_action`、`target`、`provider`、`fvs_routing`、validation 和 `rejection_reason` 响应字段。
 - 新增 `KnowledgeDirectProvider`、`RagflowKnowledgeRetriever`、`SourceBoundSummarizer` 和 `KnowledgeService`, 支持阶段 3 KnowledgeDirectAdapter + 来源约束回答。
@@ -47,6 +54,17 @@
 
 ### Changed
 
+- 完成上线前风险处理与回归验证: 证据归档到 `logs/prelaunch-20260616-161620/`, 新日志包为 `logs/exports/zt-poc-logs-20260616-205839.zip`。
+- Docker Compose 默认 API / Web 端口绑定改为 `127.0.0.1`, 降低本地 POC 默认暴露 `/ops`、`/ops/config` 和 API 的风险。
+- Docker Compose 透出 RAGFlow / Knowledge / FVS 后端运行参数, 并避免对 AskMetrics / Knowledge / DemoStable 可写运行态字段注入非空默认值, 防止遮蔽 `data/config-overrides/active.yaml`。
+- `Settings` 启用 `env_ignore_empty=True`, 空环境变量不再覆盖代码默认值、客户配置或运行时覆盖。
+- 修复容器运行时 `ASK_METRICS_MODE=dora` 被 compose 默认 `excel` 遮蔽的问题; 回归验证 `dora` / `auto` 不返回 Excel source。
+- 上线前浏览器验证记录: `/ops` 无应用 console error, `/ops/config` 可渲染配置页; `/` 首页当前 FVS iframe `/webroot/...` 返回 502, 需客户 / 生产 FVS 策略复验。
+- `NEXT_ACTIONS` 当前 Next Task 更新为上线前验证已执行后的剩余现场项: 供应商 key 轮换、客户网络外部依赖复测、正式 FVS iframe 策略和真实麦克风 / 自动播放人工验收。
+- `CODEX_CONTEXT` 当前阶段已记录阶段 0A 到阶段 5 已完成; 本轮已补充上线前验证证据和剩余风险。
+- `Settings` 运行时配置优先级扩展为默认 / 根配置 -> 客户 profile -> `data/config-overrides/active.yaml` -> `.env` / 环境变量; 环境变量仍最高优先级。
+- `ScreenActionService` 支持在基础 YAML 白名单上合并阶段 5 action 覆盖, 并继续复用阶段 4 params allowlist 和 `authorized_action` 响应。
+- `/api/config/effective` 和 `/api/config/schema` 同步 `runtime_override` 来源、阶段 5 enabled endpoints、写入范围和仍 blocked 的 Database Provider / 外部 LLM / Prompt 内容编辑边界。
 - 前端 FVS 执行路径改为只使用 `/api/screen/execute` 本次响应中的 `authorized_action` / `resolved_action`; FVS Adapter 优先使用授权动作内的 `fvs_routing`, `GET /api/screen/actions` 仅用于只读按钮展示。
 - `/api/config/effective` 和 `/api/config/schema` 同步标注 ScreenControlResolver、授权 action 响应和 params allowlist 已实现, 可写 action 配置仍为 `not_implemented`。
 - `/api/chat` 和 `/api/chat/stream` 接入 KnowledgeDirectAdapter 分支: ask metrics 路由语义保持不变, 非问数知识类问题可在显式启用本地直连时由 Gateway 检索 + 来源约束回答。
@@ -103,12 +121,23 @@
 
 ### Security
 
+- 本地已配置并验证 `CONFIG_ADMIN_TOKEN`; 配置保存 / reload 在当前运行态必须携带 `X-Config-Admin-Token`, 缺失 token、错误 token 和非本机 Host / Origin 写入均被拒绝。
+- 配置安全负测已归档: API Key、Token、password、Bearer、DSN、RAGFlow MCP Key、URL secret query、自由 SQL、Database Provider 配置、脚本、shell、Python、JavaScript、任意 FVS function 均被拒绝。
+- 控屏安全负测已归档: 非白名单 action、未知 target、URL / script 参数、嵌套 params 和 `pageNumber` 覆盖均被拒绝; 合法执行仍返回本次 `authorized_action`。
+- `config/effective`、`config/schema`、`ops/export` 和前端 dist 未发现本地实际 secret 值; `.env` 仍为 ignored / untracked。供应商控制台 Key 轮换仍需人工完成。
+- 配置校验补充拦截 `python -c`、`python3 -c` 和 `python.exe` 可执行文本。
+- 配置写接口加入最小访问边界: 配置 `CONFIG_ADMIN_TOKEN` 时必须提交 `X-Config-Admin-Token`; 未配置 token 时仅允许 localhost / testserver origin 的本地 POC 写入。
+- 阶段 5 覆盖层显式拒绝 API Key、Token、密码、DSN、Bearer、任意脚本、可执行代码、自由 SQL、Database Provider 查询配置、外部 LLM summarizer provider / model / key 和任意 FVS 函数写入。
+- `/api/config/validate` / `/api/config/test` 对 action 覆盖复用后端 `ScreenActionService` dry-run; 只允许 `gotoPage` 和固定 `pageNumber`, 前端仍不能绕过 `/api/screen/execute`。
 - `/api/screen/execute` 的请求 params 现在必须匹配后端白名单动作配置; 未声明参数、参数值覆盖、URL、脚本、命令类内容和嵌套对象会被拒绝。
 - 拒绝响应不回显非法 params 原始值, 只返回键名和类型摘要, 避免把调用方传入的危险内容写回前端或日志。
 - 本轮未新增可写配置、Prompt 编辑、可写 action 配置、配置 validate/test/reload/audit、Database Provider 真实查询、SQL 执行、外部 LLM summarizer 或模型生成代码执行路径。
 
 ### Verified
 
+- 阶段 5 `corepack.cmd pnpm --dir apps/web build` 和 `python -m compileall apps/api/app` 通过。
+- 阶段 5 使用 uv + FastAPI TestClient 完成配置写路径 smoke: schema/effective/overrides/audit 返回正常; validate/dry-run/save/reload 通过; reload 后新增 action 可由 `/api/screen/execute` 授权执行; API Key 样式字段和 database/free SQL payload 均被拒绝。
+- 阶段 5 `git diff --check` 通过。
 - 阶段 4 `corepack.cmd pnpm --dir apps/web build` 和 `python -m compileall apps/api/app` 通过。
 - 阶段 4 使用 uv + FastAPI TestClient 完成 85 项 smoke: `/api/screen/execute` 合法 action 返回 `authorized_action`; 非法 action_id、非法 params、参数值覆盖和未知 target 均拒绝; `/api/config/effective`、`/api/config/schema`、`/api/chat`、`/api/chat/stream`、11 个固定问数和 KnowledgeDirect summarizer 命中 / fallback 均通过。
 - 阶段 4 静态验收搜索和 `git diff --check` 通过。

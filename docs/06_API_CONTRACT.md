@@ -517,14 +517,18 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
   "implementation_status": {
     "readonly_config_api": "implemented",
     "readonly_config_page": "implemented",
-    "writable_config": "not_implemented",
+    "writable_config": "implemented",
+    "config_validate_api": "implemented",
+    "config_test_api": "implemented",
+    "config_reload_api": "implemented",
+    "config_audit_api": "implemented",
     "ask_metrics_provider_interface": "implemented",
     "excel_ask_metrics_provider": "implemented",
     "database_provider": "not_implemented",
     "knowledge_direct_adapter": "implemented",
     "source_bound_summarizer": "implemented",
     "llm_summarizer": "not_implemented",
-    "writable_prompt": "not_implemented"
+    "writable_prompt": "profile_label_only"
   },
   "sensitive": {
     "dora_api_key": {
@@ -543,12 +547,12 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
 - `source` 只能来自显式来源构造; 无法精确判断时必须使用 `derived` / `unknown` 并说明限制。
 - sensitive 字段只返回 `configured` / `source` / `masked` / `sensitive`, 不返回 API Key、Token、密码、DSN、Bearer、`sk-*`、`ak-*` 或供应商原始响应。
 - URL 字段如包含 `token`、`key`、`secret`、`password` 等查询参数, 返回前必须脱敏。
-- 当前 Database Provider、可写 action 配置、外部 LLM summarizer、可写 Prompt 均必须显示为 `not_implemented`; KnowledgeDirectAdapter 和 source-bound summarizer 显示为 `implemented`。
+- 当前 Database Provider、外部 LLM summarizer、Prompt 内容编辑仍必须显示为未实现; 可写配置只允许阶段 5 非敏感 runtime overrides; KnowledgeDirectAdapter 和 source-bound summarizer 显示为 `implemented`。
 - 本接口不得改变 `/api/chat`、`/api/chat/stream`、`/api/tts/stream`、`/api/screen/execute` 行为。
 
 ## GET /api/config/schema
 
-阶段 1 已实现。返回只读配置快照 schema 和后续阶段才允许开放的接口列表。
+阶段 1 已实现只读 schema。阶段 5 已扩展为可写配置 schema, 返回 enabled endpoints、可编辑字段范围和 blocked 字段范围。
 
 ### Response
 
@@ -556,8 +560,8 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
 {
   "version": "1.0",
   "generated_at": "2026-06-15T20:00:00+08:00",
-  "read_only": true,
-  "sources": ["code_default", "root_config", "customer_config", "env", "frontend_runtime", "derived", "unknown"],
+  "read_only": false,
+  "sources": ["code_default", "root_config", "customer_config", "runtime_override", "env", "frontend_runtime", "derived", "unknown"],
   "sections": {
     "project": {
       "description": "项目、客户、场景和助手展示字段。",
@@ -570,17 +574,139 @@ V0.9 已实现。读取演示模式配置和固定演示问题集, 供前端演�
       "sensitive": true
     }
   },
-  "disabled_endpoints": [
+  "disabled_endpoints": [],
+  "enabled_endpoints": [
     "PUT /api/config/overrides",
     "POST /api/config/validate",
     "POST /api/config/test",
     "POST /api/config/reload",
     "GET /api/config/audit"
-  ]
+  ],
+  "writable": {
+    "override_path": "data/config-overrides/active.yaml",
+    "access_control": "CONFIG_ADMIN_TOKEN header if configured; otherwise localhost/origin-bound local POC access.",
+    "blocked": ["API Key/Token/password/DSN/Bearer", "free SQL", "script/code/shell", "external LLM summarizer"]
+  }
 }
 ```
 
-阶段 1 不实现 `PUT /api/config/overrides`、`POST /api/config/validate`、`POST /api/config/test`、`POST /api/config/reload` 或 `GET /api/config/audit`。
+阶段 5 已实现 `PUT /api/config/overrides`、`POST /api/config/validate`、`POST /api/config/test`、`POST /api/config/reload` 和 `GET /api/config/audit`。这些接口只接收非敏感 runtime override, 不接收 API Key、Token、DSN、任意脚本、自由 SQL 或外部 LLM provider 配置。
+
+## GET /api/config/overrides
+
+阶段 5 已实现。读取当前 runtime override 文档和访问控制摘要。
+
+### Response
+
+```json
+{
+  "version": 1,
+  "path": "data/config-overrides/active.yaml",
+  "exists": true,
+  "updated_at": "2026-06-16T20:00:00+08:00",
+  "updated_by": "local-admin",
+  "reason": "现场配置调整",
+  "sha256": "9ad1...",
+  "access": {
+    "requires_token": false,
+    "token_header": "X-Config-Admin-Token",
+    "operator_header": "X-Config-Operator",
+    "local_origin_without_token": true,
+    "write_scope": "non_sensitive_runtime_overrides"
+  },
+  "overrides": {
+    "project": {
+      "project_name": "通用可配置数字人 POC"
+    }
+  }
+}
+```
+
+## POST /api/config/validate
+
+阶段 5 已实现。校验覆盖草稿, 不写文件、不 reload。
+
+### Request
+
+```json
+{
+  "operator": "local-admin",
+  "reason": "调整演示客户名称",
+  "overrides": {
+    "customer": {
+      "customer_name": "默认客户",
+      "scenario_name": "通用大屏交互",
+      "assistant_name": "小智"
+    },
+    "capabilities": {
+      "ask_metrics": {
+        "mode": "excel"
+      }
+    }
+  }
+}
+```
+
+### Response
+
+```json
+{
+  "ok": true,
+  "dry_run": false,
+  "summary": {
+    "changed_paths": ["customer.customer_name", "capabilities.ask_metrics.mode"],
+    "changed_count": 2,
+    "action_override_count": 0,
+    "database_provider": "not_implemented",
+    "llm_summarizer": "not_implemented",
+    "secrets_allowed": false
+  },
+  "errors": [],
+  "warnings": [],
+  "normalized_overrides": {},
+  "effective_preview": {},
+  "action_preview": []
+}
+```
+
+## POST /api/config/test
+
+阶段 5 已实现。与 validate 使用同一套规则, `dry_run=true`, 并对 action 覆盖构造临时 `ScreenActionService` 做授权 dry-run。
+
+## PUT /api/config/overrides
+
+阶段 5 已实现。保存覆盖文件和 history, 并写 audit。该接口不自动 reload。
+
+访问控制:
+
+- 如后端配置 `CONFIG_ADMIN_TOKEN`, 必须提交 `X-Config-Admin-Token`。
+- 如未配置 token, 仅允许 localhost / testserver origin 的本地 POC 写入。
+- 可选 `X-Config-Operator` 或 request body `operator` 用于审计。
+
+## POST /api/config/reload
+
+阶段 5 已实现。校验当前 `active.yaml`, 通过后重建 Settings、ScreenActionService、ScreenControlResolver、Mock Dora、WakeWords、AskMetricsService、KnowledgeService、ASR/TTS Provider 和 DoraClient。不会连接数据库或新增外部能力。
+
+### Response
+
+```json
+{
+  "success": true,
+  "reloaded_at": "2026-06-16T20:00:00+08:00",
+  "summary": {
+    "customer_id": "default",
+    "project_name": "通用可配置数字人 POC",
+    "ask_metrics_mode": "excel",
+    "knowledge_mode": "dora",
+    "action_count": 4,
+    "override_path": "data/config-overrides/active.yaml"
+  }
+}
+```
+
+## GET /api/config/audit
+
+阶段 5 已实现。读取配置修改审计记录。审计记录只包含 operator、reason、动作、摘要、错误和 active sha256, 不包含密钥。
 
 ## POST /api/tts
 

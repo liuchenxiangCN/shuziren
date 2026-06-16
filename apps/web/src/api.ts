@@ -4,8 +4,13 @@ import type {
   ChatRequest,
   ChatResponse,
   ChatStreamTtsReady,
+  ConfigAuditResponse,
   ConfigEffectiveResponse,
+  ConfigOverridePayload,
+  ConfigOverrideResponse,
+  ConfigReloadResponse,
   ConfigSchemaResponse,
+  ConfigValidateResponse,
   DemoConfigResponse,
   OpsDependenciesResponse,
   OpsErrorsResponse,
@@ -160,6 +165,50 @@ export function fetchConfigSchema(): Promise<ConfigSchemaResponse> {
   return requestJson<ConfigSchemaResponse>('/api/config/schema');
 }
 
+export function fetchConfigOverrides(): Promise<ConfigOverrideResponse> {
+  return requestJson<ConfigOverrideResponse>('/api/config/overrides');
+}
+
+export function validateConfigOverrides(payload: ConfigOverridePayload): Promise<ConfigValidateResponse> {
+  return requestJson<ConfigValidateResponse>('/api/config/validate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function dryRunConfigOverrides(payload: ConfigOverridePayload): Promise<ConfigValidateResponse> {
+  return requestJson<ConfigValidateResponse>('/api/config/test', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function saveConfigOverrides(
+  payload: ConfigOverridePayload,
+  admin: { token?: string; operator?: string } = {},
+): Promise<ConfigValidateResponse> {
+  return requestJson<ConfigValidateResponse>('/api/config/overrides', {
+    method: 'PUT',
+    headers: configAdminHeaders(admin),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function reloadConfig(
+  payload: ConfigOverridePayload,
+  admin: { token?: string; operator?: string } = {},
+): Promise<ConfigReloadResponse> {
+  return requestJson<ConfigReloadResponse>('/api/config/reload', {
+    method: 'POST',
+    headers: configAdminHeaders(admin),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function fetchConfigAudit(limit = 50): Promise<ConfigAuditResponse> {
+  return requestJson<ConfigAuditResponse>(`/api/config/audit?limit=${encodeURIComponent(limit)}`);
+}
+
 export function synthesizeSpeech(payload: TtsSynthesizeRequest): Promise<TtsSynthesizeResponse> {
   return requestJson<TtsSynthesizeResponse>('/api/tts', {
     method: 'POST',
@@ -258,4 +307,11 @@ export async function fetchOpsExport(limit = 50): Promise<string> {
     throw new Error(errorPayload?.error?.message || `HTTP ${response.status}`);
   }
   return response.text();
+}
+
+function configAdminHeaders(admin: { token?: string; operator?: string }): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (admin.token) headers['X-Config-Admin-Token'] = admin.token;
+  if (admin.operator) headers['X-Config-Operator'] = admin.operator;
+  return headers;
 }

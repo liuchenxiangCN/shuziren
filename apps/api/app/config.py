@@ -7,6 +7,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.services.yaml_loader import load_yaml_file
+from app.services.config_overrides import apply_settings_overrides
 
 
 def _resolve_project_root() -> Path:
@@ -50,6 +51,8 @@ class Settings(BaseSettings):
     ask_metrics_mode: str = "excel"
     sqlite_path: str = Field(default=str(PROJECT_ROOT / "data" / "sessions.db"))
     tts_cache_dir: str = Field(default=str(PROJECT_ROOT / "data" / "tts-cache"))
+    config_overrides_dir: str = Field(default=str(PROJECT_ROOT / "data" / "config-overrides"))
+    config_admin_token: str = ""
 
     dora_base_url: str = ""
     dora_api_key: str = ""
@@ -117,12 +120,13 @@ class Settings(BaseSettings):
         env_file=str(PROJECT_ROOT / ".env"),
         extra="ignore",
         case_sensitive=False,
+        env_ignore_empty=True,
     )
 
 
 @lru_cache
 def get_settings() -> Settings:
-    return _apply_customer_config(Settings())
+    return apply_settings_overrides(_apply_customer_config(Settings()))
 
 
 def _apply_customer_config(settings: Settings) -> Settings:
@@ -133,9 +137,6 @@ def _apply_customer_config(settings: Settings) -> Settings:
         "customer_id": customer_id,
         "customer_config_dir": str(customer_dir),
     }
-
-    if not customer_dir.exists():
-        return settings.model_copy(update=overrides)
 
     runtime = _load_optional_yaml(customer_dir / "runtime.yaml")
     if runtime:

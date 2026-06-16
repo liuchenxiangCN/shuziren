@@ -473,6 +473,119 @@ h1 {
   align-content: start;
 }
 
+.config-editor {
+  display: grid;
+  gap: 14px;
+}
+
+.config-editor-meta,
+.config-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.config-form-grid label,
+.config-editor-meta label,
+.config-action-grid label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.config-form-grid label.wide,
+.config-action-grid label.wide {
+  grid-column: span 2;
+}
+
+.config-form-grid span,
+.config-editor-meta span,
+.config-action-grid span {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.config-form-grid input,
+.config-editor-meta input,
+.config-form-grid select,
+.config-action-grid input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid #cbd5df;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #151b22;
+  font: inherit;
+}
+
+.ops-section-title.compact {
+  align-items: center;
+  grid-template-columns: 1fr auto;
+}
+
+.config-action-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.config-action-grid article {
+  padding: 10px;
+  border: 1px solid #d9e0e7;
+  border-radius: 8px;
+  background: #f8fafc;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 120px 1.4fr 1.4fr auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.config-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ghost-button {
+  border-color: #cbd5df;
+  background: #ffffff;
+  color: #344054;
+}
+
+.config-validation {
+  padding: 10px;
+  border: 1px solid #d9e0e7;
+  border-radius: 8px;
+  background: #ffffff;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.ok-text {
+  color: #0f766e !important;
+}
+
+.error-text {
+  color: #b42318 !important;
+}
+
+.ops-alert.success {
+  border-color: #99d4c8;
+  background: #ecfdf7;
+  color: #0f766e;
+}
+
+.config-audit-list {
+  display: grid;
+  gap: 8px;
+}
+
 .config-list {
   display: grid;
   gap: 8px;
@@ -1276,6 +1389,15 @@ h1 {
   .config-grid {
     grid-template-columns: 1fr;
   }
+
+  .config-editor-meta,
+  .config-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .config-action-grid article {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -1310,12 +1432,20 @@ h1 {
   .metric-strip,
   .ops-summary,
   .config-summary,
+  .config-editor-meta,
+  .config-form-grid,
+  .config-action-grid article,
   .dependency-grid,
   .latency-grid,
   .demo-row,
   .voice-actions,
   .input-row {
     grid-template-columns: 1fr;
+  }
+
+  .config-form-grid label.wide,
+  .config-action-grid label.wide {
+    grid-column: auto;
   }
 
   .ops-row {

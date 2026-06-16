@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import {
+  dryRunConfigOverrides,
   executeScreenAction,
+  fetchConfigAudit,
   fetchConfigEffective,
+  fetchConfigOverrides,
   fetchConfigSchema,
   fetchDemoConfig,
   fetchOpsDependencies,
@@ -13,20 +16,26 @@ import {
   fetchOpsSessions,
   fetchWakeConfig,
   fetchScreenActions,
+  reloadConfig,
   sendChat,
+  saveConfigOverrides,
   streamChat,
   streamSpeech,
   synthesizeSpeech,
   toApiUrl,
   transcribeAudio,
+  validateConfigOverrides,
 } from './api';
 import { executeFvsAction as executeFvsAdapterAction, getFvsConfig } from './fvsAdapter';
 import type {
   ChatResponse,
   ChatStreamTtsReady,
+  ConfigAuditEvent,
   ConfigEffectiveResponse,
   ConfigField,
+  ConfigOverrideResponse,
   ConfigSchemaResponse,
+  ConfigValidateResponse,
   DemoConfigResponse,
   DemoQuestion,
   OpsDependenciesResponse,
@@ -103,6 +112,35 @@ interface MonitorCommandOptions {
   isFollowup?: boolean;
 }
 
+interface ConfigActionDraft {
+  id: string;
+  label: string;
+  description: string;
+  speak_text: string;
+  pageNumber: number;
+}
+
+interface ConfigDraft {
+  project_name: string;
+  product_name: string;
+  customer_name: string;
+  scenario_name: string;
+  assistant_name: string;
+  fvs_integration_mode: string;
+  fvs_url: string;
+  fvs_target_origin: string;
+  ask_metrics_mode: string;
+  knowledge_mode: string;
+  knowledge_page_size: number;
+  knowledge_top_k: number;
+  knowledge_similarity_threshold: number;
+  knowledge_max_chunk_chars: number;
+  knowledge_summarizer_profile: string;
+  knowledge_require_sources: boolean;
+  demo_stable_mode: boolean;
+  actions: ConfigActionDraft[];
+}
+
 type AudioPlaybackResult = 'ended' | 'blocked' | 'error' | 'interrupted';
 
 interface PcmStreamPlayback {
@@ -118,6 +156,27 @@ interface PcmStreamPlayback {
 const WAKE_GREETING_TEXT = '您好。';
 const ACKNOWLEDGEMENT_TEXT = '收到，正在为您查找信息。';
 const ACKNOWLEDGEMENT_TTS_MAX_WAIT_MS = 1800;
+
+const DEFAULT_CONFIG_DRAFT: ConfigDraft = {
+  project_name: '',
+  product_name: '',
+  customer_name: '',
+  scenario_name: '',
+  assistant_name: '',
+  fvs_integration_mode: 'mock',
+  fvs_url: '',
+  fvs_target_origin: '',
+  ask_metrics_mode: 'excel',
+  knowledge_mode: 'dora',
+  knowledge_page_size: 3,
+  knowledge_top_k: 16,
+  knowledge_similarity_threshold: 0.35,
+  knowledge_max_chunk_chars: 1200,
+  knowledge_summarizer_profile: 'source_bound_extractive',
+  knowledge_require_sources: true,
+  demo_stable_mode: false,
+  actions: [],
+};
 const FVS_LOAD_TIMEOUT_MS = 10000;
 
 const DEFAULT_WAKE_CONFIG: WakeConfigResponse = {
@@ -198,8 +257,19 @@ const opsErrorText = ref('');
 const opsLastUpdated = ref('');
 const configEffective = ref<ConfigEffectiveResponse | null>(null);
 const configSchema = ref<ConfigSchemaResponse | null>(null);
+const configOverrides = ref<ConfigOverrideResponse | null>(null);
+const configAuditEvents = ref<ConfigAuditEvent[]>([]);
+const configDraft = ref<ConfigDraft>({ ...DEFAULT_CONFIG_DRAFT, actions: [] });
+const configValidation = ref<ConfigValidateResponse | null>(null);
 const configLoading = ref(false);
+const configSaving = ref(false);
+const configReloading = ref(false);
+const configTesting = ref(false);
 const configErrorText = ref('');
+const configMessageText = ref('');
+const configOperator = ref('local-admin');
+const configReason = ref('');
+const configAdminToken = ref('');
 const demoConfig = ref<DemoConfigResponse | null>(null);
 const demoConfigError = ref('');
 const fvsLoadState = ref<FvsLoadState>(fvsConfig.enabled && fvsConfig.mode === 'iframe' ? 'loading' : 'idle');
@@ -348,6 +418,14 @@ const configProvenanceNotes = computed(() => {
   return Array.isArray(notes) ? notes.map(String) : [];
 });
 const configDisabledEndpoints = computed(() => configSchema.value?.disabled_endpoints ?? []);
+const configEnabledEndpoints = computed(() => configSchema.value?.enabled_endpoints ?? []);
+const configValidationErrors = computed(() => configValidation.value?.errors ?? []);
+const configValidationWarnings = computed(() => configValidation.value?.warnings ?? []);
+const configChangedPaths = computed(() => {
+  const paths = configValidation.value?.summary?.changed_paths;
+  return Array.isArray(paths) ? paths.map(String) : [];
+});
+const configAccessRequiresToken = computed(() => Boolean(configOverrides.value?.access?.requires_token));
 const frontendRuntimeFvsFields = computed(() => [
   ['enabled', { value: fvsConfig.enabled, source: 'frontend_runtime', sensitive: false } as ConfigField],
   ['mode', { value: fvsConfig.mode, source: 'frontend_runtime', sensitive: false } as ConfigField],
@@ -479,14 +557,94 @@ async function exportOpsLogs() {
 async function loadConfigDashboard() {
   configLoading.value = true;
   configErrorText.value = '';
+  configMessageText.value = '';
   try {
-    const [effective, schema] = await Promise.all([fetchConfigEffective(), fetchConfigSchema()]);
+    const [effective, schema, overrides, audit] = await Promise.all([
+      fetchConfigEffective(),
+      fetchConfigSchema(),
+      fetchConfigOverrides(),
+      fetchConfigAudit(30),
+    ]);
     configEffective.value = effective;
     configSchema.value = schema;
+    configOverrides.value = overrides;
+    configAuditEvents.value = audit.events;
+    configDraft.value = buildConfigDraft(effective, overrides.overrides, actions.value);
+    configValidation.value = null;
   } catch (error) {
     configErrorText.value = error instanceof Error ? error.message : '配置快照读取失败';
   } finally {
     configLoading.value = false;
+  }
+}
+
+async function validateConfigDraft(dryRun = false) {
+  configTesting.value = true;
+  configErrorText.value = '';
+  configMessageText.value = '';
+  try {
+    const payload = buildConfigOverrideRequest();
+    configValidation.value = dryRun ? await dryRunConfigOverrides(payload) : await validateConfigOverrides(payload);
+    configMessageText.value = configValidation.value.ok
+      ? dryRun
+        ? 'dry-run 通过'
+        : 'validate 通过'
+      : dryRun
+        ? 'dry-run 未通过'
+        : 'validate 未通过';
+  } catch (error) {
+    configErrorText.value = error instanceof Error ? error.message : '配置校验失败';
+  } finally {
+    configTesting.value = false;
+  }
+}
+
+async function saveConfigDraft() {
+  configSaving.value = true;
+  configErrorText.value = '';
+  configMessageText.value = '';
+  try {
+    const payload = buildConfigOverrideRequest();
+    configValidation.value = await saveConfigOverrides(payload, {
+      token: configAdminToken.value,
+      operator: configOperator.value,
+    });
+    configMessageText.value = configValidation.value.ok ? '覆盖配置已保存' : '覆盖配置未保存';
+    const [overrides, audit] = await Promise.all([fetchConfigOverrides(), fetchConfigAudit(30)]);
+    configOverrides.value = overrides;
+    configAuditEvents.value = audit.events;
+  } catch (error) {
+    configErrorText.value = error instanceof Error ? error.message : '配置保存失败';
+  } finally {
+    configSaving.value = false;
+  }
+}
+
+async function reloadConfigRuntime() {
+  configReloading.value = true;
+  configErrorText.value = '';
+  configMessageText.value = '';
+  try {
+    const response = await reloadConfig(
+      {
+        overrides: {},
+        operator: configOperator.value,
+        reason: configReason.value,
+      },
+      {
+        token: configAdminToken.value,
+        operator: configOperator.value,
+      },
+    );
+    configMessageText.value = response.success ? '配置已 reload' : response.error?.message || '配置 reload 未生效';
+    const [screenActions, audit] = await Promise.all([fetchScreenActions(), fetchConfigAudit(30)]);
+    actions.value = screenActions.actions;
+    configAuditEvents.value = audit.events;
+    await loadConfigDashboard();
+  } catch (error) {
+    configErrorText.value = error instanceof Error ? error.message : '配置 reload 失败';
+  } finally {
+    configReloading.value = false;
   }
 }
 
@@ -1833,6 +1991,202 @@ function sessionErrorText(session: OpsSessionSummary): string {
   return `${code}: ${message}`;
 }
 
+function buildConfigDraft(
+  effective: ConfigEffectiveResponse,
+  overrides: Record<string, unknown>,
+  screenActions: ScreenAction[],
+): ConfigDraft {
+  const knowledge = asConfigRecord(asConfigRecord(effective.capabilities).knowledge);
+  const retrieval = asConfigRecord(knowledge.retrieval);
+  const summarizer = asConfigRecord(knowledge.summarizer);
+  const dashboard = asConfigRecord(effective.dashboard.backend_effective);
+  const draft: ConfigDraft = {
+    ...DEFAULT_CONFIG_DRAFT,
+    project_name: fieldString(effective.project.project_name),
+    product_name: fieldString(effective.project.product_name),
+    customer_name: fieldString(effective.customer.customer_name),
+    scenario_name: fieldString(effective.customer.scenario_name),
+    assistant_name: fieldString(effective.customer.assistant_name),
+    fvs_integration_mode: fieldString(dashboard.integration_mode, 'mock'),
+    fvs_url: fieldString(dashboard.url),
+    fvs_target_origin: fieldString(dashboard.target_origin),
+    ask_metrics_mode: fieldString(asConfigRecord(asConfigRecord(effective.capabilities).ask_metrics).mode, 'excel'),
+    knowledge_mode: fieldString(knowledge.mode, 'dora'),
+    knowledge_page_size: fieldNumber(retrieval.page_size, 3),
+    knowledge_top_k: fieldNumber(retrieval.top_k, 16),
+    knowledge_similarity_threshold: fieldNumber(retrieval.similarity_threshold, 0.35),
+    knowledge_max_chunk_chars: fieldNumber(retrieval.max_chunk_chars, 1200),
+    knowledge_summarizer_profile: fieldString(summarizer.profile, 'source_bound_extractive'),
+    knowledge_require_sources: fieldBoolean(summarizer.require_sources, true),
+    demo_stable_mode: fieldBoolean(effective.mock_switches.demo_stable_mode, false),
+    actions: screenActions.map(actionDraftFromScreenAction),
+  };
+  mergeOverrideDraft(draft, overrides);
+  return draft;
+}
+
+function mergeOverrideDraft(draft: ConfigDraft, overrides: Record<string, unknown>) {
+  const project = asConfigRecord(overrides.project);
+  const customer = asConfigRecord(overrides.customer);
+  const dashboard = asConfigRecord(overrides.dashboard);
+  const capabilities = asConfigRecord(overrides.capabilities);
+  const askMetrics = asConfigRecord(capabilities.ask_metrics);
+  const knowledge = asConfigRecord(capabilities.knowledge);
+  const retrieval = asConfigRecord(knowledge.retrieval);
+  const summarizer = asConfigRecord(knowledge.summarizer);
+  const screenControl = asConfigRecord(capabilities.screen_control);
+  const mockSwitches = asConfigRecord(overrides.mock_switches);
+
+  if (typeof project.project_name === 'string') draft.project_name = project.project_name;
+  if (typeof project.product_name === 'string') draft.product_name = project.product_name;
+  if (typeof customer.customer_name === 'string') draft.customer_name = customer.customer_name;
+  if (typeof customer.scenario_name === 'string') draft.scenario_name = customer.scenario_name;
+  if (typeof customer.assistant_name === 'string') draft.assistant_name = customer.assistant_name;
+  if (typeof dashboard.fvs_integration_mode === 'string') draft.fvs_integration_mode = dashboard.fvs_integration_mode;
+  if (typeof dashboard.fvs_url === 'string') draft.fvs_url = dashboard.fvs_url;
+  if (typeof dashboard.fvs_target_origin === 'string') draft.fvs_target_origin = dashboard.fvs_target_origin;
+  if (typeof askMetrics.mode === 'string') draft.ask_metrics_mode = askMetrics.mode;
+  if (typeof knowledge.mode === 'string') draft.knowledge_mode = knowledge.mode;
+  if (typeof retrieval.page_size === 'number') draft.knowledge_page_size = retrieval.page_size;
+  if (typeof retrieval.top_k === 'number') draft.knowledge_top_k = retrieval.top_k;
+  if (typeof retrieval.similarity_threshold === 'number') {
+    draft.knowledge_similarity_threshold = retrieval.similarity_threshold;
+  }
+  if (typeof retrieval.max_chunk_chars === 'number') draft.knowledge_max_chunk_chars = retrieval.max_chunk_chars;
+  if (typeof summarizer.profile === 'string') draft.knowledge_summarizer_profile = summarizer.profile;
+  if (typeof summarizer.require_sources === 'boolean') draft.knowledge_require_sources = summarizer.require_sources;
+  if (typeof mockSwitches.demo_stable_mode === 'boolean') draft.demo_stable_mode = mockSwitches.demo_stable_mode;
+
+  const overrideActions = asConfigRecord(screenControl.actions);
+  const actionEntries = Object.entries(overrideActions);
+  if (actionEntries.length > 0) {
+    draft.actions = actionEntries.map(([id, raw]) => actionDraftFromRecord(id, asConfigRecord(raw)));
+  }
+}
+
+function actionDraftFromScreenAction(action: ScreenAction): ConfigActionDraft {
+  return actionDraftFromRecord(action.id, {
+    label: action.label,
+    description: action.description,
+    speak_text: action.speak_text,
+    params: action.params,
+  });
+}
+
+function actionDraftFromRecord(id: string, raw: Record<string, unknown>): ConfigActionDraft {
+  const params = asConfigRecord(raw.params);
+  const rawPageNumber = params.pageNumber ?? params.page_number ?? 1;
+  const pageNumber = Number.isFinite(Number(rawPageNumber)) ? Number(rawPageNumber) : 1;
+  return {
+    id,
+    label: String(raw.label ?? id),
+    description: String(raw.description ?? ''),
+    speak_text: String(raw.speak_text ?? ''),
+    pageNumber,
+  };
+}
+
+function buildConfigOverrideRequest() {
+  return {
+    overrides: buildConfigOverridesFromDraft(configDraft.value),
+    operator: configOperator.value,
+    reason: configReason.value,
+  };
+}
+
+function buildConfigOverridesFromDraft(draft: ConfigDraft): Record<string, unknown> {
+  const actions = Object.fromEntries(
+    draft.actions
+      .filter((action) => action.id.trim())
+      .map((action) => [
+        action.id.trim().toUpperCase(),
+        {
+          label: action.label,
+          type: 'page',
+          description: action.description,
+          fvs_function: 'gotoPage',
+          params: {
+            pageNumber: Number(action.pageNumber),
+          },
+          speak_text: action.speak_text,
+        },
+      ]),
+  );
+  return {
+    project: {
+      project_name: draft.project_name,
+      product_name: draft.product_name,
+    },
+    customer: {
+      customer_name: draft.customer_name,
+      scenario_name: draft.scenario_name,
+      assistant_name: draft.assistant_name,
+    },
+    dashboard: {
+      fvs_integration_mode: draft.fvs_integration_mode,
+      fvs_url: draft.fvs_url,
+      fvs_target_origin: draft.fvs_target_origin,
+    },
+    capabilities: {
+      ask_metrics: {
+        mode: draft.ask_metrics_mode,
+      },
+      knowledge: {
+        mode: draft.knowledge_mode,
+        retrieval: {
+          page_size: Number(draft.knowledge_page_size),
+          top_k: Number(draft.knowledge_top_k),
+          similarity_threshold: Number(draft.knowledge_similarity_threshold),
+          max_chunk_chars: Number(draft.knowledge_max_chunk_chars),
+        },
+        summarizer: {
+          profile: draft.knowledge_summarizer_profile,
+          require_sources: draft.knowledge_require_sources,
+          no_evidence_policy: 'fallback',
+        },
+      },
+      screen_control: {
+        actions,
+      },
+    },
+    mock_switches: {
+      demo_stable_mode: draft.demo_stable_mode,
+    },
+  };
+}
+
+function addConfigActionDraft() {
+  const index = configDraft.value.actions.length + 1;
+  configDraft.value.actions.push({
+    id: `CUSTOM_ACTION_${index}`,
+    label: '新页面',
+    description: '切换到新页面',
+    speak_text: '已为您切换到新页面。',
+    pageNumber: index,
+  });
+}
+
+function removeConfigActionDraft(index: number) {
+  configDraft.value.actions.splice(index, 1);
+}
+
+function fieldString(value: unknown, fallback = ''): string {
+  const fieldValue = toConfigField(value).value;
+  if (fieldValue === null || fieldValue === undefined) return fallback;
+  return String(fieldValue);
+}
+
+function fieldNumber(value: unknown, fallback: number): number {
+  const numeric = Number(toConfigField(value).value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function fieldBoolean(value: unknown, fallback: boolean): boolean {
+  const fieldValue = toConfigField(value).value;
+  if (typeof fieldValue === 'boolean') return fieldValue;
+  return fallback;
+}
+
 function asConfigRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
@@ -2341,6 +2695,188 @@ function writeAscii(view: DataView, offset: number, value: string) {
               </div>
             </div>
 
+            <section class="ops-section config-section config-editor">
+              <div class="ops-section-title">
+                <span>可写覆盖层</span>
+                <small>{{ configOverrides?.path || 'data/config-overrides/active.yaml' }}</small>
+              </div>
+              <div class="config-editor-meta">
+                <label>
+                  <span>operator</span>
+                  <input v-model="configOperator" type="text" maxlength="80" />
+                </label>
+                <label>
+                  <span>reason</span>
+                  <input v-model="configReason" type="text" maxlength="200" />
+                </label>
+                <label>
+                  <span>admin token</span>
+                  <input v-model="configAdminToken" type="password" autocomplete="off" />
+                </label>
+                <span class="ops-status-chip" :class="configAccessRequiresToken ? 'warning' : 'ok'">
+                  {{ configAccessRequiresToken ? 'token required' : 'local write' }}
+                </span>
+              </div>
+
+              <div class="config-form-grid">
+                <label>
+                  <span>project name</span>
+                  <input v-model="configDraft.project_name" type="text" maxlength="80" />
+                </label>
+                <label>
+                  <span>product name</span>
+                  <input v-model="configDraft.product_name" type="text" maxlength="80" />
+                </label>
+                <label>
+                  <span>customer name</span>
+                  <input v-model="configDraft.customer_name" type="text" maxlength="80" />
+                </label>
+                <label>
+                  <span>scenario name</span>
+                  <input v-model="configDraft.scenario_name" type="text" maxlength="80" />
+                </label>
+                <label>
+                  <span>assistant name</span>
+                  <input v-model="configDraft.assistant_name" type="text" maxlength="80" />
+                </label>
+                <label>
+                  <span>demo stable</span>
+                  <select v-model="configDraft.demo_stable_mode">
+                    <option :value="false">false</option>
+                    <option :value="true">true</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="config-form-grid">
+                <label>
+                  <span>fvs mode</span>
+                  <select v-model="configDraft.fvs_integration_mode">
+                    <option value="mock">mock</option>
+                    <option value="iframe">iframe</option>
+                    <option value="parent">parent</option>
+                  </select>
+                </label>
+                <label class="wide">
+                  <span>fvs url</span>
+                  <input v-model="configDraft.fvs_url" type="text" maxlength="500" />
+                </label>
+                <label>
+                  <span>target origin</span>
+                  <input v-model="configDraft.fvs_target_origin" type="text" maxlength="500" />
+                </label>
+              </div>
+
+              <div class="config-form-grid">
+                <label>
+                  <span>ask metrics</span>
+                  <select v-model="configDraft.ask_metrics_mode">
+                    <option value="excel">excel</option>
+                    <option value="dora">dora</option>
+                    <option value="auto">auto</option>
+                  </select>
+                </label>
+                <label>
+                  <span>knowledge</span>
+                  <select v-model="configDraft.knowledge_mode">
+                    <option value="dora">dora</option>
+                    <option value="local_ragflow_llm">local_ragflow_llm</option>
+                    <option value="auto">auto</option>
+                  </select>
+                </label>
+                <label>
+                  <span>page size</span>
+                  <input v-model.number="configDraft.knowledge_page_size" type="number" min="1" max="10" />
+                </label>
+                <label>
+                  <span>top k</span>
+                  <input v-model.number="configDraft.knowledge_top_k" type="number" min="1" max="64" />
+                </label>
+                <label>
+                  <span>similarity</span>
+                  <input
+                    v-model.number="configDraft.knowledge_similarity_threshold"
+                    type="number"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                  />
+                </label>
+                <label>
+                  <span>chunk chars</span>
+                  <input v-model.number="configDraft.knowledge_max_chunk_chars" type="number" min="200" max="4000" />
+                </label>
+                <label>
+                  <span>summarizer profile</span>
+                  <input v-model="configDraft.knowledge_summarizer_profile" type="text" maxlength="64" />
+                </label>
+                <label>
+                  <span>require sources</span>
+                  <select v-model="configDraft.knowledge_require_sources">
+                    <option :value="true">true</option>
+                    <option :value="false">false</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="ops-section-title compact">
+                <span>Action 映射</span>
+                <button type="button" @click="addConfigActionDraft">新增</button>
+              </div>
+              <div class="config-action-grid">
+                <article v-for="(action, index) in configDraft.actions" :key="`draft-action-${index}`">
+                  <label>
+                    <span>action id</span>
+                    <input v-model="action.id" type="text" maxlength="64" />
+                  </label>
+                  <label>
+                    <span>label</span>
+                    <input v-model="action.label" type="text" maxlength="40" />
+                  </label>
+                  <label>
+                    <span>page</span>
+                    <input v-model.number="action.pageNumber" type="number" min="1" max="10000" />
+                  </label>
+                  <label class="wide">
+                    <span>speak text</span>
+                    <input v-model="action.speak_text" type="text" maxlength="120" />
+                  </label>
+                  <label class="wide">
+                    <span>description</span>
+                    <input v-model="action.description" type="text" maxlength="120" />
+                  </label>
+                  <button type="button" class="ghost-button" @click="removeConfigActionDraft(index)">移除</button>
+                </article>
+              </div>
+
+              <div class="config-editor-actions">
+                <button type="button" :disabled="configTesting" @click="validateConfigDraft(false)">Validate</button>
+                <button type="button" :disabled="configTesting" @click="validateConfigDraft(true)">Dry-run</button>
+                <button type="button" :disabled="configSaving" @click="saveConfigDraft">保存覆盖</button>
+                <button type="button" :disabled="configReloading" @click="reloadConfigRuntime">Reload</button>
+                <button type="button" class="ghost-button" :disabled="configLoading" @click="loadConfigDashboard">刷新</button>
+              </div>
+
+              <div v-if="configMessageText" class="ops-alert success">{{ configMessageText }}</div>
+              <div v-if="configValidation" class="config-validation">
+                <strong :class="configValidation.ok ? 'ok-text' : 'error-text'">
+                  {{ configValidation.ok ? 'OK' : 'FAILED' }}
+                </strong>
+                <span>{{ configValidation.dry_run ? 'dry-run' : 'validate' }}</span>
+                <code>{{ configChangedPaths.length }} changes</code>
+              </div>
+              <div v-if="configValidationErrors.length" class="config-note-list">
+                <p v-for="item in configValidationErrors" :key="`${item.path}-${item.code}`">
+                  {{ item.path }} · {{ item.code }} · {{ item.message }}
+                </p>
+              </div>
+              <div v-if="configValidationWarnings.length" class="config-note-list">
+                <p v-for="item in configValidationWarnings" :key="`${item.path}-${item.code}`">
+                  {{ item.path }} · {{ item.code }} · {{ item.message }}
+                </p>
+              </div>
+            </section>
+
             <div class="config-grid">
               <section class="ops-section config-section">
                 <div class="ops-section-title">
@@ -2551,14 +3087,31 @@ function writeAscii(view: DataView, offset: number, value: string) {
 
               <section class="ops-section config-section">
                 <div class="ops-section-title">
-                  <span>未开放接口</span>
-                  <small>schema disabled endpoints</small>
+                  <span>配置接口</span>
+                  <small>schema enabled endpoints</small>
                 </div>
                 <div class="status-grid">
-                  <code v-for="endpoint in configDisabledEndpoints" :key="endpoint">{{ endpoint }}</code>
+                  <code v-for="endpoint in configEnabledEndpoints" :key="endpoint">{{ endpoint }}</code>
+                  <code v-for="endpoint in configDisabledEndpoints" :key="`disabled-${endpoint}`">{{ endpoint }}</code>
                 </div>
               </section>
             </div>
+
+            <section class="ops-section config-section">
+              <div class="ops-section-title">
+                <span>审计</span>
+                <small>最近 {{ configAuditEvents.length }} 条</small>
+              </div>
+              <div class="config-audit-list">
+                <article v-for="event in configAuditEvents" :key="event.event_id" class="config-row">
+                  <span>{{ formatOpsTime(event.created_at) }}</span>
+                  <strong>{{ event.action }} · {{ event.operator }}</strong>
+                  <code :class="event.ok ? 'ok-text' : 'error-text'">{{ event.ok ? 'ok' : 'failed' }}</code>
+                  <small>{{ event.reason || '-' }}</small>
+                </article>
+                <div v-if="!configAuditEvents.length" class="ops-empty">暂无配置审计记录</div>
+              </div>
+            </section>
           </template>
         </section>
 

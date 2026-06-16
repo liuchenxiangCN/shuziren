@@ -33,8 +33,9 @@ _DANGEROUS_TEXT_PARTS = (
 
 
 class ScreenActionService:
-    def __init__(self, config_path: str | Path) -> None:
+    def __init__(self, config_path: str | Path, *, overrides: dict[str, Any] | None = None) -> None:
         self.config_path = Path(config_path)
+        self._overrides = overrides or {}
         self._actions = self._load_actions()
 
     def _load_actions(self) -> dict[str, ScreenAction]:
@@ -42,6 +43,9 @@ class ScreenActionService:
         raw_actions = raw.get("actions", {})
         if not isinstance(raw_actions, dict):
             raise ValueError("screen-actions.yaml actions must be an object")
+
+        if self._overrides:
+            raw_actions = {**raw_actions, **self._overrides}
 
         actions: dict[str, ScreenAction] = {}
         for action_id, action_config in raw_actions.items():

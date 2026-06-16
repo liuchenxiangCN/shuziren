@@ -5,6 +5,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from time import sleep
 from time import perf_counter
+from urllib.parse import urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -24,8 +25,13 @@ from app.models import (
     AsrTranscribeResponse,
     ChatRequest,
     ChatResponse,
+    ConfigAuditResponse,
     ConfigEffectiveResponse,
+    ConfigOverridePayload,
+    ConfigOverrideResponse,
+    ConfigReloadResponse,
     ConfigSchemaResponse,
+    ConfigValidateResponse,
     DemoConfigResponse,
     ErrorDetail,
     HealthResponse,
@@ -45,6 +51,7 @@ from app.models import (
 )
 from app.services.asr_provider import AsrProviderError, build_asr_provider
 from app.services.ask_metrics import AskMetricsService
+from app.services.config_overrides import ConfigOverrideService
 from app.services.config_snapshot import build_config_effective, build_config_schema
 from app.services.dora_client import DoraClient, DoraClientError
 from app.services.dora_normalizer import dora_error_response, normalize_dora_output
@@ -62,7 +69,11 @@ settings = get_settings()
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
 
-action_service = ScreenActionService(settings.action_whitelist_path)
+config_override_service = ConfigOverrideService(settings.config_overrides_dir)
+action_service = ScreenActionService(
+    settings.action_whitelist_path,
+    overrides=config_override_service.screen_action_overrides(),
+)
 screen_resolver = ScreenControlResolver(action_service)
 mock_dora = MockDoraService(settings.demo_cases_path, action_service)
 wake_words = WakeWordService(settings.wake_words_path)
@@ -327,6 +338,88 @@ def get_config_effective() -> ConfigEffectiveResponse:
 @app.get("/api/config/schema", response_model=ConfigSchemaResponse)
 def get_config_schema() -> ConfigSchemaResponse:
     return ConfigSchemaResponse(**build_config_schema())
+
+
+@app.get("/api/config/overrides", response_model=ConfigOverrideResponse)
+def get_config_overrides() -> ConfigOverrideResponse:
+    return ConfigOverrideResponse(**config_override_service.active_response(access=_config_access_info()))
+
+
+@app.post("/api/config/validate", response_model=ConfigValidateResponse)
+def validate_config_overrides(payload: ConfigOverridePayload) -> ConfigValidateResponse:
+    return ConfigValidateResponse(
+        **config_override_service.validate(
+            payload.overrides,
+            base_action_path=settings.action_whitelist_path,
+            dry_run=False,
+        )
+    )
+
+
+@app.post("/api/config/test", response_model=ConfigValidateResponse)
+def dry_run_config_overrides(payload: ConfigOverridePayload) -> ConfigValidateResponse:
+    return ConfigValidateResponse(
+        **config_override_service.validate(
+            payload.overrides,
+            base_action_path=settings.action_whitelist_path,
+            dry_run=True,
+        )
+    )
+
+
+@app.put("/api/config/overrides", response_model=ConfigValidateResponse)
+def save_config_overrides(payload: ConfigOverridePayload, fastapi_request: Request) -> ConfigValidateResponse:
+    operator = _require_config_admin(fastapi_request, payload)
+    reason = _config_reason(payload)
+    return ConfigValidateResponse(
+        **config_override_service.save(
+            payload.overrides,
+            operator=operator,
+            reason=reason,
+            base_action_path=settings.action_whitelist_path,
+        )
+    )
+
+
+@app.post("/api/config/reload", response_model=ConfigReloadResponse)
+def reload_config(payload: ConfigOverridePayload, fastapi_request: Request) -> ConfigReloadResponse:
+    operator = _require_config_admin(fastapi_request, payload)
+    reason = _config_reason(payload)
+    validation = config_override_service.validate(
+        config_override_service.read_active_overrides(),
+        base_action_path=settings.action_whitelist_path,
+        dry_run=True,
+    )
+    if not validation["ok"]:
+        config_override_service.append_audit(
+            action="reload_rejected",
+            operator=operator,
+            reason=reason,
+            ok=False,
+            summary=validation["summary"],
+            errors=validation["errors"],
+        )
+        return ConfigReloadResponse(
+            success=False,
+            reloaded_at=_now_iso(),
+            summary=validation["summary"],
+            error=ErrorDetail(code="CONFIG_RELOAD_REJECTED", message="Active overrides failed validation"),
+        )
+    summary = _reload_runtime_services()
+    config_override_service.append_audit(
+        action="reload",
+        operator=operator,
+        reason=reason,
+        ok=True,
+        summary=summary,
+        errors=[],
+    )
+    return ConfigReloadResponse(success=True, reloaded_at=_now_iso(), summary=summary)
+
+
+@app.get("/api/config/audit", response_model=ConfigAuditResponse)
+def get_config_audit(limit: int = Query(default=50, ge=1, le=200)) -> ConfigAuditResponse:
+    return ConfigAuditResponse(events=config_override_service.audit_events(limit=limit))
 
 
 @app.post("/api/tts", response_model=TtsSynthesizeResponse)
@@ -1316,6 +1409,126 @@ def execute_screen_action(request: ScreenExecuteRequest, fastapi_request: Reques
         started_at=started_at,
     )
     return response
+
+
+def _reload_runtime_services() -> dict[str, object]:
+    global settings
+    global config_override_service
+    global action_service
+    global screen_resolver
+    global mock_dora
+    global wake_words
+    global ask_metrics
+    global knowledge_service
+    global asr_provider
+    global tts_provider
+    global dora_client
+
+    get_settings.cache_clear()
+    settings = get_settings()
+    logging.getLogger().setLevel(settings.log_level)
+    config_override_service = ConfigOverrideService(settings.config_overrides_dir)
+    action_service = ScreenActionService(
+        settings.action_whitelist_path,
+        overrides=config_override_service.screen_action_overrides(),
+    )
+    screen_resolver = ScreenControlResolver(action_service)
+    mock_dora = MockDoraService(settings.demo_cases_path, action_service)
+    wake_words = WakeWordService(settings.wake_words_path)
+    ask_metrics = AskMetricsService(settings.ask_metrics_data_dir, settings.ask_metrics_config_path)
+    knowledge_service = build_knowledge_service(settings)
+    asr_provider = build_asr_provider(
+        enable_mock=settings.enable_mock_asr,
+        provider_name=settings.asr_provider,
+        api_key=settings.asr_api_key,
+        model=settings.asr_model,
+        ws_url=settings.asr_ws_url,
+        audio_format=settings.asr_audio_format,
+        sample_rate=settings.asr_sample_rate,
+        timeout_seconds=settings.asr_timeout_seconds,
+    )
+    tts_provider = build_tts_provider(
+        enable_mock=settings.enable_mock_tts,
+        provider_name=settings.tts_provider,
+        cache_dir=settings.tts_cache_dir,
+        default_voice=settings.tts_voice,
+        api_key=settings.tts_api_key,
+        model=settings.tts_model,
+        ws_url=settings.tts_ws_url,
+        default_format=settings.tts_audio_format,
+        sample_rate=settings.tts_sample_rate,
+        timeout_seconds=settings.tts_timeout_seconds,
+    )
+    dora_client = DoraClient(
+        base_url=settings.dora_base_url,
+        api_key=settings.dora_api_key,
+        agent_id=settings.dora_agent_id,
+        agent_name=settings.dora_agent_name,
+        channel_type=settings.dora_channel_type,
+        timeout_seconds=settings.dora_timeout_seconds,
+    )
+    return {
+        "customer_id": settings.customer_id,
+        "project_name": settings.project_name,
+        "ask_metrics_mode": settings.ask_metrics_mode,
+        "knowledge_mode": settings.knowledge_mode,
+        "action_count": len(action_service.list_actions()),
+        "override_path": config_override_service.metadata()["path"],
+    }
+
+
+def _config_access_info() -> dict[str, object]:
+    requires_token = bool(settings.config_admin_token.strip())
+    return {
+        "requires_token": requires_token,
+        "token_header": "X-Config-Admin-Token",
+        "operator_header": "X-Config-Operator",
+        "local_origin_without_token": not requires_token,
+        "write_scope": "non_sensitive_runtime_overrides",
+    }
+
+
+def _require_config_admin(request: Request, payload: ConfigOverridePayload) -> str:
+    token = settings.config_admin_token.strip()
+    supplied = request.headers.get("X-Config-Admin-Token", "")
+    if token:
+        if supplied != token:
+            raise StarletteHTTPException(status_code=403, detail="Config admin token is required")
+    elif not _is_local_config_request(request):
+        raise StarletteHTTPException(status_code=403, detail="Config writes require localhost access or CONFIG_ADMIN_TOKEN")
+    operator = request.headers.get("X-Config-Operator") or payload.operator or "local-admin"
+    return _safe_operator(operator)
+
+
+def _is_local_config_request(request: Request) -> bool:
+    host = _hostname(request.headers.get("host", ""))
+    origin = request.headers.get("origin")
+    origin_host = _hostname(urlsplit(origin).netloc if origin else "")
+    allowed = {"", "localhost", "127.0.0.1", "::1", "testserver"}
+    if host not in allowed:
+        return False
+    return not origin_host or origin_host in allowed
+
+
+def _hostname(value: str) -> str:
+    host = value.strip().lower()
+    if not host:
+        return ""
+    if host.startswith("[") and "]" in host:
+        return host[1 : host.index("]")]
+    if ":" in host:
+        host = host.split(":", 1)[0]
+    return host
+
+
+def _safe_operator(value: str) -> str:
+    cleaned = "".join(char for char in str(value).strip() if char.isalnum() or char in "._-@")
+    return cleaned[:80] or "local-admin"
+
+
+def _config_reason(payload: ConfigOverridePayload) -> str:
+    reason = str(payload.reason or "").strip()
+    return reason[:200]
 
 
 def _request_id(request: Request) -> str:

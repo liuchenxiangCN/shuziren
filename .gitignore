@@ -7,6 +7,10 @@
 # Runtime data
 data/*
 !data/.gitkeep
+!data/config-overrides/
+data/config-overrides/*
+!data/config-overrides/.gitkeep
+!data/config-overrides/README.md
 logs/*
 !logs/.gitkeep
 
@@ -45,4 +49,3 @@ desktop.ini
 *.pem
 *.key
 *.crt
-
