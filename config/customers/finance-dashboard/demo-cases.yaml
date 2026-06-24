@@ -1,0 +1,280 @@
+version: 0.9.0
+customer: finance-dashboard
+mock_rules:
+  # ---- Screen control ----
+  - id: mock-screen-finance-indicators
+    match_keywords:
+      - 财务指标
+      - 财务分析
+      - 指标页面
+      - 看财务
+    response_type: screen_control
+    action_id: SWITCH_FINANCE_INDICATORS
+
+  - id: mock-screen-cost
+    match_keywords:
+      - 成本分析
+      - 成本
+      - 成本页面
+      - 费用
+    response_type: screen_control
+    action_id: SWITCH_COST_ANALYSIS
+
+  - id: mock-screen-budget
+    match_keywords:
+      - 预算
+      - 预算执行
+      - 预算页面
+    response_type: screen_control
+    action_id: SWITCH_BUDGET
+
+  - id: mock-screen-home
+    match_keywords:
+      - 返回首页
+      - 回到首页
+      - 总览
+      - 返回总览
+      - 集团概览
+    response_type: screen_control
+    action_id: SWITCH_HOME
+
+  # ---- Welcome / Knowledge ----
+  - id: mock-welcome-wang
+    match_keywords:
+      - 让我们欢迎王总
+      - 欢迎王总
+      - 王总来了
+      - 有请王总
+    response_type: answer
+    title: 欢迎王总
+    speak_text: 尊敬的王总，热烈欢迎您莅临指导！在您的卓越领导下，集团财务数字化走在了行业前列。小帆已准备就绪，随时为您呈现最新经营数据。
+    display:
+      mode: text
+      summary: 热烈欢迎王总莅临集团财务综合驾驶舱。
+      bullets:
+        - 集团核心财务指标一目了然
+        - 语音交互，释放双手
+        - 数据实时，决策有据
+
+  - id: mock-cfo-welcome
+    match_keywords:
+      - 王总
+      - 财务总监
+      - 领导好
+      - 张总
+    response_type: answer
+    title: 集团财务欢迎语
+    speak_text: 您好，我是小帆，欢迎莅临集团财务综合驾驶舱。当前大屏已展示集团核心财务指标，您可以通过语音查询收入、成本、利润和预算执行情况。
+    display:
+      mode: text
+      summary: 集团财务驾驶舱提供核心财务指标、成本分析和预算执行的实时监控。
+      bullets:
+        - 营业收入和利润总额概览
+        - 各部门成本费用分析
+        - 年度预算执行进度追踪
+        - 可通过语音切换大屏页面
+
+  - id: mock-revenue-summary
+    match_keywords:
+      - 营业收入
+      - 营收
+      - 收入多少
+      - 收入情况
+      - 我们的营收
+      - 我们的收入
+    response_type: answer
+    title: 营业收入概览
+    speak_text: 截至当前，集团营业总收入11513万元，去年同期14935万元，同比下降百分之二十二点九。其中主营业务收入96523万元，其他业务收入1861万元。收入下滑主要受行业周期和市场竞争加剧影响。
+    display:
+      mode: text
+      summary: 营业总收入11513万元，同比-22.9%，主营业务收入96523万元。
+      bullets:
+        - 营业总收入：11513 万元
+        - 去年同期：14935 万元
+        - 同比变化：-22.9%
+        - 主营业务收入：96523 万元
+        - 其他业务收入：1861 万元
+
+  - id: mock-profit-summary
+    match_keywords:
+      - 利润
+      - 净利润
+      - 盈利
+      - 赚了多少
+    response_type: answer
+    title: 利润指标概览
+    speak_text: 2026年上半年集团实现净利润2.8亿元，同比增长百分之十二点五，净利润率为百分之二十二点四。毛利润5.1亿元，毛利率百分之四十点八。
+    display:
+      mode: text
+      summary: 上半年净利润2.8亿元，同比增长12.5%，净利润率22.4%。
+      bullets:
+        - 净利润：2.8 亿元
+        - 毛利润：5.1 亿元
+        - 净利润率：22.4%
+        - 毛利率：40.8%
+        - 同比增长：12.5%
+
+  - id: mock-cost-summary
+    match_keywords:
+      - 成本费用
+      - 费用情况
+      - 花了多少
+    response_type: answer
+    title: 成本费用概览
+    speak_text: 2026年上半年总成本费用8.9亿元，其中人力成本3.2亿元，运营成本2.1亿元，管理费用1.5亿元，销售费用1.2亿元，研发费用0.9亿元。成本费用率百分之七十一点二。
+    display:
+      mode: text
+      summary: 上半年总成本8.9亿元，成本费用率71.2%。
+      bullets:
+        - 总成本费用：8.9 亿元
+        - 人力成本：3.2 亿元
+        - 运营成本：2.1 亿元
+        - 管理费用：1.5 亿元
+        - 销售费用：1.2 亿元
+        - 研发费用：0.9 亿元
+
+  - id: mock-asset-summary
+    match_keywords:
+      - 资产
+      - 总资产
+      - 资产负债
+    response_type: answer
+    title: 资产负债概览
+    speak_text: 截至2026年6月，集团总资产85.3亿元，总负债42.6亿元，净资产42.7亿元，资产负债率百分之四十九点九。净资产收益率百分之十五点二。
+    display:
+      mode: text
+      summary: 总资产85.3亿元，资产负债率49.9%，净资产收益率15.2%。
+      bullets:
+        - 总资产：85.3 亿元
+        - 总负债：42.6 亿元
+        - 净资产：42.7 亿元
+        - 资产负债率：49.9%
+        - 净资产收益率：15.2%
+
+  - id: mock-budget-summary
+    match_keywords:
+      - 预算完成
+      - 预算执行
+      - 预算情况
+    response_type: answer
+    title: 预算执行情况
+    speak_text: 2026年度集团预算15亿元，上半年已执行9.8亿元，预算执行率百分之六十五点三，下半年剩余预算5.2亿元。各业务板块执行均处于正常范围。
+    display:
+      mode: text
+      summary: 年度预算15亿元，上半年执行率65.3%。
+      bullets:
+        - 年度预算：15 亿元
+        - 已执行：9.8 亿元
+        - 预算执行率：65.3%
+        - 剩余预算：5.2 亿元
+
+  - id: mock-cashflow-summary
+    match_keywords:
+      - 现金流
+      - 现金
+      - 资金
+    response_type: answer
+    title: 现金流概览
+    speak_text: 2026年上半年经营活动现金流入15.3亿元，现金流出13.8亿元，经营现金流净额1.5亿元。投资活动现金流净额负2.3亿元，筹资活动现金流净额0.8亿元。
+    display:
+      mode: text
+      summary: 经营现金流净额1.5亿元，现金流总体健康。
+      bullets:
+        - 经营现金流入：15.3 亿元
+        - 经营现金流出：13.8 亿元
+        - 经营现金流净额：1.5 亿元
+        - 投资现金流净额：-2.3 亿元
+        - 筹资现金流净额：0.8 亿元
+
+  - id: mock-knowledge-capability
+    match_keywords:
+      - 系统能力
+      - 能做什么
+      - 功能
+      - 帮助
+    response_type: answer
+    title: 财务驾驶舱系统能力
+    speak_text: 本财务驾驶舱提供语音唤醒、财务指标查询、收入利润分析、成本费用分析、预算执行监控、大屏页面切换和语音播报能力。您可以问任何财务相关问题。
+    display:
+      mode: text
+      summary: 财务驾驶舱可通过语音查询核心财务数据和切换大屏页面。
+      bullets:
+        - 语音唤醒后说出问题即可互动
+        - 支持收入、利润、成本、预算、资产、现金流查询
+        - 语音指令切换大屏页面
+        - 支持连续追问
+
+  - id: mock-knowledge-reimburse-policy
+    match_keywords:
+      - 报销
+      - 差旅
+      - 费用报销
+      - 报销流程
+      - 报销标准
+      - 出差
+    response_type: answer
+    title: 集团差旅及费用报销制度
+    speak_text: 根据集团财务管理制度第12条，差旅报销须在出差结束后5个工作日内提交，部门负责人审批后报财务部审核。住宿标准副总级不超过800元每天，部门经理不超过500元，普通员工不超过350元。超标部分需附书面说明。
+    display:
+      mode: text
+      summary: 差旅报销5个工作日内提交，住宿标准按职级分档，超标需书面说明。
+      bullets:
+        - 报销时限：出差结束后5个工作日内
+        - 住宿标准：副总800/经理500/员工350（元/天）
+        - 审批流程：部门负责人→财务部审核
+        - 超标需附书面说明，由分管领导特批
+
+fallback:
+  response_type: fallback
+  speak_text: 这个问题我还需要更多财务信息，请您换一种方式描述。
+  reason: 无法判断用户意图
+
+demo_questions:
+  - id: Q-001
+    text: 小帆小帆
+    category: wakeup
+    expected: 进入 listening 状态
+  - id: Q-002
+    text: 我是王总
+    category: leader
+    expected: 返回集团欢迎语
+  - id: Q-003
+    text: 当前营业收入是多少？
+    category: data
+    expected: 返回营业收入概览
+  - id: Q-004
+    text: 净利润怎么样？
+    category: data
+    expected: 返回利润指标
+  - id: Q-005
+    text: 成本费用情况如何？
+    category: data
+    expected: 返回成本费用概览
+  - id: Q-006
+    text: 总资产和负债情况？
+    category: data
+    expected: 返回资产负债概览
+  - id: Q-007
+    text: 预算执行进度？
+    category: data
+    expected: 返回预算执行情况
+  - id: Q-008
+    text: 现金流怎么样？
+    category: data
+    expected: 返回现金流概览
+  - id: Q-009
+    text: 切换到财务指标页面
+    category: screen_control
+    expected: 返回 SWITCH_FINANCE_INDICATORS 并执行
+  - id: Q-010
+    text: 返回总览
+    category: screen_control
+    expected: 返回 SWITCH_HOME 并执行
+  - id: Q-011
+    text: 让我们欢迎王总
+    category: welcome
+    expected: 返回王总欢迎语
+  - id: Q-012
+    text: 差旅费报销标准是什么
+    category: knowledge
+    expected: 返回集团差旅及费用报销制度

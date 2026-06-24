@@ -1,0 +1,10 @@
+version: 0.8.0
+agent_name: 企业财务综合驾驶舱语音助手
+agent_id: ""
+channel_type: feishu
+chat_mode: sse
+timeout_seconds: 60
+notes:
+  - Dora API Key 只能通过 DORA_API_KEY 环境变量提供。
+  - 如客户现场 Dora 地址不同, 优先在 .env 中配置 DORA_BASE_URL。
+  - 默认使用 Mock Dora (ENABLE_MOCK_DORA=true)。

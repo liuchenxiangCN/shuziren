@@ -1,0 +1,38 @@
+version: 0.8.0
+mode: semantic
+wake_words:
+  - 小帆小帆
+  - 你好小帆
+  - 小帆
+settings:
+  # 加速唤醒: min_audio_ms 从 1000 降到 500，"小帆小帆"约 600ms 可覆盖
+  min_audio_ms: 500
+  # 缩短最大录音长度，减少无效等待
+  max_audio_ms: 3000
+  # 缩短静音判断，ASR 提交更快
+  silence_ms: 500
+  cooldown_ms: 600
+  command_timeout_ms: 8000
+  followup_enabled: true
+  followup_window_ms: 12000
+  max_followup_turns: 5
+  # 适度降低 VAD 阈值，提高灵敏度加速触发
+  vad_threshold: 0.016
+  # 播报中打断
+  barge_in_enabled: true
+  barge_in_wake_words:
+    - 小帆小帆
+    - 你好小帆
+  barge_in_vad_threshold: 0.016
+  barge_in_min_audio_ms: 500
+  barge_in_silence_ms: 400
+  barge_in_max_audio_ms: 2500
+  barge_in_ignore_after_tts_start_ms: 500
+  require_exact_phrase: false
+  # MFCC+DTW 本地唤醒词匹配阈值 (越低越严格, 调整后需重建 web 容器)
+  local_match_threshold: 1.8
+notes:
+  - VAD + ASR 语义唤醒, 参数已针对"小帆小帆"加速优化。
+  - min_audio_ms=500ms 覆盖唤醒词发音时长, silence_ms=500ms 提前截断。
+  - vad_threshold=0.016 比默认 0.018 更灵敏, 如误唤醒增多可回调到 0.018。
+  - 唤醒后开启短时连续对话窗口, 超时或达到轮数后回到唤醒监听。

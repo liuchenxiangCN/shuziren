@@ -1,0 +1,252 @@
+version: 0.8.0
+description: 企业财务综合驾驶舱 POC 脱敏 Excel 问数数据源映射。
+provider: excel
+mode: excel
+data_dir: docs/demo_data/ask_metrics/finance
+
+workbooks:
+  overview:
+    file: finance_overview_metrics_2026.xlsx
+    sheets:
+      dashboard: Dashboard
+      segment: 板块明细
+
+  cost:
+    file: finance_cost_metrics_2026.xlsx
+    sheets:
+      dashboard: Dashboard
+      category: 费用类别
+
+  budget:
+    file: finance_budget_metrics_2026.xlsx
+    sheets:
+      dashboard: Dashboard
+      detail: 预算明细
+
+metrics:
+  - id: overall_summary
+    priority: 10
+    match:
+      all: ["总结", "整体"]
+      any_groups:
+        - ["财务", "经营"]
+    context:
+      overview:
+        workbook: overview
+        sheet: dashboard
+        type: dashboard
+      cost:
+        workbook: cost
+        sheet: dashboard
+        type: dashboard
+      budget:
+        workbook: budget
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 财务整体情况
+      speak_text: "2026年上半年集团经营情况良好。营业总收入{overview.营业总收入|万}万元，净利润{overview.净利润|万}万元，净利润率{overview.净利润率|percent}。总成本{overview.总成本|万}万元，预算执行率{budget.预算执行率|percent}。"
+      summary: 上半年营业总收入{overview.营业总收入|万}万元，净利润{overview.净利润|万}万元，预算执行率{budget.预算执行率|percent}。
+      bullets:
+        - "营业总收入：{overview.营业总收入|万} 万元"
+        - "净利润：{overview.净利润|万} 万元"
+        - "净利润率：{overview.净利润率|percent}"
+        - "总成本：{overview.总成本|万} 万元"
+        - "预算执行率：{budget.预算执行率|percent}"
+        - "净资产收益率：{overview.净资产收益率|percent}"
+      source:
+        text: docs/demo_data/ask_metrics/finance/*.xlsx
+
+  - id: revenue_query
+    priority: 20
+    match:
+      any_groups:
+        - ["营业收入", "营收"]
+        - ["收入多少", "收入情况"]
+    context:
+      metrics:
+        workbook: overview
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 营业收入
+      speak_text: "2026年上半年集团营业总收入{metrics.营业总收入|万}万元，同比增长{metrics.营收同比增长率|percent}。其中主营业务收入{metrics.主营业务收入|万}万元，其他业务收入{metrics.其他业务收入|万}万元。"
+      summary: "营业总收入 {metrics.营业总收入|万} 万元，同比增长 {metrics.营收同比增长率|percent}。"
+      bullets:
+        - "营业总收入：{metrics.营业总收入|万} 万元"
+        - "主营业务收入：{metrics.主营业务收入|万} 万元"
+        - "其他业务收入：{metrics.其他业务收入|万} 万元"
+        - "同比增长：{metrics.营收同比增长率|percent}"
+        - "预算完成率：{metrics.营收预算完成率|percent}"
+      source:
+        - workbook: overview
+          sheet: dashboard
+
+  - id: profit_query
+    priority: 30
+    match:
+      any: ["净利润", "利润", "盈利"]
+    context:
+      metrics:
+        workbook: overview
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 利润指标
+      speak_text: "2026年上半年集团净利润{metrics.净利润|万}万元，同比增长{metrics.利润同比增长率|percent}，净利润率{metrics.净利润率|percent}。毛利润{metrics.毛利润|万}万元，毛利率{metrics.毛利率|percent}。"
+      summary: "净利润 {metrics.净利润|万} 万元，净利润率 {metrics.净利润率|percent}。"
+      bullets:
+        - "净利润：{metrics.净利润|万} 万元"
+        - "毛利润：{metrics.毛利润|万} 万元"
+        - "净利润率：{metrics.净利润率|percent}"
+        - "毛利率：{metrics.毛利率|percent}"
+        - "同比增长：{metrics.利润同比增长率|percent}"
+      source:
+        - workbook: overview
+          sheet: dashboard
+
+  - id: cost_query
+    priority: 40
+    match:
+      any: ["成本", "费用", "成本费用"]
+    context:
+      metrics:
+        workbook: cost
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 成本费用
+      speak_text: "2026年上半年总成本费用{metrics.总成本费用|万}万元，成本费用率{metrics.成本费用率|percent}。其中人力成本{metrics.人力成本|万}万元，运营成本{metrics.运营成本|万}万元，管理费用{metrics.管理费用|万}万元，销售费用{metrics.销售费用|万}万元，研发费用{metrics.研发费用|万}万元。"
+      summary: "总成本费用 {metrics.总成本费用|万} 万元，成本费用率 {metrics.成本费用率|percent}。"
+      bullets:
+        - "总成本费用：{metrics.总成本费用|万} 万元"
+        - "人力成本：{metrics.人力成本|万} 万元"
+        - "运营成本：{metrics.运营成本|万} 万元"
+        - "管理费用：{metrics.管理费用|万} 万元"
+        - "销售费用：{metrics.销售费用|万} 万元"
+        - "研发费用：{metrics.研发费用|万} 万元"
+        - "成本费用率：{metrics.成本费用率|percent}"
+      source:
+        - workbook: cost
+          sheet: dashboard
+
+  - id: asset_query
+    priority: 50
+    match:
+      any_groups:
+        - ["资产", "负债"]
+        - ["资产负债"]
+    context:
+      metrics:
+        workbook: overview
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 资产负债
+      speak_text: "截至2026年6月，集团总资产{metrics.总资产|万}万元，总负债{metrics.总负债|万}万元，净资产{metrics.净资产|万}万元，资产负债率{metrics.资产负债率|percent}，净资产收益率{metrics.净资产收益率|percent}。"
+      summary: "总资产 {metrics.总资产|万} 万元，资产负债率 {metrics.资产负债率|percent}。"
+      bullets:
+        - "总资产：{metrics.总资产|万} 万元"
+        - "总负债：{metrics.总负债|万} 万元"
+        - "净资产：{metrics.净资产|万} 万元"
+        - "资产负债率：{metrics.资产负债率|percent}"
+        - "净资产收益率：{metrics.净资产收益率|percent}"
+      source:
+        - workbook: overview
+          sheet: dashboard
+
+  - id: budget_query
+    priority: 60
+    match:
+      any_groups:
+        - ["预算执行"]
+        - ["预算完成", "预算情况"]
+        - ["预算"]
+    context:
+      metrics:
+        workbook: budget
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 预算执行情况
+      speak_text: "2026年度集团总预算{metrics.年度预算|万}万元，上半年已执行{metrics.已执行预算|万}万元，预算执行率{metrics.预算执行率|percent}，剩余预算{metrics.剩余预算|万}万元。"
+      summary: "年度预算 {metrics.年度预算|万} 万元，已执行 {metrics.已执行预算|万} 万元，执行率 {metrics.预算执行率|percent}。"
+      bullets:
+        - "年度预算：{metrics.年度预算|万} 万元"
+        - "已执行预算：{metrics.已执行预算|万} 万元"
+        - "预算执行率：{metrics.预算执行率|percent}"
+        - "剩余预算：{metrics.剩余预算|万} 万元"
+      source:
+        - workbook: budget
+          sheet: dashboard
+
+  - id: cashflow_query
+    priority: 70
+    match:
+      any: ["现金流", "现金", "资金"]
+    context:
+      metrics:
+        workbook: overview
+        sheet: dashboard
+        type: dashboard
+    result:
+      title: 现金流
+      speak_text: "2026年上半年经营现金流净额{metrics.经营现金流净额|万}万元，其中经营现金流入{metrics.经营现金流入|万}万元，经营现金流出{metrics.经营现金流出|万}万元。投资现金流净额{metrics.投资现金流净额|万}万元，筹资现金流净额{metrics.筹资现金流净额|万}万元。"
+      summary: "经营现金流净额 {metrics.经营现金流净额|万} 万元。"
+      bullets:
+        - "经营现金流入：{metrics.经营现金流入|万} 万元"
+        - "经营现金流出：{metrics.经营现金流出|万} 万元"
+        - "经营现金流净额：{metrics.经营现金流净额|万} 万元"
+        - "投资现金流净额：{metrics.投资现金流净额|万} 万元"
+        - "筹资现金流净额：{metrics.筹资现金流净额|万} 万元"
+      source:
+        - workbook: overview
+          sheet: dashboard
+
+  - id: segment_revenue
+    priority: 80
+    match:
+      any: ["板块", "业务板块"]
+    context:
+      segment:
+        workbook: overview
+        sheet: segment
+        type: table
+    transforms:
+      - type: render_items
+        source: segment
+        template: "{业务板块}：{营业收入|万}万元（占比{收入占比|percent}）"
+        as: segment_bullets
+    result:
+      title: 各板块收入
+      speak_text: "2026年上半年各业务板块收入分别为：{segment_bullets|join:，}。"
+      summary: "共有 {segment|count} 个业务板块。"
+      bullets:
+        - extend: segment_bullets
+      source:
+        - workbook: overview
+          sheet: segment
+
+  - id: cost_category
+    priority: 90
+    match:
+      any: ["费用拆分", "费用明细", "成本明细"]
+    context:
+      category:
+        workbook: cost
+        sheet: category
+        type: table
+    transforms:
+      - type: render_items
+        source: category
+        template: "{费用类别}：{金额|万}万元（占比{占比|percent}）"
+        as: category_bullets
+    result:
+      title: 费用分类明细
+      speak_text: "2026年上半年各类费用分别为：{category_bullets|join:，}。"
+      summary: "共有 {category|count} 类费用。"
+      bullets:
+        - extend: category_bullets
+      source:
+        - workbook: cost
+          sheet: category

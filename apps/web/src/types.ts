@@ -129,6 +129,7 @@ export interface WakeSettings {
   barge_in_silence_ms: number;
   barge_in_max_audio_ms: number;
   barge_in_ignore_after_tts_start_ms: number;
+  local_match_threshold: number;
 }
 
 export interface WakeConfigResponse {

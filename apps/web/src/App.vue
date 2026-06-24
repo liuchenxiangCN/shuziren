@@ -50,6 +50,7 @@ import type {
   WakeConfigResponse,
 } from './types';
 import type { FvsActionResult } from './fvsAdapter';
+import { loadWakeWordTemplate, matchWakeWord, type WakeWordTemplate } from './wakeWordLocal';
 
 interface ConversationItem {
   id: string;
@@ -154,7 +155,7 @@ interface PcmStreamPlayback {
 }
 
 const WAKE_GREETING_TEXT = '您好。';
-const ACKNOWLEDGEMENT_TEXT = '收到，正在为您查找信息。';
+const ACKNOWLEDGEMENT_TEXT = '收到。';
 const ACKNOWLEDGEMENT_TTS_MAX_WAIT_MS = 1800;
 
 const DEFAULT_CONFIG_DRAFT: ConfigDraft = {
@@ -201,6 +202,7 @@ const DEFAULT_WAKE_CONFIG: WakeConfigResponse = {
     barge_in_silence_ms: 700,
     barge_in_max_audio_ms: 3500,
     barge_in_ignore_after_tts_start_ms: 700,
+    local_match_threshold: 1.8,
   },
 };
 
@@ -238,6 +240,8 @@ const ttsPlayback = ref<TtsPlaybackState>('idle');
 const ttsStatusText = ref('等待播报');
 const voiceEnergy = ref(0);
 const wakeConfig = ref<WakeConfigResponse>(DEFAULT_WAKE_CONFIG);
+const wakeWordTemplates = ref<WakeWordTemplate[]>([]);
+const wakeWordLocalEnabled = ref(false);
 const listenerEnabled = ref(false);
 const listeningState = ref<ListeningState>('idle');
 const listeningDetail = ref('未开启');
@@ -472,6 +476,9 @@ onMounted(async () => {
     pushSystemMessage('唤醒词配置读取失败，已使用本地默认配置。');
   }
 
+  // 预加载本地唤醒词模板 (MFCC + DTW)
+  initWakeWordTemplates();
+
   try {
     demoConfig.value = await fetchDemoConfig();
   } catch (error) {
@@ -679,22 +686,24 @@ async function submitQuestion(
       tts: { status: 'loading', label: '等待首段音频', segments: [], nextSegmentIndex: 0 },
     };
     conversation.value.unshift(assistantItem);
+    // 从响应式数组中获取 Proxy 引用，确保后续 .text / .tts 修改触发 Vue 重渲染
+    const reactiveItem = conversation.value[0];
 
     let response: ChatResponse | null = null;
     let earlyStreamingPlayback: Promise<AudioPlaybackResult> | null = null;
     try {
       await streamChat(requestPayload, {
         onDelta(delta) {
-          if (!assistantItem.response && delta.trim()) {
-            assistantItem.text = assistantItem.text === '正在思考...' ? delta : `${assistantItem.text}${delta}`;
+          if (!reactiveItem.response && delta.trim()) {
+            reactiveItem.text = reactiveItem.text === '正在思考...' ? delta : `${reactiveItem.text}${delta}`;
           }
         },
         onTtsReady(segment) {
-          addTtsSegment(assistantItem, segment);
+          addTtsSegment(reactiveItem, segment);
         },
         onTtsError(payload) {
-          assistantItem.tts = {
-            ...(assistantItem.tts ?? { status: 'error' }),
+          reactiveItem.tts = {
+            ...(reactiveItem.tts ?? { status: 'error' }),
             status: 'error',
             label: '分段失败',
             error: payload.message || 'TTS 分段合成失败',
@@ -702,10 +711,10 @@ async function submitQuestion(
         },
         onAnswer(streamResponse) {
           response = streamResponse;
-          assistantItem.text = streamResponse.speak_text;
-          assistantItem.response = streamResponse;
-          assistantItem.tts = {
-            ...(assistantItem.tts ?? { status: 'loading' }),
+          reactiveItem.text = streamResponse.speak_text;
+          reactiveItem.response = streamResponse;
+          reactiveItem.tts = {
+            ...(reactiveItem.tts ?? { status: 'loading' }),
             streamEnded: true,
           };
           if (options.awaitTts && !earlyStreamingPlayback) {
@@ -720,9 +729,9 @@ async function submitQuestion(
       });
     } catch (streamError) {
       response = await sendChat(requestPayload);
-      assistantItem.text = response.speak_text;
-      assistantItem.response = response;
-      assistantItem.tts = { status: 'loading', label: '合成中' };
+      reactiveItem.text = response.speak_text;
+      reactiveItem.response = response;
+      reactiveItem.tts = { status: 'loading', label: '合成中' };
       pushSystemMessage(
         streamError instanceof Error ? `流式链路失败，已回退：${streamError.message}` : '流式链路失败，已回退。',
       );
@@ -931,6 +940,65 @@ async function startBackgroundListening() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 本地唤醒词匹配 (MFCC + DTW)
+// ---------------------------------------------------------------------------
+
+const LOCAL_WAKE_TEMPLATES: Array<{ word: string; url: string }> = [
+  { word: '小帆小帆', url: '/wake-words/xiaofan_xiaofan.wav' },
+  { word: '你好小帆', url: '/wake-words/nihao_xiaofan.wav' },
+  { word: '小帆', url: '/wake-words/xiaofan.wav' },
+];
+
+async function initWakeWordTemplates() {
+  try {
+    const templates = await Promise.all(
+      LOCAL_WAKE_TEMPLATES.map(({ word, url }) => loadWakeWordTemplate(word, url)),
+    );
+    wakeWordTemplates.value = templates;
+    wakeWordLocalEnabled.value = true;
+    pushSystemMessage(`本地唤醒词已就绪 (${templates.length} 个模板, MFCC+DTW 模式)。`);
+  } catch (error) {
+    wakeWordLocalEnabled.value = false;
+    pushSystemMessage(
+      `本地唤醒词模板加载失败: ${error instanceof Error ? error.message : error}, 回退到云端 ASR 模式。`,
+    );
+  }
+}
+
+async function tryLocalWakeMatch(audioBlob: Blob): Promise<string | null> {
+  if (!wakeWordLocalEnabled.value || wakeWordTemplates.value.length === 0) return null;
+  try {
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const audioCtx = new AudioContext({ sampleRate: 16000 });
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    await audioCtx.close();
+
+    // Mix to mono
+    const samples = new Float32Array(audioBuffer.length);
+    if (audioBuffer.numberOfChannels > 1) {
+      for (let i = 0; i < audioBuffer.length; i++) {
+        let sum = 0;
+        for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+          sum += audioBuffer.getChannelData(ch)[i];
+        }
+        samples[i] = sum / audioBuffer.numberOfChannels;
+      }
+    } else {
+      samples.set(audioBuffer.getChannelData(0));
+    }
+
+    const threshold = wakeConfig.value.settings.local_match_threshold ?? 1.8;
+    const result = matchWakeWord(samples, wakeWordTemplates.value, threshold);
+    if (result.matched) {
+      return result.word;
+    }
+  } catch {
+    // Local match failed, fall through to cloud ASR
+  }
+  return null;
+}
+
 function stopBackgroundListening() {
   listenerEnabled.value = false;
   clearMonitorTimers();
@@ -1057,7 +1125,21 @@ async function processBargeInSegment(audioBlob: Blob) {
 
 async function processWakeSegment(audioBlob: Blob) {
   if (!listenerEnabled.value) return;
-  setListeningState('wake_checking', '正在判断唤醒词。');
+  setListeningState('wake_checking', '正在判断唤醒词（本地匹配）。');
+
+  // 1) 优先尝试本地 MFCC + DTW 匹配 (~50-100ms, 无网络延迟)
+  const localMatch = await tryLocalWakeMatch(audioBlob);
+  if (localMatch) {
+    if (!listenerEnabled.value) return;
+    wakeCheckText.value = localMatch;
+    playWakeGreetingPrompt();
+    startFollowupSession();
+    beginCommandRecording();
+    return;
+  }
+
+  // 2) 本地未命中 → 回退到云端 ASR 识别
+  setListeningState('wake_checking', '正在判断唤醒词（云端识别）。');
   try {
     const response = await transcribeMonitorAudio(audioBlob);
     if (!listenerEnabled.value) return;
@@ -1425,7 +1507,7 @@ function playWakeGreetingPrompt() {
 }
 
 function playAcknowledgementPrompt(): Promise<void> {
-  setListeningState('thinking', '已收到，正在查找信息。');
+  setListeningState('thinking', '已收到。');
   ttsStatusText.value = ACKNOWLEDGEMENT_TEXT;
   return enqueuePromptPlayback(ACKNOWLEDGEMENT_TEXT, '等待提示', getAcknowledgementAudioUrl, () => !activeStreamPlayback);
 }

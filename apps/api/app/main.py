@@ -1,6 +1,7 @@
 import base64
 import json
 import logging
+import re
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from time import sleep
@@ -697,6 +698,38 @@ def _should_auto_metrics_fallback(response: ChatResponse) -> bool:
     return True
 
 
+
+def _split_for_streaming(text: str, chunk_size: int = 5) -> list[str]:
+    """将中文文本按自然边界拆分为流式输出分片。
+
+    优先在标点符号处断句，避免生硬截断；每片 4-10 字，模拟真人语速。
+    """
+    if not text:
+        return []
+    chunks: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= chunk_size + 2:
+            chunks.append(remaining)
+            break
+        # 在 chunk_size ± 2 范围内寻找标点断句点
+        look_ahead = min(chunk_size + 4, len(remaining))
+        best = chunk_size
+        for i in range(max(chunk_size - 1, 2), look_ahead):
+            if remaining[i] in "。！？，、；：\n":
+                best = i + 1
+                break
+        # 如果没找到标点，尝试在 chunk_size 处不拆散英文/数字
+        if best == chunk_size:
+            while best < len(remaining) and best < chunk_size + 3:
+                if remaining[best] in "。！？，、；：\n ":
+                    break
+                best += 1
+        chunks.append(remaining[:best])
+        remaining = remaining[best:]
+    return chunks
+
+
 def _chat_stream_events(request: ChatRequest):
     started_at = perf_counter()
     message_id = f"msg-{uuid4().hex[:12]}"
@@ -784,17 +817,28 @@ def _chat_stream_events(request: ChatRequest):
 
             if metrics_response is not None:
                 response = metrics_response
-                yield _sse("dora_delta", {"text": response.speak_text})
+                if response.speak_text:
+                    for chunk in _split_for_streaming(response.speak_text):
+                        yield _sse("dora_delta", {"text": chunk})
+                        sleep(0.15)
             elif metrics_mode == "auto":
                 response = _chat_response(request).model_copy(update={"message_id": message_id})
-                if response.type in {"answer", "screen_control"}:
-                    yield _sse("dora_delta", {"text": response.speak_text})
+                if response.type in {"answer", "screen_control"} and response.speak_text:
+                    for chunk in _split_for_streaming(response.speak_text):
+                        yield _sse("dora_delta", {"text": chunk})
+                        sleep(0.15)
             elif (knowledge_response := _safe_knowledge_response(request, message_id=message_id)) is not None:
                 response = knowledge_response
-                if response.type in {"answer", "screen_control"}:
-                    yield _sse("dora_delta", {"text": response.speak_text})
+                if response.type in {"answer", "screen_control"} and response.speak_text:
+                    for chunk in _split_for_streaming(response.speak_text):
+                        yield _sse("dora_delta", {"text": chunk})
+                        sleep(0.15)
             elif settings.enable_mock_dora:
                 response = _with_message_id(mock_dora.respond(request), message_id)
+                if response.type in {"answer", "screen_control"} and response.speak_text:
+                    for chunk in _split_for_streaming(response.speak_text):
+                        yield _sse("dora_delta", {"text": chunk})
+                        sleep(0.15)
             else:
                 for event in dora_client.stream_sse_chat(request, message_id=message_id):
                     sse_events.append(event)
@@ -817,8 +861,10 @@ def _chat_stream_events(request: ChatRequest):
             logger.warning("Dora stream failed with code %s", exc.code)
             if settings.demo_stable_mode:
                 response = _demo_stable_response(request, message_id=message_id, cause_code=exc.code)
-                if response.type in {"answer", "screen_control"}:
-                    yield _sse("dora_delta", {"text": response.speak_text})
+                if response.type in {"answer", "screen_control"} and response.speak_text:
+                    for chunk in _split_for_streaming(response.speak_text):
+                        yield _sse("dora_delta", {"text": chunk})
+                        sleep(0.15)
             else:
                 response = dora_error_response(
                     request=request,

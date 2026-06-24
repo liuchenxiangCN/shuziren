@@ -1,0 +1,25 @@
+version: 0.8.0
+asr:
+  provider: aliyun
+  model: fun-asr-realtime
+  region: cn-beijing
+  ws_url: wss://dashscope.aliyuncs.com/api-ws/v1/inference
+  audio_format: wav
+  sample_rate: 16000
+  timeout_seconds: 30
+tts:
+  provider: aliyun
+  model: cosyvoice-v3-flash
+  voice: longanyang
+  ws_url: wss://dashscope.aliyuncs.com/api-ws/v1/inference
+  audio_format: mp3
+  streaming:
+    enabled: true
+    fallback: segment
+    audio_format: pcm
+  sample_rate: 22050
+  timeout_seconds: 30
+notes:
+  - ASR_API_KEY 和 TTS_API_KEY 只能通过 .env 或部署环境变量提供。
+  - 真实 ASR/TTS 需在 .env 中设置 ENABLE_MOCK_ASR=false 和 ENABLE_MOCK_TTS=false。
+  - 后端 /api/tts/stream 输出 PCM 音频 chunk, 前端失败时回退分段 TTS。

@@ -1,0 +1,38 @@
+version: 0.8.0
+customer: finance-dashboard
+actions:
+  SWITCH_HOME:
+    label: 总览
+    type: page
+    description: 切换到总览页（集团财务概览）
+    fvs_function: gotoPage
+    params:
+      pageNumber: 1
+    speak_text: 已为您切换到集团财务总览页面。
+
+  SWITCH_FINANCE_INDICATORS:
+    label: 财务指标
+    type: page
+    description: 切换到财务指标分析页
+    fvs_function: gotoPage
+    params:
+      pageNumber: 2
+    speak_text: 已为您切换到财务指标分析页面。
+
+  SWITCH_COST_ANALYSIS:
+    label: 成本分析
+    type: page
+    description: 切换到成本分析页
+    fvs_function: gotoPage
+    params:
+      pageNumber: 3
+    speak_text: 已为您切换到成本分析页面。
+
+  SWITCH_BUDGET:
+    label: 预算执行
+    type: page
+    description: 切换到预算执行页
+    fvs_function: gotoPage
+    params:
+      pageNumber: 4
+    speak_text: 已为您切换到预算执行页面。

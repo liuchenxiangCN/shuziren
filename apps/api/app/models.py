@@ -77,6 +77,8 @@ class WakeSettings(BaseModel):
     barge_in_silence_ms: int = Field(default=700, ge=100, le=5_000)
     barge_in_max_audio_ms: int = Field(default=3_500, ge=500, le=30_000)
     barge_in_ignore_after_tts_start_ms: int = Field(default=700, ge=0, le=5_000)
+    # 本地唤醒词 MFCC+DTW 匹配阈值 (越低越严格, 1.2=极严, 1.8=默认, 2.5=宽松)
+    local_match_threshold: float = Field(default=1.8, ge=0.5, le=5.0)
 
 
 class WakeConfigResponse(BaseModel):

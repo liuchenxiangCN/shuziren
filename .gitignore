@@ -49,3 +49,6 @@ desktop.ini
 *.pem
 *.key
 *.crt
+
+# Presentation files (large binaries)
+presentation/

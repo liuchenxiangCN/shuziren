@@ -1,0 +1,25 @@
+version: 0.8.0
+base_url: http://host.docker.internal:9380
+mcp_url: http://host.docker.internal:9382/mcp
+dataset_name: finance_dashboard_demo
+knowledge:
+  mode: dora
+  fallback_text: 知识库未找到可靠依据，请补充资料后再试。
+retrieval:
+  transport: api
+  keyword: false
+  page_size: 3
+  top_k: 16
+  similarity_threshold: 0.35
+  max_chunk_chars: 1200
+  timeout_seconds: 15
+summarizer:
+  provider: source_bound_extractive
+  prompt_profile: source_bound_extractive
+  require_sources: true
+  no_evidence_policy: fallback
+  max_answer_chars: 800
+notes:
+  - RAGFlow API Key 不写入 YAML, 仅放本地 .env 或 RAGFlow 部署环境。
+  - 默认保持 Mock (ENABLE_MOCK_DORA=true), 知识库模式默认 dora。
+  - 如需本地直连知识库, 通过环境变量 KNOWLEDGE_MODE=local_ragflow_llm 显式启用。
