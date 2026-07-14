@@ -4,6 +4,10 @@
 
 ### Added
 
+- 新增 `finance-dashboard` 汽车营销录屏 Mock 方案, 覆盖约 2 分钟演示脚本: 领导欢迎、公司经营总览、线索总览切页、线索分析、销售线索制度知识库问答和销售行动建议。
+- 新增汽车营销首页批售指标 Mock 问答, 覆盖批售指标值、同比、环比、当日、昨日、目标完成率、年累计和累计完成率。
+- 新增汽车营销线索页门店对比 Mock 问答, 基于当前 FVS page 2 数据对比服务中心 A/B/E/G 店的线索量、大定量和转化率。
+- 新增汽车营销录屏知识库类 Mock 回答《销售线索分级与跟进管理办法》, 通过 `display.sources` 展示制度来源。
 - 新增上线前风险处理与全链路 E2E 验证任务包, 覆盖 `CONFIG_ADMIN_TOKEN`、Ops 访问边界、密钥轮换、FVS 正式嵌入策略、真实依赖连通、完整启动 smoke、安全负测、核心业务回归、异常 E2E 和证据归档。
 - 新增风险 R-039, 跟踪上线前缺少完整风险处理和全链路 E2E 证据的问题。
 - 新增阶段 5 运行时配置覆盖层 `data/config-overrides/`; `active.yaml`、`history/`、`audit.jsonl` 为本地运行数据, 不进入 Git。
@@ -54,6 +58,9 @@
 
 ### Changed
 
+- `finance-dashboard` 录屏配置切换到汽车营销决策分析场景; FVS URL 指向汽车营销解决方案 / 公司经营总览, 控屏白名单收敛为 `SWITCH_HOME` 和 `SWITCH_LEADS_OVERVIEW` 两个 page_number 动作。
+- 收窄 `SWITCH_LEADS_OVERVIEW` 的 Mock 触发词, 避免“线索页面门店对比怎么样？”被误识别为切页动作。
+- 当前录屏环境使用 `ASK_METRICS_MODE=dora`, 避免旧财务 Excel 问数抢答汽车营销 Mock 问题。
 - 完成上线前风险处理与回归验证: 证据归档到 `logs/prelaunch-20260616-161620/`, 新日志包为 `logs/exports/zt-poc-logs-20260616-205839.zip`。
 - Docker Compose 默认 API / Web 端口绑定改为 `127.0.0.1`, 降低本地 POC 默认暴露 `/ops`、`/ops/config` 和 API 的风险。
 - Docker Compose 透出 RAGFlow / Knowledge / FVS 后端运行参数, 并避免对 AskMetrics / Knowledge / DemoStable 可写运行态字段注入非空默认值, 防止遮蔽 `data/config-overrides/active.yaml`。

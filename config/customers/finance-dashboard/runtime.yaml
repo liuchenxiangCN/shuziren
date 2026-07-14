@@ -1,26 +1,26 @@
 version: 0.9.0
 customer_id: finance-dashboard
-description: 企业财务综合驾驶舱 POC 客户运行时配置。
+description: 汽车营销决策分析 POC 客户运行时配置。
 
 project:
   project_id: finance-dashboard
-  project_name: 企业财务综合驾驶舱数字人 POC
-  product_name: 财务驾驶舱对话数字人
-  customer_name: XX集团
-  scenario_name: 财务综合驾驶舱
+  project_name: 汽车营销决策分析数字人 POC
+  product_name: 汽车营销决策分析助手
+  customer_name: XX汽车集团
+  scenario_name: 汽车营销决策分析
   assistant_name: 小帆
 
 demo_stable_mode: false
 demo:
   stable_mode: false
 
-ask_metrics_mode: excel
+ask_metrics_mode: dora
 ask_metrics:
-  mode: excel
+  mode: dora
   data_dir: docs/demo_data/ask_metrics/finance
 
 notes:
   - API Key 只放 .env 或部署环境变量。
   - DEMO_STABLE_MODE=true 时, Dora 失败会优先使用本地演示兜底。
-  - ASK_METRICS_MODE 环境变量可覆盖本文件中的问数模式。
+  - 当前录屏 Mock 方案使用 ASK_METRICS_MODE=dora, 避免旧财务 Excel 问数抢答汽车营销问题。
   - ASR / TTS 默认使用真实阿里云服务, 需在 .env 中配置 API Key。

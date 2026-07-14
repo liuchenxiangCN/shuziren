@@ -4,6 +4,8 @@
 
 V1.0 POC 验收交付版已输出。
 
+2026-07-06 当前录屏环境已切换为汽车营销决策分析 Mock 方案: `finance-dashboard` profile 使用汽车营销 FVS 公司经营总览 URL, 控屏只保留 `page_number=1` 公司经营总览和 `page_number=2` 线索总览; Mock Dora 演示题收敛为约 2 分钟脚本, 覆盖唤醒、领导欢迎、经营问答、首页批售指标、线索总览切页、线索分析、门店线索对比、销售线索制度知识库问答和销售行动建议。当前本地录屏 `.env` 使用 `ASK_METRICS_MODE=dora` 和 `DEMO_STABLE_MODE=true`, 避免旧财务 Excel 问数抢答; 真实 ASR / TTS 配置保持不变。该录屏方案不启用真实 Dora / RAGFlow / Database Provider, 不新增自由 SQL、模型生成代码或任意 FVS 函数写入能力。
+
 2026-06-15 项目定位已调整为通用可配置数字人 POC。中天证券党建大屏不再是项目本体, 而是当前客户实例: 通过 `config/customers/zt-securities/` 覆盖项目名称、客户名称、助手名称、Dora Agent、知识库、问数数据、FVS 看板、动作白名单、唤醒词和演示话术。根目录默认配置和 `.env.example` 改为通用默认, 前端标题和 Ops 导出标题改为读取配置。新增 ADR-0023 记录该定位决策。
 
 2026-06-15 已恢复主线清洁基线: 本地临时宣传分支已删除, 主线工作树中的录屏页面、专用数字人组件、专用资产、临时客户配置、财务录屏动作白名单和临时 ADR 已移除。当前只保留主线架构图 `docs/15_MAINLINE_ARCHITECTURE_DIAGRAM.md`、能力路由与配置中心方案 `docs/16_CAPABILITY_ROUTING_AND_CONFIG_CENTER.md` 以及 ADR-0022。配置中心方案已进一步按实际代码修正: 阶段 0A 先做默认入口和根模板清洁; 阶段 1 做只读 effective config 时必须新增字段来源构造, 不能凭合并后的 `Settings` 猜测来源; 不直接进入可写配置。阶段 0A 当时列出的 `AskMetricsService` 临时遗留 allowlist 已在阶段 2 移除。

@@ -2,6 +2,42 @@
 
 本文件记录每轮开发的事实结果。不要写愿望, 只写已经发生的变更、验证和遗留问题。
 
+## 2026-07-06
+
+### 汽车营销录屏 Mock 方案
+
+#### Completed
+
+- 将 `finance-dashboard` 当前录屏配置从财务驾驶舱 Mock 调整为汽车营销决策分析 Mock。
+- FVS iframe 地址切换为汽车营销解决方案 / 公司经营总览页面; 当前录屏只使用 `page_number=1` 公司经营总览和 `page_number=2` 线索总览。
+- 控屏白名单收敛为两个动作: `SWITCH_HOME` 和 `SWITCH_LEADS_OVERVIEW`; 前端执行仍必须走 `/api/screen/execute` 本次 `authorized_action`。
+- Mock Dora 演示问题收敛为约 2 分钟脚本: 唤醒、领导欢迎、整体经营问答、切换线索总览、线索情况、销售线索制度知识库问答和销售行动建议。
+- 新增首页批售指标 Mock 问答: 批售指标值 18,628、同比 1467.2%、环比 1.52%、当日 1,060、昨日 916、目标完成率 46.56%、年累计 162,633、累计完成率 134.48%。
+- 基于 FVS 线索总览 page 2 截图新增门店线索对比 Mock 问答: A 店线索量排名第一, B 店大定承接突出, E/G 店转化率更优。
+- 新增知识库类 Mock 回答《销售线索分级与跟进管理办法》, 回答包含 `display.sources`, 用于录屏展示“企业规章制度知识库问答”能力。
+- 当前本地 `.env` 录屏环境切换为 `ASK_METRICS_MODE=dora`, 避免旧财务 Excel 问数抢答汽车营销问题; `DEMO_STABLE_MODE` 保持开启。
+- 本轮未接入真实 Dora / RAGFlow / Database Provider, 未执行自由 SQL, 未新增模型生成代码或任意 FVS 函数写入能力。
+
+#### Changed Files
+
+- `config/customers/finance-dashboard/demo-cases.yaml`
+- `config/customers/finance-dashboard/screen-actions.yaml`
+- `config/customers/finance-dashboard/runtime.yaml`
+- `config/customers/finance-dashboard/fvs.yaml`
+- `config/customers/finance-dashboard/dora.yaml`
+- `config/customers/finance-dashboard/README.md`
+
+#### Verification
+
+- `docker compose --project-directory /home/liufeng/code/shuziren up -d --build api web` 通过。
+- `GET /api/demo/config` 返回 `project_name=汽车营销决策分析数字人 POC`, `ask_metrics_mode=dora`, 并返回 9 条汽车营销录屏演示题。
+- 新 FVS 同源代理 URL 经 `http://localhost:18000/webroot/...` 返回 HTTP 200。
+- `/api/chat` 验证通过: `我是李总`、`当前整体经营情况怎么样？`、`批售指标怎么样？`、`切换到线索总览`、`今天线索情况怎么样？`、`线索页面门店对比怎么样？`、`公司对高意向线索跟进有什么要求？`、`今天销售团队优先做什么？` 均命中新 Mock。
+- `线索页面门店对比怎么样？` 返回 answer, 未再被切页关键词误匹配为 screen_control; `切换到线索总览` 仍返回 `SWITCH_LEADS_OVERVIEW`。
+- `/api/chat` 的制度问题返回 `title=销售线索分级与跟进管理办法` 且包含 `display.sources`。
+- `/api/screen/execute` 执行 `SWITCH_LEADS_OVERVIEW` 成功, 本次授权 `fvs_routing.page_number=2`。
+- `/api/ops/dependencies` 显示 SQLite、动作白名单、Mock Dora、真实 ASR/TTS 配置和 Mock FVS 正常; RAGFlow 仍不可达, 但当前录屏 Mock 方案不依赖 RAGFlow。
+
 ## 2026-06-16
 
 ### 上线前风险处理、完整 smoke、安全负测与核心回归

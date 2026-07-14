@@ -1,6 +1,6 @@
 version: 0.8.0
 integration_mode: iframe
-url: /webroot/decision/view/duchamp?viewlet=%E9%9B%86%E5%9B%A2%E8%B4%A2%E5%8A%A1%E7%BB%BC%E5%90%88%E9%A9%BE%E9%A9%B6%E8%88%B1%2F%E9%9B%86%E5%9B%A2%E8%B4%A2%E5%8A%A1%E7%BB%BC%E5%90%88%E9%A9%BE%E9%A9%B6%E8%88%B1.fvs&page_number=1
+url: /webroot/decision/view/duchamp?viewlet=%252F%25E6%25B1%25BD%25E8%25BD%25A6%25E8%2590%25A5%25E9%2594%2580%25E8%25A7%25A3%25E5%2586%25B3%25E6%2596%25B9%25E6%25A1%2588-%25E5%2586%25B3%25E7%25AD%2596%25E5%2588%2586%25E6%259E%2590%25E6%2580%25BB%25E8%25A7%2588%252F%25E5%2585%25AC%25E5%258F%25B8%25E7%25BB%258F%25E8%2590%25A5%25E6%2580%25BB%25E8%25A7%2588.fvs&page_number=1
 target_origin: ""
 page_param: page_number
 same_origin_proxy:
@@ -8,11 +8,10 @@ same_origin_proxy:
   public_prefix: /webroot/
   upstream: http://host.docker.internal:8075/webroot/
 pages:
-  overview: 1
-  finance_indicators: 2
-  cost_analysis: 3
-  budget_execution: 4
+  business_overview: 1
+  leads_overview: 2
 notes:
   - 前端构建仍通过 VITE_FVS_URL / VITE_FVS_INTEGRATION_MODE 注入安全配置。
   - FVS 侧如需监听消息, 必须按 action_id 固定映射, 不执行模型生成 JavaScript。
-  - FVS URL 中的 viewlet 参数已做 URL 编码: 集团财务综合驾驶舱/集团财务综合驾驶舱.fvs。
+  - FVS URL 指向汽车营销解决方案 - 决策分析总览 / 公司经营总览.fvs。
+  - 当前录屏只使用 page_number=1 公司经营总览和 page_number=2 线索总览。

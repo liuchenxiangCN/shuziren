@@ -1,5 +1,5 @@
 version: 0.8.0
-agent_name: 企业财务综合驾驶舱语音助手
+agent_name: 汽车营销决策分析语音助手
 agent_id: ""
 channel_type: feishu
 chat_mode: sse
