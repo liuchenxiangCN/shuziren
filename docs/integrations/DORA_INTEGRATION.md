@@ -1,5 +1,7 @@
 # Dora 集成说明
 
+> Lifecycle: `AS_BUILT_POC`。本文描述当前 POC Dora 接入，不是多屏产品 Provider 目标契约。
+
 ## 目标
 
 Dora 负责 Agent 路由、问数、RAGFlow MCP 调用和结构化输出。Gateway 负责调用 Dora、解析输出、容错和动作安全校验。

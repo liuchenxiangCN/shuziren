@@ -1,5 +1,7 @@
 # API 契约
 
+> Lifecycle: `AS_BUILT_POC`。本文是当前单实例 POC 的已实现 API 契约，不是 P1 多大屏目标控制面契约。目标契约在 [product/contracts](product/contracts) 中设计，完成实现和验收前不得替换本文的 as-built 事实。
+
 本文档定义前端与后端 Gateway 的接口契约。实际实现前如需变更, 必须同步更新本文档。
 
 ## 通用约定

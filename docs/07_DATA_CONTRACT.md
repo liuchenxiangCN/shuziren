@@ -1,5 +1,7 @@
 # 数据契约
 
+> Lifecycle: `AS_BUILT_POC`。本文是当前单实例 POC 的已实现共享数据契约，不是 P1 多大屏目标数据模型。目标契约在 [product/contracts](product/contracts) 中设计，完成实现和验收前不得描述为当前实现。
+
 本文档定义前后端、Dora、FVS、日志之间共享的数据结构。实现代码时应优先以本文档为准。
 
 ## Dora Output Types

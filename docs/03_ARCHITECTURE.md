@@ -1,12 +1,14 @@
 # 总体架构
 
+> Lifecycle: `AS_BUILT_POC`。本文记录当前已实现的单实例 POC 架构。2026-07-26 后的标准产品目标架构以 [17_STANDARD_PRODUCT_DESIGN.md](17_STANDARD_PRODUCT_DESIGN.md) 和 ADR-0026 为准；多大屏控制面、按屏 Provider、AvatarPackage 和 RBAC 尚未实现。
+
 ## 架构目标
 
 - 本地 Windows + Docker 可运行。
 - 前端、后端、配置、外部集成解耦。
 - Mock 优先, 真实服务逐个替换。
 - 客户相关配置外置。
-- 项目定位保持通用可配置, 客户实例只通过配置和客户文档进入系统。
+- 当前 POC 核心保持客户无关, 客户实例只通过配置和客户文档进入系统。
 - 可记录会话日志、错误日志和关键链路耗时。
 
 ## 逻辑架构

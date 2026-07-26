@@ -2,11 +2,15 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-0026
 
 ## Date
 
 2026-06-15
+
+## Superseded
+
+2026-07-26 起，产品目标由 ADR-0026 收敛为面向 FineReport / FVS 既有客户的多大屏数字人平台。本 ADR 继续说明现有 POC 为什么保持客户配置与核心代码分离，但不再定义目标产品的市场边界。
 
 ## Context
 

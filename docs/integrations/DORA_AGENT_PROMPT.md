@@ -1,5 +1,7 @@
 # Dora Agent Prompt
 
+> Lifecycle: `CUSTOMER_SPECIFIC` / `AS_BUILT_POC`。本文是 POC Agent 提示词基线，不是标准产品默认 Prompt 或可执行当前任务。
+
 建议 Dora Agent 名称:
 
 ```text

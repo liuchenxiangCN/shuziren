@@ -4,17 +4,16 @@
 
 ### Completed
 
-- 
+- TODO
 
 ### Changed Files
 
-- 
+- TODO
 
 ### Verification
 
-- 
+- TODO
 
 ### Notes
 
-- 
-
+- TODO

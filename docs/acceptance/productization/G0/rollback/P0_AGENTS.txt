@@ -1,0 +1,33 @@
+# AGENTS.md
+
+## Role
+
+This repository is productizing the implemented local POC into a privately deployed FineReport / FVS multi-screen conversational digital-human platform. Target product capabilities must not be described as implemented.
+
+## Read First
+
+Before development, read:
+
+1. `docs/CODEX_CONTEXT.md`
+2. `docs/NEXT_ACTIONS.md`
+3. `docs/DEV_LOG.md`
+4. `docs/05_DEVELOPMENT_PLAN.md`
+5. `docs/13_RISKS_AND_TODO.md`
+6. `docs/17_STANDARD_PRODUCT_DESIGN.md`
+
+Read the implemented POC API and data contracts when changing runtime behavior. Read only the relevant integration or customer directory for scoped work.
+
+## Development Rules
+
+- Advance only the current productization phase in `docs/NEXT_ACTIONS.md`.
+- Keep target and implemented behavior visibly separate.
+- Keep Mock switches for Dora, ASR, TTS and FVS.
+- Do not expose API keys in frontend code.
+- Screen control uses `action_id` plus backend whitelist validation.
+- Never execute model-generated JavaScript, SQL, Python or shell.
+- Customer-specific content stays in customer configuration and documentation.
+- The FineReport official plugin remains local customer-installed evidence and is never redistributed.
+
+## Documentation Rules
+
+After each development round, update `docs/DEV_LOG.md`, `docs/NEXT_ACTIONS.md` and `docs/CHANGELOG.md`. Synchronize risks, decisions and contracts when their facts change.

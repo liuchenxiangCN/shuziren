@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "batch": "G0",
+  "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "generated_at": "2026-07-26T23:17:37.6530724Z",
+  "gate_summary": "PASS",
+  "acceptance_state": "AWAITING_EXPLICIT_USER_DECISION",
+  "candidate": {
+    "kind": "working_tree",
+    "base_commit": "8e293af1f56e5d7623b0af3dfd408e6086e736c2",
+    "fingerprint_sha256": "FBB3264058311B6B65805C0D9C7269723DA4797CD5DB0C41AA660F29BBD96A01",
+    "file_count": 57,
+    "scope": "P0 product-definition documentation plus G0 governance; runtime code unchanged",
+    "fingerprint_scope": "modified, staged and untracked non-ignored files, excluding docs/acceptance/productization/G0 and logs",
+    "image_digest": {
+      "status": "N/A",
+      "reason": "No image or runtime package was built"
+    }
+  },
+  "database": {
+    "schema_version": "N/A",
+    "migration_version": "N/A",
+    "reason": "Documentation-only batch"
+  },
+  "gates": [
+    {
+      "id": "documentation_lifecycle",
+      "status": "PASS",
+      "command": "scripts/lint-doc-lifecycle.ps1",
+      "result": "DOC_LIFECYCLE_OK checks=268 links=122 files=97 plugin_files=1"
+    },
+    {
+      "id": "lifecycle_lint_self_test",
+      "status": "PASS",
+      "command": "scripts/test-doc-lifecycle-lint.ps1",
+      "result": "DOC_LIFECYCLE_SELF_TEST_OK cases=21"
+    },
+    {
+      "id": "current_document_budgets",
+      "status": "PASS",
+      "evidence": {
+        "AGENTS.md": {
+          "lines": 95,
+          "limit": 120
+        },
+        "README.md": {
+          "lines": 70,
+          "limit": 80
+        },
+        "docs/CODEX_CONTEXT.md": {
+          "lines": 74,
+          "limit": 100
+        },
+        "docs/NEXT_ACTIONS.md": {
+          "lines": 87,
+          "limit": 120
+        }
+      }
+    },
+    {
+      "id": "root_entry_governance",
+      "status": "PASS",
+      "evidence": "Stable AGENTS policy and README navigation; no dynamic status; scoped routes, backtick paths, target/as-built markers, root Secret patterns and binary references passed"
+    },
+    {
+      "id": "archive_integrity",
+      "status": "PASS",
+      "evidence": {
+        "snapshots": 6,
+        "hashes_matching_manifest": 6,
+        "archived_lines": 4117,
+        "restored_original_lines": 4105
+      }
+    },
+    {
+      "id": "finereport_plugin_git_boundary",
+      "status": "PASS",
+      "evidence": {
+        "sha256": "D1F1F6BFA70C44652231293318ED4124B97B8A227209C0A35156F7EB1E4D68AB",
+        "tracked_copies": 0,
+        "canonical_sample_ignored": true,
+        "renamed_dat_copy_rejected_by_self_test": true
+      }
+    },
+    {
+      "id": "staged_unstaged_utf8_whitespace",
+      "status": "PASS",
+      "evidence": "git diff --check and git diff --cached --check returned 0; strict UTF-8 and whitespace scan passed"
+    },
+    {
+      "id": "runtime_scope",
+      "status": "PASS",
+      "evidence": "No changed path exists outside documentation, governance scripts and repository metadata"
+    },
+    {
+      "id": "rollback_export",
+      "status": "PASS",
+      "evidence": "Six root documents restored, eleven P0 artifacts preserved, zero failed anchors, zero G0-only files"
+    },
+    {
+      "id": "runtime_functional_tests",
+      "status": "N/A",
+      "reason": "No runtime implementation changed"
+    },
+    {
+      "id": "database_migration_restore",
+      "status": "N/A",
+      "reason": "No database or schema changed"
+    },
+    {
+      "id": "real_external_provider",
+      "status": "N/A",
+      "reason": "No external integration was implemented; FineReport plugin capability remains blocked"
+    }
+  ],
+  "independent_reviews": [
+    {
+      "task_id": "/root/architecture_check",
+      "reviewer": "Meitner",
+      "status": "PASS",
+      "conclusion": "P1-P5 result route and acceptance policy close all prior blocking findings"
+    },
+    {
+      "task_id": "/root/final_doc_qa",
+      "reviewer": "Huygens",
+      "status": "PASS",
+      "conclusion": "Lifecycle gate, entry boundaries, renamed plugin detection and P0-preserving rollback pass"
+    },
+    {
+      "task_id": "/root/agents_readme_audit",
+      "reviewer": "independent Codex reviewer",
+      "status": "PASS",
+      "conclusion": "Root responsibilities, scoped routing, synchronization rules and aligned line budgets pass"
+    },
+    {
+      "task_id": "/root/root_entry_acceptance",
+      "reviewer": "independent Codex reviewer",
+      "status": "PASS",
+      "conclusion": "Root R1-R9 invariants and 21 isolated accept/reject fixtures pass after evidence synchronization"
+    }
+  ],
+  "evidence": {
+    "candidate_file_list_sha256": "8693D1F296A22EF3869B8CE773F4DE919FBDB56681B8E3B2D62C5348CC3675A6",
+    "archive_manifest_sha256": "45C3EF60C99EB225EC7EE1F5D0BA3C71AA5329E17AC3638FAD809F42206C421A",
+    "root_agents_sha256": "F3C03E2EE94291EE3B9DFACBE7B54DB6C4A79F4129E5E73C47BA8C2C8959F403",
+    "root_readme_sha256": "5FEFD0F9488BC2A8B8497613B67779751170E247C50FA99685213D9F6999956A",
+    "lifecycle_lint_sha256": "F97B2E715814D8026D2CA88E6BA0F15CECA83D8BE82349650376BB76871585BC",
+    "lifecycle_self_test_sha256": "9B2876086B5B7611A3B3EF7B50AA1BED584172C0B0CB80D140576C5179A5E1E9",
+    "rollback_exporter_sha256": "7A1E37A6AFDD5E9EB739C2B1D7318C4FEEC31777DBE6C6C59490EAF80FF32530",
+    "candidate_fingerprint_script_sha256": "8FE1021548E7807C440C4D2943E57660D453192F9A140BA6AD7903F108B3E00D"
+  },
+  "rollback": {
+    "status": "PASS",
+    "target": "P0-preserving recovery tree",
+    "command": "scripts/export-g0-rollback-target.ps1 -Destination <empty-directory>",
+    "base_commit": "8e293af1f56e5d7623b0af3dfd408e6086e736c2",
+    "raw_proof_sha256": "DC0497500F4084313A5094EB93018FA5D126437393ED9FA4B7620B2818B0342E",
+    "post_restore_result": "PASS: base runtime exported; six pre-G0 root documents restored; eleven P0 artifacts preserved including productized entries; G0-only files absent; unsafe targets rejected"
+  },
+  "user_decision": {
+    "status": "PENDING",
+    "date": null,
+    "conversation_reference": null
+  }
+}

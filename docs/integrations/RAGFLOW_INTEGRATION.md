@@ -1,5 +1,7 @@
 # RAGFlow 集成说明
 
+> Lifecycle: `AS_BUILT_POC`。本文描述当前 POC RAGFlow / MCP 接入和历史环境证据，不是多屏产品目标契约。
+
 ## 目标
 
 RAGFlow 负责测试知识库文档的解析、向量检索和 MCP 服务暴露。Dora 通过外接 MCP 调用 RAGFlow, 取得知识库 chunks 后由 Dora 自己生成最终回答。

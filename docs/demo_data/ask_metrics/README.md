@@ -1,5 +1,7 @@
 # 党建问数测试 Excel 数据
 
+> Lifecycle: `CUSTOMER_SPECIFIC` / `AS_BUILT_POC_FIXTURE`。本目录是中天证券等 POC 问数样例资产，不是标准产品默认数据或数据库兼容性证据。
+
 本目录存放 V0.5 / V0.6 问数功能测试用的脱敏演示 Excel 数据。所有人员、支部和业务数据均为样例, 不代表真实客户数据。
 
 V0.7 已通过 Gateway 本地只读 Excel 问数 Adapter 接入这些文件。`/api/chat` 和 `/api/chat/stream` 在调用 Dora 前会优先匹配固定问数意图, 命中后直接返回带数据来源的 `answer`。

@@ -1,5 +1,7 @@
 # 主链路系统架构图
 
+> Lifecycle: `ARCHIVED_POC_SNAPSHOT`。本文是 2026-06-15 前后 POC 主链路设计快照，不代表最终 as-built 清单或多大屏标准产品目标。文中的“当前、尚未实现、推荐”均只表示快照当时状态，不能指导新开发。目标架构见 [17_STANDARD_PRODUCT_DESIGN.md](17_STANDARD_PRODUCT_DESIGN.md)。
+
 本文只覆盖通用可配置数字人 POC 主链路。中天证券党建大屏是一个客户配置实例, 通过 `config/customers/zt-securities/` 实现, 不是核心代码的项目定位。临时宣传录屏链路已从主线清理, 不作为本架构图输入。
 
 本文拆成两个版本:
@@ -7,12 +9,12 @@
 - 版本 A: Dora 中心版。问数和知识库 MCP 都由 Dora Agent 承接, Gateway 只负责协议、安全、归一化、TTS 和控屏白名单。
 - 版本 B: 本地直连版。问数和知识库都由 Gateway 本地 Adapter 直连处理, Dora 不在问数 / 知识库主路径上。
 
-当前代码状态:
+快照当时的代码状态:
 
 - 版本 A 的知识库路径已实现: `Gateway -> Dora OpenClaw SSE -> RAGFlow MCP -> RAGFlow Dataset`。
 - 版本 A 的问数路径可通过 `ASK_METRICS_MODE=dora` 进入 Dora, 但 Dora 侧真实问数工具 / 数据源仍需客户环境确认。
 - 版本 B 的问数路径已实现: `Gateway -> AskMetrics Excel Adapter -> docs/demo_data/ask_metrics/*.xlsx`。
-- 版本 B 的知识库直连路径是目标架构, 需要新增 `KnowledgeDirectAdapter` 直接调用本地 RAGFlow MCP / Retrieval API; 当前主代码尚未实现该 Adapter。
+- 版本 B 的知识库直连路径在本快照时仍是目标架构；该状态后来已由阶段 3 实现记录取代，详见当前 [DEV_LOG.md](DEV_LOG.md) 所引用的历史日志。
 
 ## 版本 A: Dora 中心版
 

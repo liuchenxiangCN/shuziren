@@ -1,0 +1,30 @@
+# Documentation Index
+
+## P0 Productization
+
+- `CODEX_CONTEXT.md`: current P0 productization context
+- `NEXT_ACTIONS.md`: P1 target-contract task
+- `05_DEVELOPMENT_PLAN.md`: P0-P5 productization plan
+- `13_RISKS_AND_TODO.md`: active product and POC risks
+- `17_STANDARD_PRODUCT_DESIGN.md`: standard product target
+- `integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md`: official-plugin boundary and external gate
+- `decisions/ADR-0026-finereport-fvs-productization.md`: accepted productization decision
+
+## Implemented POC Baseline
+
+- `03_ARCHITECTURE.md`
+- `04_TECH_STACK.md`
+- `06_API_CONTRACT.md`
+- `07_DATA_CONTRACT.md`
+- `08_CONFIG_GUIDE.md`
+- `09_LOCAL_DEPLOY.md`
+- `10_TEST_PLAN.md`
+
+Target product documents do not prove that multi-screen control, RBAC, database querying, the official plugin connector or real 2D / 3D rendering has been implemented.
+
+## Scoped Material
+
+- Customer material: `customers/<customer-id>/`
+- Relevant external-system design: `integrations/`
+- Historical decisions: `decisions/`
+- POC delivery baseline: `delivery/v1.0/`

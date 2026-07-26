@@ -1,5 +1,7 @@
 # 测试计划
 
+> Lifecycle: `AS_BUILT_POC`。本文包含历史 POC 和客户样例测试，不是产品化结果验收计划。产品化批次按 [RESULT_ACCEPTANCE_STANDARD.md](RESULT_ACCEPTANCE_STANDARD.md) 建立独立证据包。
+
 ## 测试原则
 
 - 每个阶段都有独立验收。

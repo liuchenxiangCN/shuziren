@@ -1,5 +1,7 @@
 # 技术选型
 
+> Lifecycle: `AS_BUILT_POC`。本文记录当前 POC 技术基线，不代表标准产品最终选型。V1 已确认采用产品内置本地用户 / RBAC，不接 AD / LDAP / OIDC；控制面主存储、本地 IAM 实现、Secret Store、资产存储、消息 / 缓存、Renderer 扩展和多屏容量方案仍需在 Productization P1 评审后冻结，目标架构见 [17_STANDARD_PRODUCT_DESIGN.md](17_STANDARD_PRODUCT_DESIGN.md)。
+
 ## 选型总览
 
 | 类型 | 选型 | 说明 |

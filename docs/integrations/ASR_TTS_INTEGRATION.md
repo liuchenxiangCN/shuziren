@@ -1,5 +1,7 @@
 # ASR / TTS 集成说明
 
+> Lifecycle: `AS_BUILT_POC`。本文描述当前 POC 语音 Provider 接入，不是目标产品的按屏 Provider 契约或兼容矩阵。
+
 ## 目标
 
 接入国产 ASR 和 TTS, 完成语音输入和语音播报。

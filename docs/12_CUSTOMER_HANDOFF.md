@@ -1,5 +1,7 @@
 # 客户移交说明
 
+> Lifecycle: `CUSTOMER_SPECIFIC` / `ARCHIVED_POC_SNAPSHOT`。本文记录既有中天证券 POC 的客户移交方式，是历史交付基线。标准产品的目标交付分层、实施流程和验收矩阵见 [17_STANDARD_PRODUCT_DESIGN.md](17_STANDARD_PRODUCT_DESIGN.md)；产品级安装、升级、备份和多屏交付尚未实现。
+
 本文档面向客户或后续交付团队, 用于解释系统能力、部署方式、当前限制和后续建议。
 
 ## 系统能力

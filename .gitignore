@@ -52,3 +52,6 @@ desktop.ini
 
 # Presentation files (large binaries)
 presentation/
+
+# Local vendor evidence; never redistribute through the product repository
+docs/fine-plugin-com.fr.plugin.decision.ai.v11-*.zip

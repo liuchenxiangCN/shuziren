@@ -1,5 +1,7 @@
 # V0.5 RAGFlow Demo Knowledge
 
+> Lifecycle: `CUSTOMER_SPECIFIC` / `AS_BUILT_POC_FIXTURE`。本目录是中天证券党建 POC 的脱敏知识样例，不是标准产品默认知识库。
+
 本目录存放 V0.5 RAGFlow MCP 最小测试知识库资料。内容均为脱敏演示样例, 用于验证 Dora 通过 RAGFlow MCP 返回党建知识库答案。
 
 ## Suggested Dataset
@@ -27,4 +29,3 @@ description: 中天证券党建大屏 POC 演示知识库
 - 入党流程是什么?
 - 党员学习制度有哪些要求?
 - 党支部组织建设规范是什么?
-
