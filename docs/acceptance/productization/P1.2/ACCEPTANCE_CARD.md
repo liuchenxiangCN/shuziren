@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Result: three-screen inventory and isolation
 - Base accepted runtime: commit `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`
 - Base acceptance record: commit `6c3d06c9ca916b5c08c1a1a71c80b06dc80f36b7`
@@ -11,11 +11,12 @@
 - Target logical schema / migration: `p1_control_plane_001` / `002_three_screen_inventory`
 - Gate summary: PASS
 - Independent review: PASS; zero blocking and zero non-blocking findings on the final candidate
-- User decision: Pending
+- User decision: `通过` on 2026-07-27
 
 This card froze the complete P1.2 result and non-scope before implementation.
-The final candidate now implements that frozen result and is ready for explicit
-user review. It is not accepted until the user records a decision.
+The final candidate implements that frozen result. The user explicitly accepted
+it without conditions on 2026-07-27, making it the runtime rollback baseline
+for subsequent productization batches.
 
 ## Frozen Observable Outcome
 

@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Logical schema: `p1_control_plane_001`
 - Latest migration: `002_three_screen_inventory`
 - Scope: factual SQLite P1.2 subset; not the complete P1 target model

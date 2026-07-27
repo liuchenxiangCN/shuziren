@@ -15,9 +15,9 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P1.2 Three-Screen Inventory`. G0, P1.0 and P1.1 were explicitly accepted on 2026-07-27.
+Current phase: `Productization P1.2 Accepted; P1.3 Awaiting Explicit Activation`. G0, P1.0, P1.1 and P1.2 were explicitly accepted on 2026-07-27.
 
-P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implemented and proved the local identity, browser-session, RBAC, security-audit and screen-device trust slice. The P1.2 candidate now implements the frozen three-screen inventory slice and has passed its local automated, browser, migration, Docker, rollback and independent-review gates. It is ready for explicit user result acceptance but remains unaccepted. Release publication and backup / restore remain P1.3.
+P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implemented and proved the local identity, browser-session, RBAC, security-audit and screen-device trust slice. P1.2 implemented and proved the three-screen inventory slice and is now the accepted runtime rollback baseline. Release publication and backup / restore remain P1.3; no P1.3 result card or implementation is active.
 
 ## Frozen Product Boundaries
 
@@ -38,11 +38,11 @@ separate P1.1 development-preview control plane. P1.1 adds local IAM, server-sid
 browser sessions, RBAC, append-only security audit and screen-device trust
 without changing the existing POC route meanings.
 
-The unaccepted P1.2 candidate adds the checksum-backed
+The accepted P1.2 runtime adds the checksum-backed
 `002_three_screen_inventory` migration, default Site/group/three-screen
 inventory, scoped inventory APIs and the `/manage` multi-screen view. FVS is
 still `UNVERIFIED`; runtime configuration is still `NOT_CONFIGURED_P1_3`.
-Nothing in the candidate claims publication, real FVS connectivity or
+Nothing in the accepted result claims publication, real FVS connectivity or
 production readiness.
 
 Implemented POC contracts remain authoritative for the original POC namespaces:
@@ -50,9 +50,8 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 - [06_API_CONTRACT.md](06_API_CONTRACT.md)
 - [07_DATA_CONTRACT.md](07_DATA_CONTRACT.md)
 
-Accepted P1.1 behavior is recorded separately in
-[acceptance/productization/P1.1](acceptance/productization/P1.1). The current
-P1.2 candidate and its pending acceptance state are recorded in
+Accepted P1.1 and P1.2 behavior is recorded separately in
+[acceptance/productization/P1.1](acceptance/productization/P1.1) and
 [acceptance/productization/P1.2](acceptance/productization/P1.2). P1.3 and later
 target behavior under [product/contracts](product/contracts) remains
 unimplemented.

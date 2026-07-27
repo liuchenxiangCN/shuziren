@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 
 ## Frozen Limits
 
@@ -30,5 +30,6 @@
   warning; the warning does not affect the passing cases.
 - FineReport/FVS/plugin/browser version compatibility remains Blocked by the P2
   external gate.
-- Automated success and independent-review PASS are not acceptance. The user's
-  explicit result decision remains required.
+- The user's acceptance does not waive these limits or turn unverified
+  FineReport/FVS, publication, recovery or production behavior into supported
+  capability.

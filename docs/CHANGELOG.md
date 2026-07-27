@@ -11,7 +11,7 @@
 
 ### Added
 
-- A P1.2 candidate with one default Site, screen group and three isolated ScreenInstances, each with non-secret FVS inventory, one active DigitalHumanInstance, device-trust summary and a same-screen RuntimeBinding.
+- Accepted P1.2 inventory with one default Site, screen group and three isolated ScreenInstances, each with non-secret FVS inventory, one active DigitalHumanInstance, device-trust summary and a same-screen RuntimeBinding.
 - Checksum-backed `002_three_screen_inventory` copied-database upgrade, opaque snapshot pagination, scope-aware inventory APIs, strong ETags, idempotent creates and the `/manage` multi-screen inventory workflow.
 - P1.2 local initialization, accepted-P1.1 copied-upgrade, API launcher and isolated browser-gate scripts.
 - P1.1 accepted local IAM, server-side browser sessions, fixed RBAC, typed different-user approval, append-only audit and screen-device trust APIs under separate `/api/v1/control-plane` and `/api/v1/device` namespaces.
@@ -35,7 +35,8 @@
 
 ### Changed
 
-- G0, P1.0 and P1.1 are explicitly accepted. P1.2 Three-Screen Inventory is implemented as a local candidate with passing automated and zero-finding independent-review evidence, but remains unaccepted pending an explicit user decision.
+- G0, P1.0, P1.1 and P1.2 are explicitly accepted. P1.3 Publish, Rollback And Recovery remains queued pending an explicit start instruction.
+- P1.2 local implementation is accepted at candidate `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`; its automated and independent-review evidence passes with zero final findings.
 - P1.1 local implementation is accepted at candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets were remediated, and the third independent review passed with zero findings.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
 - P1.0 validation now binds target membership and inheritance through ResolutionFingerprint, creates immutable ReleaseTargets only with ConfigRelease and separates control-plane ETag checks from device acknowledgement CAS.

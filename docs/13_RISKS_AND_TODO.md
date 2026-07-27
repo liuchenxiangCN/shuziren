@@ -13,7 +13,7 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 | ID | Risk | Required Control | Status |
 | --- | --- | --- | --- |
-| R-041 | Multi-screen configuration, session, identity or permission leakage | The P1.2 candidate uses separate ScreenInstance / DigitalHumanInstance / DeviceEnrollment contexts and passes three-screen isolation plus independent-review gates; keep Open until explicit user acceptance | Open |
+| R-041 | Multi-screen configuration, session, identity or permission leakage | Accepted P1.2 uses separate ScreenInstance / DigitalHumanInstance / DeviceEnrollment contexts and passes three-screen isolation plus independent-review gates; later batches must preserve these controls | Mitigated |
 | R-043 | FineReport plugin external API, authentication, session, permission inheritance and upgrade stability are unknown | Keep the provider `Unverified` and unpublished until official documentation and isolated real-environment probes pass | Blocked |
 | R-044 | Reusing the POC admin token or local-only boundary would make production roles insecure | P1.1 proves the development-preview IAM, session, RBAC, separate device credential and immutable-audit slice; later batches must preserve it while production activation and custodian controls remain unverified | Open |
 | R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | P1 freezes storage / recovery; P2 introduces instance-bound providers, pools, timeouts, cancellation and backpressure | Open |
@@ -26,20 +26,17 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product Blockers
 
-### P1.2 Three-Screen Inventory
+### P1.3 Awaiting Explicit Activation
 
-P1.1 was explicitly accepted on 2026-07-27 and remains the runtime rollback
-baseline. The complete P1.2 local candidate is implemented and the required
-automated, browser, migration, Docker, Secret-scan and rollback gates pass.
-Independent review passes with zero findings; explicit user acceptance remains
-outstanding.
+P1.2 was explicitly accepted on 2026-07-27. Candidate
+`2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree
+`565dbb3567e2a4ae5b872177d97449120477fe8c`, is the current runtime rollback
+baseline. P1.3 has not been activated.
 
-- The candidate implements the frozen default Site, screen-group behavior and three independently addressable initial ScreenInstances.
-- Ownership, sibling non-disclosure, stale-write, idempotency, duplicate, cross-Site and unrelated-screen isolation gates pass locally.
-- The accepted P1.1 fixture ID, device/enrollment/credential rows and original audit chain remain byte-for-byte or row-for-row preserved through copied-database upgrade; the accepted P1.1 test suite still passes on the rollback commit.
-- The separate read-only Codex review reports PASS with zero blocking and zero non-blocking findings.
-- FVS credentials, FineReport identity bindings, configuration publication and recovery remain outside P1.2 unless a later accepted result card explicitly brings them into scope.
-- P1.3 publishing / recovery remains blocked until P1.2 is explicitly accepted.
+- P1.2 proves the local default Site, group and independently addressable screen inventory without claiming publication or real FVS connectivity.
+- P1.3 must preserve accepted ownership, sibling non-disclosure, Secret rejection, immutable audit and device-trust behavior.
+- FVS credentials, FineReport identity bindings, configuration publication and recovery remain unimplemented.
+- No P1.3 result card, implementation or acceptance claim exists until the user explicitly starts the batch.
 
 ### P2 External Gate
 

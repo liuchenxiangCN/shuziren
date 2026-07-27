@@ -9,6 +9,15 @@
 
 ## 2026-07-27
 
+### P1.2 User Acceptance
+
+#### Completed Facts
+
+- The user explicitly accepted P1.2 (`通过`) without conditions or scope reduction.
+- P1.2 candidate commit `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`, schema `p1_control_plane_001` and migration `002_three_screen_inventory` became the accepted runtime rollback baseline.
+- The acceptance package retains the final automated, browser, migration, Docker, Secret-scan, P1.1 rollback and zero-finding independent-review evidence.
+- P1.3 remains queued and is not activated by this acceptance record.
+
 ### P1.2 Three-Screen Inventory Candidate
 
 #### Completed Facts To Date
@@ -31,7 +40,7 @@
 - The accepted P1.1 runtime commit still passes all ten original integration tests; rollback exposes migration `001_initial_identity_device_trust`, omits P1.2 Site/Screen list routes and retains the accepted P1.1 device runtime route.
 - P1 target validation passes 2,722 checks and all 191 self-test cases. Candidate, bundle, SQLite, logs, screenshot and evidence Secret scans report zero operational-secret findings.
 - The first independent review rejected candidate `2f0c4f3a4889b41910c4dc1397df4394762784dd`; all environment, Secret/DSN, scope/replay, migration-registry/ownership and WAL-copy findings were remediated.
-- The final independent review of commit `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`, passed with zero blocking and zero non-blocking findings. The result is ready for explicit user acceptance; user decision remains Pending and P1.3 is not active.
+- The final independent review of commit `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`, passed with zero blocking and zero non-blocking findings. The user subsequently accepted the result without conditions as recorded above.
 
 ### P1.1 User Acceptance And P1.2 Activation
 
