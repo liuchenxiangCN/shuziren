@@ -455,6 +455,15 @@ class ControlPlaneStore:
                     """
                 ).fetchone()
                 if migration_table is None:
+                    existing_objects = connection.execute(
+                        """
+                        SELECT type, name FROM sqlite_master
+                        WHERE name NOT LIKE 'sqlite_%'
+                        ORDER BY type, name
+                        """
+                    ).fetchall()
+                    if existing_objects:
+                        raise RuntimeError("Existing control-plane schema is missing the migration registry")
                     self._execute_script(connection, SCHEMA_MIGRATIONS_SQL)
                 columns = {
                     row["name"]
@@ -467,6 +476,16 @@ class ControlPlaneStore:
                 applied = connection.execute(
                     "SELECT version, checksum_sha256 FROM schema_migrations ORDER BY rowid"
                 ).fetchall()
+                if not applied:
+                    existing_objects = connection.execute(
+                        """
+                        SELECT type, name FROM sqlite_master
+                        WHERE name NOT LIKE 'sqlite_%' AND name != 'schema_migrations'
+                        ORDER BY type, name
+                        """
+                    ).fetchall()
+                    if existing_objects:
+                        raise RuntimeError("Existing control-plane schema is missing the migration registry")
                 if len(applied) > len(MIGRATIONS):
                     raise RuntimeError("Unknown control-plane migration registry")
                 for index, row in enumerate(applied):
@@ -564,11 +583,10 @@ class ControlPlaneStore:
             mismatch = connection.execute(
                 f"""
                 SELECT 1 FROM {table}
-                WHERE screen_id = ?
-                  AND (tenant_id != ? OR deployment_id != ?)
+                WHERE tenant_id != ? OR deployment_id != ? OR screen_id != ?
                 LIMIT 1
                 """,
-                (fixture_screen_id, metadata["tenant_id"], metadata["deployment_id"]),
+                (metadata["tenant_id"], metadata["deployment_id"], fixture_screen_id),
             ).fetchone()
             if mismatch is not None:
                 raise RuntimeError("P1.1 device history ownership mismatch blocks P1.2 migration")

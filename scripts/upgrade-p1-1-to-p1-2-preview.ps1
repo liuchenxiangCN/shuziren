@@ -63,11 +63,12 @@ if ([string]::IsNullOrWhiteSpace($previewSettings["CONTROL_PLANE_ROOT_KEY_B64"])
     throw "The source preview root key is missing."
 }
 
-Copy-Item -LiteralPath $sourceDatabasePath -Destination $targetDatabasePath
 $env:CONTROL_PLANE_ROOT_KEY_B64 = $previewSettings["CONTROL_PLANE_ROOT_KEY_B64"]
 Push-Location $apiRoot
 try {
-    uv run python -m app.control_plane.upgrade_preview --database $targetDatabasePath
+    uv run python -m app.control_plane.upgrade_preview `
+        --source $sourceDatabasePath `
+        --database $targetDatabasePath
 }
 finally {
     Pop-Location

@@ -897,6 +897,7 @@ class ControlPlaneService:
         )
         now = self.clock()
         with self.store.transaction() as connection:
+            site = self._site_row(connection, principal, site_id, "screen.manage")
             replay = self._idempotency_lookup(
                 connection,
                 phase="createScreenGroup",
@@ -906,7 +907,6 @@ class ControlPlaneService:
             )
             if replay is not None:
                 return json.loads(replay["result_json"])
-            site = self._site_row(connection, principal, site_id, "screen.manage")
             screen_group_id = uuid7()
             try:
                 connection.execute(
@@ -1132,6 +1132,7 @@ class ControlPlaneService:
         request_digest = self._sensitive_request_digest("createScreenInstance", command)
         now = self.clock()
         with self.store.transaction() as connection:
+            site = self._site_row(connection, principal, site_id, "screen.manage")
             replay = self._idempotency_lookup(
                 connection,
                 phase="createScreenInstance",
@@ -1141,7 +1142,6 @@ class ControlPlaneService:
             )
             if replay is not None:
                 return json.loads(replay["result_json"])
-            site = self._site_row(connection, principal, site_id, "screen.manage")
             screen_id = uuid7()
             try:
                 connection.execute(
@@ -1291,6 +1291,7 @@ class ControlPlaneService:
         )
         now = self.clock()
         with self.store.transaction() as connection:
+            screen = self._screen_row(connection, principal, screen_id, "screen.manage")
             replay = self._idempotency_lookup(
                 connection,
                 phase="createDigitalHumanInstance",
@@ -1300,7 +1301,6 @@ class ControlPlaneService:
             )
             if replay is not None:
                 return json.loads(replay["result_json"])
-            screen = self._screen_row(connection, principal, screen_id, "screen.manage")
             existing = connection.execute(
                 """
                 SELECT 1 FROM digital_human_instances
@@ -2364,6 +2364,12 @@ class ControlPlaneService:
                         (resource_id,),
                     ).fetchone()
                     if row is not None:
+                        if not self._can_access_site(principal, row["site_id"], "screen.read"):
+                            raise ControlPlaneError(
+                                400,
+                                "INVALID_CURSOR",
+                                "List cursor is invalid or expired",
+                            )
                         items.append(self._site_response(connection, row))
                 elif resource_kind == "SCREEN_GROUP":
                     row = connection.execute(
@@ -2371,6 +2377,12 @@ class ControlPlaneService:
                         (resource_id,),
                     ).fetchone()
                     if row is not None:
+                        if not self._can_access_site(principal, row["site_id"], "screen.read"):
+                            raise ControlPlaneError(
+                                400,
+                                "INVALID_CURSOR",
+                                "List cursor is invalid or expired",
+                            )
                         items.append(self._screen_group_response(connection, row))
                 else:
                     row = connection.execute(
@@ -2378,6 +2390,17 @@ class ControlPlaneService:
                         (resource_id,),
                     ).fetchone()
                     if row is not None:
+                        if not self._can_access_screen(
+                            principal,
+                            row["site_id"],
+                            row["screen_id"],
+                            "screen.read",
+                        ):
+                            raise ControlPlaneError(
+                                400,
+                                "INVALID_CURSOR",
+                                "List cursor is invalid or expired",
+                            )
                         items.append(self._screen_response(connection, row))
             next_cursor = None
             snapshot_expires_at = None
@@ -2699,25 +2722,103 @@ class ControlPlaneService:
                 | access[-_\s]?key
                 | client[-_\s]?secret
                 | private[-_\s]?key
+                | account[-_\s]?key
+                | shared[-_\s]?access[-_\s]?signature
                 | password
                 | passwd
                 | passphrase
+                | pwd
+                | user[-_\s]?id
+                | username
+                | user
+                | uid
                 | token
                 | cookie
                 | authorization
                 | auth
                 | secret
                 | credential
+                | dsn
             )\s*[:=]
             """,
             decoded,
         )
+        dsn_assignments = {
+            match.casefold()
+            for match in re.findall(
+                r"""(?ix)
+                \b(
+                    driver
+                    | server
+                    | data[-_\s]?source
+                    | database
+                    | initial[-_\s]?catalog
+                    | integrated[-_\s]?security
+                    | trusted[-_\s]?connection
+                    | host
+                    | port
+                    | dbname
+                    | service[-_\s]?name
+                    | sid
+                    | protocol
+                    | address
+                    | connect[-_\s]?data
+                )\s*=
+                """,
+                decoded,
+            )
+        }
+        dsn_structure = (
+            len(dsn_assignments) >= 2
+            or re.search(r"(?i)\((description|address|connect_data)\s*=", decoded) is not None
+        )
+        secret_value = re.search(
+            r"""(?ix)
+            (
+                \bsk-(?:proj-)?[a-z0-9_-]{16,}
+                | \bgh[pousr]_[a-z0-9]{16,}
+                | \bAKIA[A-Z0-9]{12,}
+                | \bAIza[a-z0-9_-]{20,}
+                | \bxox[baprs]-[a-z0-9-]{16,}
+                | \b(?:sk|rk)_live_[a-z0-9]{16,}
+                | \b[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\b
+                | -----BEGIN\s+(?:RSA\s+|EC\s+|OPENSSH\s+)?PRIVATE\s+KEY-----
+            )
+            """,
+            decoded,
+        )
+        invalid_reference_syntax = (
+            any(character.isspace() for character in decoded)
+            or any(character in decoded for character in ("?", "#", "@", ";", "=", "{", "}"))
+            or (
+                "://" in decoded
+                and (parsed.scheme.casefold() not in {"http", "https"} or not parsed.hostname)
+            )
+        )
         if (
             parsed.username is not None
             or parsed.password is not None
-            or parsed.scheme.casefold() in {"mysql", "postgres", "postgresql", "oracle", "sqlserver"}
+            or parsed.scheme.casefold()
+            in {
+                "mariadb",
+                "mongodb",
+                "mongodb+srv",
+                "mssql",
+                "mysql",
+                "odbc",
+                "oracle",
+                "postgres",
+                "postgresql",
+                "redis",
+                "rediss",
+                "sqlite",
+                "sqlserver",
+            }
             or normalized.casefold().startswith("jdbc:")
             or sensitive_assignment is not None
+            or dsn_structure
+            or secret_value is not None
+            or invalid_reference_syntax
             or re.search(r"(?i)\b(bearer|basic)\s+[a-z0-9._~+/=-]+", decoded)
         ):
             raise ControlPlaneError(

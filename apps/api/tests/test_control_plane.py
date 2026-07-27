@@ -35,6 +35,7 @@ from app.control_plane.store import (
     SCHEMA_MIGRATIONS_SQL,
     SCHEMA_SQL,
 )
+from app.control_plane.upgrade_preview import copy_sqlite_database
 
 ORIGIN = "https://manage.test"
 PASSWORDS = {
@@ -289,6 +290,28 @@ def test_schema_is_repeatable_and_preview_is_explicit(
             tampered_root_key,
             preview_mode=False,
         )
+
+
+def test_sqlite_backup_copy_includes_committed_wal(tmp_path: Path) -> None:
+    source_path = tmp_path / "source.db"
+    target_path = tmp_path / "target.db"
+    with sqlite3.connect(source_path) as connection:
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA wal_autocheckpoint = 0")
+        connection.execute("CREATE TABLE wal_probe (value TEXT NOT NULL)")
+        connection.commit()
+        connection.execute("INSERT INTO wal_probe (value) VALUES (?)", ("committed-in-wal",))
+        connection.commit()
+        wal_path = Path(f"{source_path}-wal")
+        assert wal_path.exists()
+        assert wal_path.stat().st_size > 0
+
+        copy_sqlite_database(str(source_path), str(target_path))
+
+    with sqlite3.connect(target_path) as connection:
+        assert connection.execute("SELECT value FROM wal_probe").fetchall() == [("committed-in-wal",)]
+    with pytest.raises(FileExistsError, match="Refusing to overwrite"):
+        copy_sqlite_database(str(source_path), str(target_path))
 
 
 @pytest.mark.parametrize(
@@ -1443,6 +1466,16 @@ def test_three_screen_inventory_api_isolation_scope_and_idempotency(
         "fvs-ref;credential=synthetic-credential",
         "https://fvs.example.test/view?api%5Fkey=synthetic-credential",
         "Authorization: Bearer synthetic-credential",
+        "Server=db.example;Database=fr;User Id=svc;Pwd=synthetic-credential",
+        "Driver={PostgreSQL Unicode};Server=db.example;Uid=svc;Pwd=synthetic-credential",
+        "Data Source=db.example;Initial Catalog=fr;Integrated Security=True",
+        "(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db.example)(PORT=1521)))",
+        "postgresql://svc:synthetic-credential@db.example/fr",
+        "mongodb+srv://svc:synthetic-credential@db.example/fr",
+        "sk-proj-SYNTHETIC-NOT-REAL-0123456789abcdef",
+        "ghp_SYNTHETICNOTREAL0123456789abcdef",
+        "AKIASYNTHETICNOTREAL01",
+        "eyJsyntheticHeader.eyJsyntheticPayload.syntheticSignature",
     )
     for forbidden_fvs_ref in forbidden_fvs_refs:
         secret_ref = implementation.patch(
@@ -1657,6 +1690,67 @@ def test_three_screen_inventory_api_isolation_scope_and_idempotency(
         ]
         == next_members
     )
+
+    pre_narrow_cursor = implementation.get("/api/v1/control-plane/screen-instances?limit=1").json()[
+        "next_cursor"
+    ]
+    assert pre_narrow_cursor
+    with service.store.transaction() as connection:
+        connection.execute(
+            """
+            UPDATE role_assignments
+            SET scope_type = 'SCREEN', scope_id = ?
+            WHERE user_id = (
+                SELECT user_id FROM users
+                WHERE tenant_id = 'tenant-test'
+                  AND deployment_id = 'deployment-test'
+                  AND normalized_username = 'implementation'
+            )
+            """,
+            (screens[2]["screen_id"],),
+        )
+    narrowed_cursor = implementation.get(
+        f"/api/v1/control-plane/screen-instances?limit=1&cursor={pre_narrow_cursor}"
+    )
+    assert narrowed_cursor.status_code == 400
+    assert narrowed_cursor.json()["error"]["code"] == "INVALID_CURSOR"
+    assert screens[1]["screen_id"] not in narrowed_cursor.text
+    narrowed_screens = implementation.get("/api/v1/control-plane/screen-instances").json()["items"]
+    assert [item["screen_id"] for item in narrowed_screens] == [screens[2]["screen_id"]]
+
+    narrowed_group_replay = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-groups",
+        headers=mutation_headers(
+            csrf,
+            **{"Idempotency-Key": "create-group-idempotency"},
+        ),
+        json=create_group_payload,
+    )
+    assert narrowed_group_replay.status_code == 404
+    narrowed_screen_replay = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-instances",
+        headers=mutation_headers(
+            csrf,
+            **{"Idempotency-Key": create_key},
+        ),
+        json=create_payload,
+    )
+    assert narrowed_screen_replay.status_code == 404
+    narrowed_digital_replay = implementation.post(
+        (f"/api/v1/control-plane/screen-instances/{created.json()['screen_id']}/digital-human-instances"),
+        headers=mutation_headers(
+            csrf,
+            **{"Idempotency-Key": digital_key},
+        ),
+        json={},
+    )
+    assert narrowed_digital_replay.status_code == 404
+    for denied_replay in (
+        narrowed_group_replay,
+        narrowed_screen_replay,
+        narrowed_digital_replay,
+    ):
+        assert created.json()["screen_id"] not in denied_replay.text
 
     auditor, auditor_csrf = login(app, "auditor")
     assert len(auditor.get("/api/v1/control-plane/screen-instances").json()["items"]) == 5
@@ -1991,6 +2085,38 @@ def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
             5,
         )
 
+    orphan_path = tmp_path / "orphan-screen-upgrade.db"
+    shutil.copy2(pre_migration_copy, orphan_path)
+    with sqlite3.connect(orphan_path) as connection:
+        connection.execute(
+            """
+            UPDATE device_credential_families
+            SET screen_id = 'rogue-screen'
+            WHERE family_id = 'family-preserved'
+            """
+        )
+        connection.commit()
+    with pytest.raises(RuntimeError, match="ownership mismatch"):
+        ControlPlaneService(
+            str(orphan_path),
+            PurposeKeyring.generate_root_base64(),
+            preview_mode=True,
+        )
+    with sqlite3.connect(orphan_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        assert (
+            connection.execute(
+                "SELECT screen_id FROM device_credential_families WHERE family_id = 'family-preserved'"
+            ).fetchone()[0]
+            == "rogue-screen"
+        )
+        assert (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sites'"
+            ).fetchone()
+            is None
+        )
+
     reordered_path = tmp_path / "reordered-registry.db"
     shutil.copy2(legacy_path, reordered_path)
     with sqlite3.connect(reordered_path) as connection:
@@ -2012,6 +2138,47 @@ def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
             PurposeKeyring.generate_root_base64(),
             preview_mode=True,
         )
+
+    empty_registry_path = tmp_path / "empty-registry.db"
+    shutil.copy2(pre_migration_copy, empty_registry_path)
+    with sqlite3.connect(empty_registry_path) as connection:
+        connection.execute("DELETE FROM schema_migrations")
+        connection.commit()
+    with pytest.raises(RuntimeError, match="missing the migration registry"):
+        ControlPlaneService(
+            str(empty_registry_path),
+            PurposeKeyring.generate_root_base64(),
+            preview_mode=True,
+        )
+    with sqlite3.connect(empty_registry_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM device_credential_families").fetchone()[0] == 1
+        assert (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sites'"
+            ).fetchone()
+            is None
+        )
+
+    missing_registry_path = tmp_path / "missing-registry.db"
+    shutil.copy2(pre_migration_copy, missing_registry_path)
+    with sqlite3.connect(missing_registry_path) as connection:
+        connection.execute("DROP TABLE schema_migrations")
+        connection.commit()
+    with pytest.raises(RuntimeError, match="missing the migration registry"):
+        ControlPlaneService(
+            str(missing_registry_path),
+            PurposeKeyring.generate_root_base64(),
+            preview_mode=True,
+        )
+    with sqlite3.connect(missing_registry_path) as connection:
+        assert (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+            ).fetchone()
+            is None
+        )
+        assert connection.execute("SELECT COUNT(*) FROM device_credential_families").fetchone()[0] == 1
 
 
 def test_concurrent_group_membership_uses_one_winning_etag(
