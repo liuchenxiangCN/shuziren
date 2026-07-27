@@ -2,9 +2,9 @@
   "schema_version": 1,
   "batch": "P1.1",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
-  "generated_at": "2026-07-27T13:18:43.8777398Z",
+  "generated_at": "2026-07-27T13:32:53.8216076Z",
   "gate_summary": "PASS",
-  "acceptance_state": "CANDIDATE_FROZEN_REVIEW_PENDING",
+  "acceptance_state": "READY_FOR_USER_ACCEPTANCE",
   "base_accepted": {
     "commit": "6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758",
     "tree": "33752e13a385b4980cd3ecca309ad0f27d9307ae"
@@ -81,7 +81,7 @@
       "status": "PASS",
       "evidence": {
         "path": "logs/productization/P1.1-20260727-reenroll/security/secret-scan.txt",
-        "sha256": "7927b72585263475d9effb5da38400a2e8d2ec77bf3fd88bbd33166212a0dbe6"
+        "sha256": "9643ec2146ad49695bc62727e89213e3d902b4bb892fec450361651d00ce69cf"
       }
     },
     {
@@ -126,9 +126,24 @@
         "sha256": "4ba3fc960bb0f9fbb80a0bbc6ef3f2b1912b33c2c27c1ed62207adf480dd714c"
       },
       "disposition": "REMEDIATED_IN_FINAL_CANDIDATE"
+    },
+    {
+      "task_id": "/root/p1_1_independent_review",
+      "reviewer": "Fermat",
+      "candidate_commit": "8c18e5d6b10081eaaf608436440046894d235d46",
+      "candidate_tree": "9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd",
+      "evidence_docs_commit": "5565e6d1bbbb5c96741da91f3db952c89f18ca0d",
+      "status": "PASS",
+      "blocking_findings": 0,
+      "nonblocking_findings": 0,
+      "conclusion": "The candidate satisfies the frozen P1.1 result card, negative security boundaries and rollback requirements and may enter explicit user acceptance.",
+      "report": {
+        "path": "logs/productization/P1.1-20260727-reenroll/independent-review/third-review-pass.txt",
+        "sha256": "1efe9f091e239f248cd741d6d5469573876405a0e22f8df2c39276a675f0971a"
+      }
     }
   ],
-  "independent_review_status": "REVIEW_PENDING_FINAL_CANDIDATE",
+  "independent_review_status": "PASS",
   "rollback": {
     "status": "PASS",
     "target_commit": "6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758",

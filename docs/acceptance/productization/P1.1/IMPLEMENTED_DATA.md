@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE_FROZEN_REVIEW_PENDING`
+- State: `READY_FOR_USER_ACCEPTANCE`
 - Logical schema: `p1_control_plane_001`
 - Scope: factual SQLite P1.1 candidate subset; not the complete P1 target model
 - Target source: [../../../product/contracts/DATA_MODEL.md](../../../product/contracts/DATA_MODEL.md)

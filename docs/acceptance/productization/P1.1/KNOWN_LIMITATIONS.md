@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE_FROZEN_REVIEW_PENDING`
+- State: `READY_FOR_USER_ACCEPTANCE`
 
 ## Frozen Limits
 
@@ -15,4 +15,4 @@
 - Local API/web startup and the complete browser workflow passed. The retained screenshot shows the sanitized auditor view and contains no observed credential material.
 - An isolated Docker / Compose build and runtime smoke passed for the API and web preview. This is local packaging evidence only; production HTTPS, customer infrastructure, orchestrator, backup and upgrade behavior remain uncertified.
 - FineReport plugin behavior remains Blocked by the P2 external gate.
-- Two independent review rounds failed earlier candidates and their findings are remediated in the current candidate. Final re-review of the frozen commit is Pending; P1.1 must not be presented for user acceptance until it passes.
+- Two independent review rounds failed earlier candidates and their findings are remediated in the current candidate. The third independent read-only review passed with zero findings. P1.1 is ready for explicit user acceptance but remains unaccepted until that decision is recorded.

@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE_FROZEN_REVIEW_PENDING`
+- State: `READY_FOR_USER_ACCEPTANCE`
 - Scope: factual P1.1 candidate API; not an accepted production-support claim
 - Target source: [../../../product/contracts/CONTROL_PLANE_API.md](../../../product/contracts/CONTROL_PLANE_API.md)
 

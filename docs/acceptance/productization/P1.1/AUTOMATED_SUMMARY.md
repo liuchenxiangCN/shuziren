@@ -3,10 +3,10 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE_FROZEN_REVIEW_PENDING`
+- State: `READY_FOR_USER_ACCEPTANCE`
 - Candidate: `8c18e5d6b10081eaaf608436440046894d235d46`
 - Candidate tree: `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`
-- Gate summary: required local gates PASS; optional Docker build/runtime smoke PASS; final-candidate independent review Pending
+- Gate summary: required local gates PASS; Docker build/runtime smoke PASS; final-candidate independent review PASS
 
 Sanitized raw evidence is under ignored local path `logs/productization/P1.1-20260727-reenroll/`. The tracked [manifest.json](manifest.json) is the machine-readable gate record.
 
@@ -24,4 +24,4 @@ Sanitized raw evidence is under ignored local path `logs/productization/P1.1-202
 - Rollback to P1.0 commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`: PASS in a detached temporary worktree.
 - Docker / Compose preview: PASS after adding the missing workspace package declaration required by the pinned pnpm 9.15.4 build. Isolated alternate-port probes returned HTTP 200 for `/api/health` and `/manage`; image IDs and clean Compose shutdown are recorded in the manifest.
 
-The first independent review correctly returned `FAIL` for candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e`. The second review confirmed those repairs and returned `FAIL` for `45dd8ff9455c1ab62a408d26c15f15a14256341b` only because terminal-family history could not coexist with a fresh replacement family. Both dispositions are recorded in [manifest.json](manifest.json). The only required completion step still Pending is the same reviewer's separate read-only review of the final candidate. The existing Starlette `TestClient` emitted one dependency deprecation warning; it did not affect the ten passing tests.
+The first independent review correctly returned `FAIL` for candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e`. The second review confirmed those repairs and returned `FAIL` for `45dd8ff9455c1ab62a408d26c15f15a14256341b` only because terminal-family history could not coexist with a fresh replacement family. Both dispositions are recorded in [manifest.json](manifest.json). The same reviewer completed a third read-only review of the final candidate with `PASS`, zero blocking findings and zero non-blocking findings. The existing Starlette `TestClient` emitted one dependency deprecation warning; it did not affect the ten passing tests. The user decision remains Pending.

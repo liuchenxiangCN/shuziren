@@ -48,7 +48,8 @@
 - P1 contract validation passed 2,722 checks and lifecycle lint passed 314 checks under both PowerShell hosts. Candidate-diff, bundle and evidence secret scanning returned zero findings.
 - Detached-worktree rollback to P1.0 passed contract/lifecycle checks and POC API import, then the temporary worktree was removed.
 - The pinned pnpm 9.15.4 frontend build and isolated Docker / Compose API/web build-runtime smoke pass; `/api/health` and `/manage` returned HTTP 200, and the Compose project shut down cleanly.
-- Final re-review of the frozen candidate remains Pending, so the candidate is not yet presented for user acceptance.
+- The same independent reviewer completed a third read-only review of the final candidate: `PASS`, zero blocking findings and zero non-blocking findings. Evidence hashes, P1.0 rollback and all prior findings were independently rechecked.
+- P1.1 is ready for explicit user acceptance but remains unaccepted until that decision is recorded.
 
 ### P1.0 Target Contract Result Pack
 

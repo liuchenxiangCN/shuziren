@@ -33,7 +33,7 @@
 ### Changed
 
 - G0 and P1.0 are explicitly accepted, and P1.1 is the sole active result batch.
-- P1.1 local implementation is frozen at final candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets are remediated, and final-candidate re-review plus explicit user acceptance remain pending.
+- P1.1 local implementation is frozen at final candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets are remediated, and the third independent review passed with zero findings. Explicit user acceptance remains pending.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
 - P1.0 validation now binds target membership and inheritance through ResolutionFingerprint, creates immutable ReleaseTargets only with ConfigRelease and separates control-plane ETag checks from device acknowledgement CAS.
 - P1.0 release provenance now separates `NORMAL` approved-draft creation from exact-map `ROLLBACK` creation, with no cross-screen or credential-version substitution.

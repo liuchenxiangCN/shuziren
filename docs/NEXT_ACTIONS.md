@@ -11,11 +11,11 @@
 
 `Productization P1.1 Identity And Device Trust`.
 
-G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. Final P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46` is frozen with required local automated, browser, Docker and rollback gates passing, but it remains unaccepted and the accepted runtime baseline is still the single-instance POC.
+G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. Final P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46` is frozen with required local automated, browser, Docker, rollback and independent-review gates passing. It is ready for an explicit user result decision, remains unaccepted, and the accepted runtime baseline is still the single-instance POC.
 
 ## Next Task
 
-Rerun the same separate read-only Codex review against final P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`; if it passes with no blocking finding, record the conclusion and present the local identity and screen-device trust result for explicit user acceptance.
+Present final P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`, for explicit user acceptance. Record only the user's explicit result decision; do not activate P1.2 from silence.
 
 ### User-Visible Result
 
@@ -40,7 +40,7 @@ P1.1 must provide:
 - [acceptance/productization/P1.1/IMPLEMENTED_DATA.md](acceptance/productization/P1.1/IMPLEMENTED_DATA.md)
 - [acceptance/productization/P1.1/RUNBOOK.md](acceptance/productization/P1.1/RUNBOOK.md)
 
-Independent review task `/root/p1_1_independent_review` returned `FAIL` for candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` and then `FAIL` for candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b`. The first round's session-revocation, rotation-replay, terminal-family, key-purpose, one-time evidence, reauthentication-idempotency and named-migration findings are remediated. The second round's permanent screen-lock finding is remediated by preserving terminal history while allowing one distinct fresh active family, with stale-generation rejection. Final-candidate re-review and the user decision remain Pending. P1.1 cannot be presented for acceptance until that re-review passes.
+Independent review task `/root/p1_1_independent_review` returned `FAIL` for candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` and then `FAIL` for candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b`. The first round's session-revocation, rotation-replay, terminal-family, key-purpose, one-time evidence, reauthentication-idempotency and named-migration findings are remediated. The second round's permanent screen-lock finding is remediated by preserving terminal history while allowing one distinct fresh active family, with stale-generation rejection. The same reviewer then returned `PASS` for the final candidate with zero blocking and zero non-blocking findings. Only the explicit user decision remains Pending.
 
 ### User Result Scenarios
 

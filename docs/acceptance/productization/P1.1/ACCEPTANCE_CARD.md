@@ -3,12 +3,12 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE_FROZEN_REVIEW_PENDING`
+- State: `READY_FOR_USER_ACCEPTANCE`
 - Result: local identity and screen-device trust
 - Base accepted version: commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`, tree `33752e13a385b4980cd3ecca309ad0f27d9307ae`
 - Candidate: commit `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`
 - Database schema / migration: `p1_control_plane_001` / `001_initial_identity_device_trust`, checksum `fd7094d87568fddc42c339a4861a6004a136dfb26ed6d1a11549cdb7a5db95ce`; empty-store, repeat initialization and checksum-tamper rejection PASS
-- Gate summary: required local automated, browser and rollback gates PASS; optional Docker build/runtime smoke PASS; final-candidate independent review Pending
+- Gate summary: required local automated, browser, Docker and rollback gates PASS; final-candidate independent review PASS
 - User decision: Pending
 
 ## Frozen Observable Outcome
@@ -95,4 +95,4 @@ Independent review task `/root/p1_1_independent_review` rejected candidate `f4fa
 
 The same reviewer then rejected candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b` because a full historical screen uniqueness constraint permanently prevented the fresh family required after hard revocation or failed credential delivery.
 
-Both review rounds are remediated in the candidate above with regression coverage and rebuilt evidence. The final candidate is not yet eligible for user acceptance: the same separate read-only Codex task must rerun the critical negative tests and bind its conclusion to commit `8c18e5d6b10081eaaf608436440046894d235d46` and tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd` before the acceptance prompt is issued.
+Both failed review rounds are remediated in the candidate above with regression coverage and rebuilt evidence. The same separate read-only Codex task completed its third review against commit `8c18e5d6b10081eaaf608436440046894d235d46` and tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`: `PASS`, with zero blocking and zero non-blocking findings. P1.1 is ready for an explicit user result decision; it is not accepted until that decision is recorded.
