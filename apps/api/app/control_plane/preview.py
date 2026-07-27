@@ -25,6 +25,7 @@ def main() -> int:
     parser.add_argument("--tenant-id", default="tenant-preview")
     parser.add_argument("--deployment-id", default="deployment-preview")
     parser.add_argument("--screen-id", default="screen-trust-fixture")
+    parser.add_argument("--container-database", default="/app/data/control-plane-p1-2.db")
     args = parser.parse_args()
 
     env_path = Path(args.env_file).resolve()
@@ -64,6 +65,7 @@ def main() -> int:
                 "# Generated P1.2 development preview settings. Never commit this file.",
                 "CONTROL_PLANE_PREVIEW_MODE=true",
                 f"CONTROL_PLANE_ROOT_KEY_B64={root_key_b64}",
+                f"CONTROL_PLANE_DB_PATH={args.container_database}",
                 'CONTROL_PLANE_ALLOWED_ORIGINS=["http://localhost:18000","http://127.0.0.1:18000"]',
                 "",
             )

@@ -85,6 +85,7 @@ $targetEnvLines = @(
     "# Generated P1.2 development preview settings. Never commit this file.",
     "CONTROL_PLANE_PREVIEW_MODE=true",
     "CONTROL_PLANE_ROOT_KEY_B64=$($previewSettings["CONTROL_PLANE_ROOT_KEY_B64"])",
+    "CONTROL_PLANE_DB_PATH=/app/data/$([System.IO.Path]::GetFileName($targetDatabasePath))",
     $allowedOriginsLine,
     ""
 )

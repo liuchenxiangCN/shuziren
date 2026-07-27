@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote_plus, urlsplit
 
 from cryptography.exceptions import InvalidTag
 
@@ -813,7 +813,7 @@ class ControlPlaneService:
             )
 
     def list_users(self, principal: Principal) -> list[dict[str, Any]]:
-        self.require_permission(principal, "user.manage")
+        self.require_deployment_permission(principal, "user.manage")
         with self.store.connect() as connection:
             rows = connection.execute(
                 """
@@ -825,7 +825,7 @@ class ControlPlaneService:
             return [self._user_response(connection, row) for row in rows]
 
     def role_definitions(self, principal: Principal) -> list[dict[str, Any]]:
-        self.require_permission(principal, "role.assign")
+        self.require_deployment_permission(principal, "role.assign")
         return [
             {"role_id": role_id, "permissions": list(permissions), "catalog_version": "p1_roles_v1"}
             for role_id, permissions in ROLE_PERMISSIONS.items()
@@ -1421,6 +1421,7 @@ class ControlPlaneService:
         idempotency_key: str,
         high_risk_action_id: str | None,
     ) -> dict[str, Any]:
+        self.require_deployment_permission(context.principal, "user.manage")
         try:
             username = normalize_username(normalized_username)
         except ValueError as exc:
@@ -1502,7 +1503,7 @@ class ControlPlaneService:
         if_match: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        self.require_permission(context.principal, "risk.approve")
+        self.require_deployment_permission(context.principal, "risk.approve")
         self._require_recent_reauthentication(context)
         now = self.clock()
         self._expire_due_actions(now, action_id=action_id)
@@ -1590,7 +1591,7 @@ class ControlPlaneService:
         if_match: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
-        self.require_permission(context.principal, "risk.approve")
+        self.require_deployment_permission(context.principal, "risk.approve")
         self._require_recent_reauthentication(context)
         now = self.clock()
         self._expire_due_actions(now, action_id=action_id)
@@ -1670,12 +1671,12 @@ class ControlPlaneService:
         if action is None:
             raise ControlPlaneError(404, "NOT_FOUND", "High-risk action was not found")
         if action["initiator_user_id"] != principal.user_id:
-            self.require_permission(principal, "risk.approve")
+            self.require_deployment_permission(principal, "risk.approve")
             self.require_permission(principal, OPERATION_PERMISSION[action["operation_id"]])
         return self._action_response(action)
 
     def list_pending_actions(self, principal: Principal) -> list[dict[str, Any]]:
-        self.require_permission(principal, "risk.approve")
+        self.require_deployment_permission(principal, "risk.approve")
         self._expire_due_actions(self.clock())
         with self.store.connect() as connection:
             rows = connection.execute(
@@ -2233,7 +2234,7 @@ class ControlPlaneService:
         }
 
     def list_audit_events(self, principal: Principal, limit: int = 100) -> list[dict[str, Any]]:
-        self.require_permission(principal, "audit.read")
+        self.require_deployment_permission(principal, "audit.read")
         with self.store.connect() as connection:
             rows = connection.execute(
                 """
@@ -2685,9 +2686,31 @@ class ControlPlaneService:
                 "FVS inventory reference must contain at most 512 printing characters",
             )
         parsed = urlsplit(normalized)
+        decoded = normalized
+        for _ in range(2):
+            decoded_once = unquote_plus(decoded)
+            if decoded_once == decoded:
+                break
+            decoded = decoded_once
         sensitive_assignment = re.search(
-            r"(?i)(password|passwd|token|cookie|authorization|secret)\s*[:=]",
-            normalized,
+            r"""(?ix)
+            \b(
+                api[-_\s]?key
+                | access[-_\s]?key
+                | client[-_\s]?secret
+                | private[-_\s]?key
+                | password
+                | passwd
+                | passphrase
+                | token
+                | cookie
+                | authorization
+                | auth
+                | secret
+                | credential
+            )\s*[:=]
+            """,
+            decoded,
         )
         if (
             parsed.username is not None
@@ -2695,7 +2718,7 @@ class ControlPlaneService:
             or parsed.scheme.casefold() in {"mysql", "postgres", "postgresql", "oracle", "sqlserver"}
             or normalized.casefold().startswith("jdbc:")
             or sensitive_assignment is not None
-            or re.search(r"(?i)\b(bearer|basic)\s+[a-z0-9._~+/=-]+", normalized)
+            or re.search(r"(?i)\b(bearer|basic)\s+[a-z0-9._~+/=-]+", decoded)
         ):
             raise ControlPlaneError(
                 422,
@@ -2750,6 +2773,16 @@ class ControlPlaneService:
     def require_permission(self, principal: Principal, permission: str) -> None:
         if permission not in principal.permissions:
             raise ControlPlaneError(403, "FORBIDDEN", "Permission denied")
+
+    def require_deployment_permission(self, principal: Principal, permission: str) -> None:
+        self.require_permission(principal, permission)
+        if not any(
+            permission in ROLE_PERMISSIONS.get(role_id, ())
+            and scope_type == "DEPLOYMENT"
+            and scope_id == principal.deployment_id
+            for role_id, scope_type, scope_id in principal.assignments
+        ):
+            raise ControlPlaneError(403, "FORBIDDEN", "Deployment-scoped permission required")
 
     def _request_or_execute_protected(
         self,

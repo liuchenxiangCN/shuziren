@@ -1433,13 +1433,30 @@ def test_three_screen_inventory_api_isolation_scope_and_idempotency(
     for unrelated in (screens[0]["screen_id"], screens[2]["screen_id"]):
         assert after[unrelated] == before[unrelated]
 
-    secret_ref = implementation.patch(
-        f"/api/v1/control-plane/screen-instances/{screen_two['screen_id']}",
-        headers=mutation_headers(csrf, **{"If-Match": updated.json()["etag"]}),
-        json={"fvs_binding_ref": "https://user:password@fvs.example.test/screen"},
+    forbidden_fvs_refs = (
+        "https://user:password@fvs.example.test/screen",
+        "https://fvs.example.test/view?api_key=synthetic-credential",
+        "fvs-ref;apikey=synthetic-credential",
+        "fvs-ref;access_key=synthetic-credential",
+        "fvs-ref;x-api-key:synthetic-credential",
+        "fvs-ref;client_secret=synthetic-credential",
+        "fvs-ref;credential=synthetic-credential",
+        "https://fvs.example.test/view?api%5Fkey=synthetic-credential",
+        "Authorization: Bearer synthetic-credential",
     )
-    assert secret_ref.status_code == 422
-    assert secret_ref.json()["error"]["code"] == "SECRET_MATERIAL_FORBIDDEN"
+    for forbidden_fvs_ref in forbidden_fvs_refs:
+        secret_ref = implementation.patch(
+            f"/api/v1/control-plane/screen-instances/{screen_two['screen_id']}",
+            headers=mutation_headers(csrf, **{"If-Match": updated.json()["etag"]}),
+            json={"fvs_binding_ref": forbidden_fvs_ref},
+        )
+        assert secret_ref.status_code == 422
+        assert secret_ref.json()["error"]["code"] == "SECRET_MATERIAL_FORBIDDEN"
+    after_secret_rejections = implementation.get(
+        f"/api/v1/control-plane/screen-instances/{screen_two['screen_id']}"
+    ).json()
+    assert after_secret_rejections["etag"] == updated.json()["etag"]
+    assert after_secret_rejections["fvs_binding_ref"] == "https://fvs.example.test/show/screen-2"
 
     create_key = "create-screen-idempotency"
     create_payload = {
@@ -1708,7 +1725,9 @@ def test_three_screen_inventory_api_isolation_scope_and_idempotency(
     assert selector.json()["error"]["code"] == "INVALID_REQUEST"
 
     scoped_password = f"test-only-{secrets.token_urlsafe(18)}"
+    scoped_admin_password = f"test-only-{secrets.token_urlsafe(18)}"
     PASSWORDS["screen-auditor"] = scoped_password
+    PASSWORDS["screen-admin"] = scoped_admin_password
     with service.store.transaction() as connection:
         now = service.clock()
         user_id = "usr_screen_auditor"
@@ -1735,12 +1754,38 @@ def test_three_screen_inventory_api_isolation_scope_and_idempotency(
             """,
             (user_id, screen_two["screen_id"], now),
         )
+        connection.execute(
+            """
+            INSERT INTO users(
+                user_id, tenant_id, deployment_id, normalized_username, display_name,
+                account_state, password_verifier, credential_generation, created_at, updated_at
+            ) VALUES ('usr_screen_admin', 'tenant-test', 'deployment-test', 'screen-admin',
+                'Screen Admin', 'ACTIVE', ?, 1, ?, ?)
+            """,
+            (
+                service.passwords.hash(scoped_admin_password, username="screen-admin"),
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO role_assignments(
+                assignment_id, user_id, role_id, scope_type, scope_id, created_at
+            ) VALUES ('rla_screen_admin', 'usr_screen_admin', 'platform_admin',
+                'SCREEN', ?, ?)
+            """,
+            (screen_two["screen_id"], now),
+        )
     scoped, _ = login(app, "screen-auditor")
     scoped_screens = scoped.get("/api/v1/control-plane/screen-instances").json()["items"]
     assert [item["screen_id"] for item in scoped_screens] == [screen_two["screen_id"]]
     assert scoped.get("/api/v1/control-plane/sites").json()["items"] == []
     assert scoped.get("/api/v1/control-plane/screen-groups").json()["items"] == []
     assert scoped.get(f"/api/v1/control-plane/screen-instances/{screens[0]['screen_id']}").status_code == 404
+    scoped_audit = scoped.get("/api/v1/control-plane/audit-events")
+    assert scoped_audit.status_code == 403
+    assert screens[0]["screen_id"] not in scoped_audit.text
     sibling_digital_human_id = screens[0]["digital_human_instance"]["digital_human_instance_id"]
     assert (
         scoped.get(f"/api/v1/control-plane/digital-human-instances/{sibling_digital_human_id}").status_code
@@ -1752,6 +1797,30 @@ def test_three_screen_inventory_api_isolation_scope_and_idempotency(
         ).status_code
         == 404
     )
+
+    screen_admin, screen_admin_csrf = login(app, "screen-admin")
+    for deployment_only_path in (
+        "/api/v1/control-plane/users",
+        "/api/v1/control-plane/role-definitions",
+        "/api/v1/control-plane/high-risk-actions",
+        "/api/v1/control-plane/audit-events",
+    ):
+        response = screen_admin.get(deployment_only_path)
+        assert response.status_code == 403
+        assert screens[0]["screen_id"] not in response.text
+    screen_admin_create_user = screen_admin.post(
+        "/api/v1/control-plane/users",
+        headers=mutation_headers(
+            screen_admin_csrf,
+            **{"Idempotency-Key": "screen-admin-create-user"},
+        ),
+        json={
+            "normalized_username": "scope-bypass-user",
+            "display_name": "Must Not Exist",
+            "reason": "screen scope cannot administer deployment users",
+        },
+    )
+    assert screen_admin_create_user.status_code == 403
 
     with sqlite3.connect(database_path) as connection:
         connection.execute("PRAGMA foreign_keys=ON")
