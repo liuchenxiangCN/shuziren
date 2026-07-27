@@ -9,80 +9,79 @@
 
 ## Current Phase
 
-`Productization P1.0 Target Contract Result Pack`.
+`Productization P1.1 Identity And Device Trust`.
 
-G0 was explicitly accepted on 2026-07-27. Product runtime remains the existing single-instance POC baseline.
+G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. Product runtime still begins from the single-instance POC until P1.1 evidence proves the scoped additions below.
 
 ## Next Task
 
-Complete and verify the P1.0 target contract result pack, then present it for explicit user acceptance.
+Implement and verify the P1.1 local identity and screen-device trust result, then present it for explicit user acceptance.
 
 ### User-Visible Result
 
-P1.0 must provide:
+P1.1 must provide:
 
-1. A business-readable domain diagram for Tenant, Deployment, Site, ScreenGroup, ScreenInstance, DeviceEnrollment, DigitalHumanInstance and RuntimeBinding.
-2. Separate identity models for control-plane users, screen devices and FineReport display / service identities.
-3. A role-action matrix and frozen local password, session, lockout and reset policy.
-4. Screen-enrollment and configuration-release state walkthroughs.
-5. An immutable release, targeted publication and rollback contract that preserves three-screen isolation.
-6. A relational target data model with ownership, uniqueness, foreign-key and optimistic-concurrency rules.
-7. A frozen embedded / external control-plane storage, migration, backup, restore, retention, RPO and RTO decision.
-8. A versioned control-plane API contract with user-operation examples, authorization, idempotency and understandable failure semantics.
+1. A built-in administrator can sign in through an opaque server-side browser session.
+2. Administrators can inspect the exact role catalog and create implementation or audit user records through typed different-user approval.
+3. An audit user can read sanitized immutable security events but cannot manage users, approve privileged changes, mutate device trust or reveal Secret values.
+4. An authorized implementation engineer can request a one-time credential for a pre-existing screen trust target through typed approval.
+5. A device can claim enrollment once, authenticate with a separate screen-bound credential, rotate to a pending successor and activate that successor on first use.
+6. An administrator can hard-revoke the complete credential family through typed approval; old, successor and replayed credentials then fail closed.
 
 ### Result Package
 
-- [acceptance/productization/P1.0/ACCEPTANCE_CARD.md](acceptance/productization/P1.0/ACCEPTANCE_CARD.md)
-- [acceptance/productization/P1.0/AUTOMATED_SUMMARY.md](acceptance/productization/P1.0/AUTOMATED_SUMMARY.md)
-- [acceptance/productization/P1.0/KNOWN_LIMITATIONS.md](acceptance/productization/P1.0/KNOWN_LIMITATIONS.md)
-- [acceptance/productization/P1.0/manifest.json](acceptance/productization/P1.0/manifest.json)
-- [acceptance/productization/P1.0/USER_DECISION.md](acceptance/productization/P1.0/USER_DECISION.md)
-- [product/contracts/README.md](product/contracts/README.md)
+- [acceptance/productization/P1.1/ACCEPTANCE_CARD.md](acceptance/productization/P1.1/ACCEPTANCE_CARD.md)
+- [acceptance/productization/P1.1/AUTOMATED_SUMMARY.md](acceptance/productization/P1.1/AUTOMATED_SUMMARY.md)
+- [acceptance/productization/P1.1/KNOWN_LIMITATIONS.md](acceptance/productization/P1.1/KNOWN_LIMITATIONS.md)
+- [acceptance/productization/P1.1/manifest.json](acceptance/productization/P1.1/manifest.json)
+- [acceptance/productization/P1.1/USER_DECISION.md](acceptance/productization/P1.1/USER_DECISION.md)
 
 The user decision remains Pending until an explicit result decision is received.
 
 ### User Result Scenarios
 
-1. Follow the domain diagram from one Site to three independently bound screens.
-2. Walk a device from one-time enrollment through credential rotation and revocation.
-3. Compare administrator, implementation, operations and audit permissions.
-4. Walk a draft through validation, preview, approval, publication and rollback.
-5. Trace a single-screen publish and prove the other two screen bindings do not change.
-6. Review backup, restore, RPO and RTO behavior for embedded and external storage.
-7. Match API examples to the same user operations and failure paths.
+1. Sign in as administrator A and inspect current session, users and role definitions.
+2. Request an implementation or audit user creation, sign in separately as administrator B to approve it, then have administrator A resubmit the identical command.
+3. Sign in as the auditor, inspect security events, and confirm user management, approval, device mutation and Secret-bearing responses are denied.
+4. Request enrollment for the trust-only screen fixture, approve with the other administrator, execute the exact request and claim it once.
+5. Rotate the active device credential, activate the successor on first authenticated use and confirm the predecessor is revoked.
+6. Hard-revoke the credential family with different-user approval and confirm every family credential is rejected.
+7. Trigger failed logins, stale ETags, missing Origin / CSRF, self-approval, altered-command replay and cross-screen selectors and confirm fail-closed results.
 
 ### Automated Gates
 
-- Contract index, lifecycle markers, links and machine-readable artifacts validate.
-- Domain, data, identity, RBAC, state-machine and API names are consistent.
-- Forbidden state transitions, mutable published releases and cross-screen targeting are rejected by negative fixtures.
-- API operations define authorization, idempotency or optimistic concurrency where applicable.
-- Secret values cannot appear in ordinary API responses, audit details or backup manifests.
-- Storage, migration, backup, restore, RPO and RTO decisions are explicit.
-- `git diff --check` and the repository lifecycle lint pass.
+- Python formatting / syntax and API application import pass.
+- SQLite schema migration from an empty store and repeat initialization pass.
+- Argon2id policy, password length / common-password rejection and progressive lockout pass.
+- Secure host-only session cookie, exact-Origin, CSRF, idle / absolute expiry, rotation and revocation pass.
+- API RBAC denial for auditor and implementation roles passes.
+- Different-user approval, exact-command binding, self-approval denial and stale-precondition rejection pass.
+- Enrollment single use, exact idempotency replay window, credential rotation activation and family-wide hard revocation pass.
+- Device credential-derived screen scope passes and client-selected tenant, deployment, site or screen scope is rejected.
+- Secret scans cover API responses, audit details, the frontend bundle and evidence.
+- Web type-check / build and a browser workflow smoke pass where the environment supports them.
+- `git diff --check`, P1 target-contract validation and repository lifecycle lint pass.
 
 ### Non-Scope
 
-- No runtime code, database, migration, management UI or HTTP endpoint implementation.
-- No P1.1 identity or device-trust implementation.
-- No P1.2 three-screen inventory implementation.
-- No P1.3 publish, rollback or recovery implementation.
-- No FineReport plugin, database-query Provider or Renderer implementation.
-- No change to the implemented POC API or data contracts.
+- No Site, ScreenGroup or production ScreenInstance inventory management; P1.1 may use one explicitly labeled trust-only screen fixture.
+- No three-screen configuration isolation claim; that belongs to P1.2.
+- No configuration draft, release, publication, rollback, runtime binding or recovery implementation; those belong to P1.3.
+- No PostgreSQL certification, production custodian ceremony, external monotonic security anchor or production activation claim.
+- No Secret or FineReport credential implementation and no change to the POC `/api/config/*`, `/api/ops/*` or `/api/screen/*` semantics.
+- No FineReport plugin, database QuerySource, Dora, ASR, TTS, FVS or Renderer expansion.
 
 ### Stop Conditions
 
-- A target contract is described as implemented.
-- A control-plane user, screen device and FineReport data identity can be confused or reused.
-- A published release can be edited in place.
-- A single-screen operation can implicitly target another screen.
-- UI authorization can differ from API authorization.
-- A Secret value can be returned, logged or placed in a plaintext backup manifest.
-- Storage or recovery decisions remain ambiguous.
-- Contract consistency, negative-fixture or lifecycle checks fail.
+- A user, session, enrollment or device can select or cross another ownership scope.
+- Auditor or implementation privileges exceed the accepted role catalog.
+- Approval executes the effect, self-approval succeeds, or a changed command reuses approval.
+- Password, cookie, CSRF, enrollment or device plaintext enters the database, logs, audit details, ordinary reads, bundle or Git.
+- A revoked, expired or superseded credential authenticates.
+- A runtime result is described as production-ready without its required external security anchors and production activation evidence.
 
-## Queued After P1.0 Acceptance
+## Queued After P1.1 Acceptance
 
-`Productization P1.1 Identity And Device Trust`.
+`Productization P1.2 Three-Screen Inventory`.
 
-P1.1 remains queued until P1.0 receives an explicit user result decision.
+P1.2 remains queued until P1.1 receives an explicit user result decision.

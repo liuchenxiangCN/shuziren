@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "batch": "P1.1",
+  "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "acceptance_state": "IMPLEMENTATION_IN_PROGRESS",
+  "candidate": null,
+  "database": {
+    "logical_schema_version": "p1_control_plane_001",
+    "migration_version": "pending"
+  },
+  "gates": [],
+  "independent_reviews": [],
+  "rollback": {
+    "status": "PENDING",
+    "target": "P1.0 acceptance-transition commit"
+  },
+  "user_decision": {
+    "status": "PENDING",
+    "decision": null,
+    "date": null,
+    "conversation_reference": null
+  }
+}

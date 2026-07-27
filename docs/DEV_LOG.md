@@ -9,6 +9,15 @@
 
 ## 2026-07-27
 
+### P1.0 User Acceptance And P1.1 Activation
+
+#### Completed Facts
+
+- The user explicitly accepted P1.0 (`通过`) without conditions and authorized P1.1 development.
+- ADR-0028 changed from Proposed to Accepted; this freezes the target contract but does not claim runtime implementation.
+- P1.0 became the accepted rollback baseline and P1.1 Identity And Device Trust became the sole active result batch.
+- The P1.1 result card and non-scope were frozen before runtime implementation.
+
 ### P1.0 Target Contract Result Pack
 
 #### Completed Facts
@@ -17,7 +26,7 @@
 - Activated P1.0 as the sole result batch and froze its result card and non-scope before contract work.
 - Added target domain, identity / RBAC, device trust, configuration-release, relational data, storage / recovery and control-plane API contracts under `docs/product/contracts/`.
 - Added a machine-readable registry for 32 entities, five exact roles, 23 permissions, 16 exact state machines, 31 internal security-record schemas, IAM/scope parameters, storage decisions, 86 API operations and complete pre-publish/post-publish/post-ack three-screen isolation snapshots.
-- Proposed ADR-0028 for the P1 control-plane foundation; it remains Proposed until explicit P1.0 acceptance.
+- Proposed ADR-0028 for the P1 control-plane foundation; it was subsequently accepted with the explicit P1.0 user decision.
 - Added ResolutionFingerprint binding from validation through release creation, immutable ConfigLayer/FineReport/Secret versions, composite PublicationTarget ownership keys and exact control-plane ETag versus device CAS rules.
 - Added bootstrap/reset/session API closure, explicit draft revise/abandon operations, exact-path default-deny field authorization, administrator-only FineReport identity management and typed different-user approval whose evidence step cannot execute the protected action.
 - Added mutually exclusive `NORMAL` / `ROLLBACK` release provenance, exact historical rollback source maps and no-substitution constraints.

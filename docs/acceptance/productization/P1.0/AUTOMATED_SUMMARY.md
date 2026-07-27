@@ -3,14 +3,14 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `AWAITING_EXPLICIT_USER_DECISION`
+- State: `ACCEPTED`
 - Candidate: commit `d78de0cfce64777678ec606b03470d6ffd5e970f`, tree `8538a8b89b789ebac7ff436ec17c51d1fa86bb47`
 - Base accepted version: commit `226e2d48d0731f989c3895e4abc5237cee2b2d10`, tree `f2846576b1184fcf522151057215fb41a9efc4d0`
 - Candidate fingerprint: `8B894F9EAF0A491A3F5DA3B367B4D03DBD56C63A0470B5840E354CA06160C633` over 26 non-evidence files
 - Changed scope: 31 documentation and validation-script files; runtime unchanged
 - Contract gates: `PASS`
 - Independent review: `PASS`; zero blocking findings and report hash bound
-- User decision: Pending
+- User decision: `通过` on 2026-07-27
 
 P1.0 changes target contracts, decision records, governance state and validation scripts only. It does not change the product runtime, implemented POC contracts or a database.
 

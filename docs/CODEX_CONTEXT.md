@@ -15,9 +15,9 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P1.0 Target Contract Result Pack`. G0 was explicitly accepted on 2026-07-27.
+Current phase: `Productization P1.1 Identity And Device Trust`. G0 and P1.0 were explicitly accepted on 2026-07-27.
 
-P1.0 freezes the target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.0 is contract design only; product runtime remains the existing single-instance POC.
+P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implements only the local identity, browser-session, RBAC, security-audit and screen-device trust slice. Multi-screen inventory, release publication and backup / restore remain later batches.
 
 ## Frozen Product Boundaries
 

@@ -3,9 +3,9 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- Decision: Pending
-- Date: Pending
-- Task / conversation reference: Pending
+- Decision: 通过
+- Date: 2026-07-27
+- Task / conversation reference: Codex task in which the user stated “确认通过P1.0，开始 P1.1 开发”
 
 ## Available Decisions
 
@@ -18,4 +18,4 @@ Silence is not acceptance.
 
 ## User Notes
 
-Pending.
+The user explicitly accepted the complete P1.0 target-contract result and authorized P1.1 development. No condition or scope reduction was attached.

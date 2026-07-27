@@ -19,7 +19,7 @@ These contracts define the reviewed target for later P1 implementation. They do 
 6. [CONTROL_PLANE_API.md](CONTROL_PLANE_API.md) — versioned control-plane and device API operations and examples.
 7. [p1-target-contract.json](p1-target-contract.json) — machine-readable invariants, states, permissions and operation registry.
 
-The proposed architectural and security choices are recorded in [ADR-0028](../../decisions/ADR-0028-p1-control-plane-foundation.md). They remain proposed until P1.0 receives an explicit user decision.
+The architectural and security choices are recorded in accepted [ADR-0028](../../decisions/ADR-0028-p1-control-plane-foundation.md). The user accepted P1.0 on 2026-07-27; runtime behavior remains unimplemented unless a later acceptance package proves it.
 
 ## Namespace Boundary
 

@@ -5,7 +5,7 @@
   "generated_at": "2026-07-27T06:59:52.2406653Z",
   "candidate_evidence_generated_at": "2026-07-27T06:59:52.2406653Z",
   "gate_summary": "PASS",
-  "acceptance_state": "AWAITING_EXPLICIT_USER_DECISION",
+  "acceptance_state": "ACCEPTED",
   "candidate": {
     "kind": "commit",
     "commit": "d78de0cfce64777678ec606b03470d6ffd5e970f",
@@ -235,13 +235,13 @@
     "reason_workspace_restore_not_performed": "Recovery was proven in an isolated tree; switching the active workspace requires a separately approved operation"
   },
   "governance": {
-    "adr_0028_status": "Proposed",
-    "p1_1_status": "QUEUED"
+    "adr_0028_status": "Accepted",
+    "p1_1_status": "ACTIVE"
   },
   "user_decision": {
-    "status": "PENDING",
-    "decision": null,
-    "date": null,
-    "conversation_reference": null
+    "status": "RECORDED",
+    "decision": "通过",
+    "date": "2026-07-27",
+    "conversation_reference": "Codex task in which the user stated 确认通过P1.0，开始 P1.1 开发"
   }
 }

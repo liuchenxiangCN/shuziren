@@ -13,7 +13,7 @@
 
 - P1.0 target domain, identity / RBAC, device trust, configuration-release, data, storage / recovery and control-plane API contracts.
 - A machine-readable P1 contract registry plus validator and negative-fixture self-test.
-- Proposed ADR-0028 for SQLite / PostgreSQL, local IAM, device credentials, backup / recovery and API foundation decisions.
+- Accepted ADR-0028 for SQLite / PostgreSQL, local IAM, device credentials, backup / recovery and API foundation decisions.
 - Documentation lifecycle and archive policy.
 - Result acceptance standard for Codex-driven development.
 - Target product contract namespace under `docs/product/contracts/`.
@@ -27,7 +27,7 @@
 
 ### Changed
 
-- G0 is explicitly accepted, and P1.0 is the sole active result batch.
+- G0 and P1.0 are explicitly accepted, and P1.1 is the sole active result batch.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
 - P1.0 validation now binds target membership and inheritance through ResolutionFingerprint, creates immutable ReleaseTargets only with ConfigRelease and separates control-plane ETag checks from device acknowledgement CAS.
 - P1.0 release provenance now separates `NORMAL` approved-draft creation from exact-map `ROLLBACK` creation, with no cross-screen or credential-version substitution.

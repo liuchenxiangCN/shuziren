@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `AWAITING_EXPLICIT_USER_DECISION`
+- State: `ACCEPTED`
 - Result: target control-plane contract result pack
 - Base accepted version: commit `226e2d48d0731f989c3895e4abc5237cee2b2d10`, tree `f2846576b1184fcf522151057215fb41a9efc4d0` (G0)
 - Candidate: commit `d78de0cfce64777678ec606b03470d6ffd5e970f`, tree `8538a8b89b789ebac7ff436ec17c51d1fa86bb47`
@@ -11,9 +11,9 @@
 - Scope: 31 changed documentation and validation-script files; runtime unchanged
 - Database schema / migration: `N/A` — target design only; no runtime database or migration changed
 - Gate summary: `PASS`
-- User decision: Pending
+- User decision: `通过` on 2026-07-27
 
-The candidate is ready for an explicit user decision. It is not accepted until the user records `通过`, `条件通过`, `不通过` or `Blocked`.
+The user explicitly accepted this result on 2026-07-27 and authorized P1.1 development.
 
 ## Observable Outcome
 
@@ -70,7 +70,7 @@ Nothing in this result card claims those target capabilities are implemented.
 - No FineReport plugin or Provider implementation.
 - No real backup, restore, authentication or three-screen execution claim.
 - No P1.1, P1.2 or P1.3 implementation.
-- ADR-0028 remains `Proposed`; P1.1 remains queued.
+- At candidate freeze time, ADR-0028 remained `Proposed` and P1.1 remained queued. The explicit user decision subsequently accepted ADR-0028 and released P1.1.
 
 ## Gate Results
 
@@ -98,4 +98,4 @@ Nothing in this result card claims those target capabilities are implemented.
 
 ## Decision
 
-Record `通过`, `条件通过`, `不通过` or `Blocked` in `USER_DECISION.md`. Until that explicit decision, P1.0 remains `AWAITING_EXPLICIT_USER_DECISION` and P1.1 remains queued.
+Decision recorded: `通过` on 2026-07-27. P1.0 is the accepted rollback baseline for P1.1.

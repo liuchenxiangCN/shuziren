@@ -30,6 +30,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [CHANGELOG.md](CHANGELOG.md) | Authoritative current | Productization release-facing changes |
 | [acceptance/productization/G0](acceptance/productization/G0) | Acceptance evidence | G0 result card, checks, limitations and decision |
 | [acceptance/productization/P1.0](acceptance/productization/P1.0) | Acceptance evidence | P1.0 target-contract result card and evidence |
+| [acceptance/productization/P1.1](acceptance/productization/P1.1) | Acceptance evidence | Active P1.1 identity and device-trust result card |
 
 ## Product Target
 
@@ -42,7 +43,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md](integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md) | Target not implemented / external gate | Official plugin evidence and connector boundary |
 | [decisions/ADR-0026-finereport-fvs-productization.md](decisions/ADR-0026-finereport-fvs-productization.md) | Accepted ADR | Productization decision |
 | [decisions/ADR-0027-result-driven-development-and-document-lifecycle.md](decisions/ADR-0027-result-driven-development-and-document-lifecycle.md) | Accepted ADR | Result-driven development and document lifecycle |
-| [decisions/ADR-0028-p1-control-plane-foundation.md](decisions/ADR-0028-p1-control-plane-foundation.md) | Proposed ADR | P1 control-plane foundation; awaits P1.0 acceptance |
+| [decisions/ADR-0028-p1-control-plane-foundation.md](decisions/ADR-0028-p1-control-plane-foundation.md) | Accepted ADR | P1 control-plane foundation accepted with P1.0 |
 
 ## Implemented POC Baseline
 

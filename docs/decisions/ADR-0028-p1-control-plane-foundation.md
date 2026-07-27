@@ -2,9 +2,9 @@
 
 ## Status
 
-Proposed
+Accepted
 
-This decision becomes Accepted only if the user explicitly accepts the P1.0 result package. Nothing in this ADR is implemented by its publication.
+The user explicitly accepted the P1.0 result package on 2026-07-27. Acceptance freezes this target decision; it does not by itself prove runtime implementation.
 
 ## Date
 
@@ -77,7 +77,7 @@ P1.0 must freeze a design that later P1.1-P1.3 can implement without describing 
 ## Follow-Up
 
 - Validate `p1-target-contract.json` and negative fixtures before presenting P1.0 for acceptance.
-- Keep ADR-0028 Proposed and P1.1 queued until the user decides on P1.0.
+- P1.0 was accepted on 2026-07-27 and P1.1 may implement local IAM and device trust against this contract.
 - P1.1 implements local IAM and device trust against this accepted contract.
 - P1.2 implements three-screen inventory and ownership constraints.
 - P1.3 implements immutable publication, backup and restore and measures the RPO/RTO target.

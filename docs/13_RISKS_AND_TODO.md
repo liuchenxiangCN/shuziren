@@ -26,24 +26,16 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product Blockers
 
-### P1.0 Decisions Awaiting Acceptance
+### P1.1 Identity And Device Trust
 
-The P1.0 candidate proposes:
+P1.0 accepted the target decisions on 2026-07-27. P1.1 now implements only the local identity, session, RBAC, audit and screen-device trust slice.
 
-- release-pinned SQLite 3 as the embedded engine, with WAL, full synchronous durability, foreign keys and one active control-plane instance;
-- PostgreSQL 16 as the only V1 external control-plane store;
-- an encrypted filesystem backup bundle on a separate production mount, scheduled hourly with 24 hourly, 7 daily and 4 weekly generations;
-- an embedded-store target of `RPO <= 1 hour` and reference single-site `RTO <= 2 hours`, remaining unverified until P1.3;
-- a 15-to-128-code-point local password policy, Argon2id floor, progressive lockout, 30-minute idle / 8-hour absolute sessions and single-use 15-minute reset tokens;
-- three separate credential planes for users, screen devices and FineReport data identities;
-- mutually exclusive `NORMAL` / `ROLLBACK` release provenance, ResolutionFingerprint/epoch-bound normal release creation, default-deny exact-path authorization and typed different-user approval whose evidence step cannot execute the effect;
-- DeviceCredentialFamily ETag/epoch/ledger concurrency for whole-family revocation and 86 closed control-plane/device operations, including explicit draft revise/abandon paths;
-- an externally anchored OperationalFence that keeps every production restore in `RECOVERY_REQUIRED` until a separate typed local readiness recovery succeeds, plus distinct emergency authority-reduction and cryptographic-root recovery paths;
-- 18 non-reused key-purpose domains, different-user and different-attested-person production approval, exact two-admin/two-person production floors and three branch-bound RecoveryPasswordSetupGrant authorization kinds;
-- an authenticated RecoverySecurityLedger with a monotonic anchor outside the live store, backups and ledger so restore cannot revive disabled users, removed role/scope assignments, older password/device generations or revoked Secret/FineReport versions;
-- staged external-credential rotation plus an authenticated restore-continuity envelope so normal rotation preserves only exact already-applied targets for at most 24 hours and restore retains its own authorization/idempotency/audit evidence without reviving old approvals.
-
-These choices are target design only and remain open until the P1.0 user decision. Runtime, migration and recovery risks remain open until later P1 evidence.
+- The development preview may initialize explicit test identities and one trust-only screen fixture, but production startup must never auto-create users, passwords, roles, device targets or keys.
+- The accepted contract requires typed different-user production approval; approval records evidence only and cannot execute the effect.
+- User sessions, CSRF, one-time enrollment and device credentials must persist only keyed verifiers, never plaintext.
+- Device scope must come only from its credential record; requests cannot select tenant, deployment, Site or ScreenInstance.
+- Production custodian attestation, monotonic anchors and production activation remain unverified and must not be inferred from development-preview evidence.
+- P1.2 inventory and P1.3 publishing / recovery remain blocked until P1.1 is explicitly accepted.
 
 ### P2 External Gate
 
