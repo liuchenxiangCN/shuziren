@@ -16,19 +16,16 @@ P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46`, tree
 `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`, is the runtime rollback
 baseline. The P1.2 result card and non-scope are frozen. The complete local
 candidate is implemented and its automated, browser, migration, Docker,
-Secret-scan and P1.1 rollback gates pass. It is not accepted.
+Secret-scan, P1.1 rollback and independent-review gates pass. It is ready for
+explicit user result acceptance but is not accepted.
 
 ## Next Task
 
-Complete the separate read-only Codex review of the final P1.2 candidate,
-including critical negative-test reruns and evidence/rollback verification.
-Resolve every blocking finding before presenting the result for the user's
-explicit decision.
-
-After a zero-blocker independent review, the only next action is user result
-acceptance against
+Present the final P1.2 result and evidence for the user's explicit result
+decision against
 [acceptance/productization/P1.2/ACCEPTANCE_CARD.md](acceptance/productization/P1.2/ACCEPTANCE_CARD.md).
-Do not start P1.3 from automated success or user silence.
+The independent review passed with zero findings. Do not start P1.3 from that
+PASS, automated success or user silence.
 
 ### User-Visible Result
 

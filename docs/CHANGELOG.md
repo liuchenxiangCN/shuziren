@@ -35,7 +35,7 @@
 
 ### Changed
 
-- G0, P1.0 and P1.1 are explicitly accepted. P1.2 Three-Screen Inventory is implemented as a local candidate with passing automated evidence, but remains unaccepted pending independent review and an explicit user decision.
+- G0, P1.0 and P1.1 are explicitly accepted. P1.2 Three-Screen Inventory is implemented as a local candidate with passing automated and zero-finding independent-review evidence, but remains unaccepted pending an explicit user decision.
 - P1.1 local implementation is accepted at candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets were remediated, and the third independent review passed with zero findings.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
 - P1.0 validation now binds target membership and inheritance through ResolutionFingerprint, creates immutable ReleaseTargets only with ConfigRelease and separates control-plane ETag checks from device acknowledgement CAS.

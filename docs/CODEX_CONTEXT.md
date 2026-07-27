@@ -17,7 +17,7 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 Current phase: `Productization P1.2 Three-Screen Inventory`. G0, P1.0 and P1.1 were explicitly accepted on 2026-07-27.
 
-P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implemented and proved the local identity, browser-session, RBAC, security-audit and screen-device trust slice. The P1.2 candidate now implements the frozen three-screen inventory slice and has passed its local automated, browser, migration, Docker and rollback gates. It remains unaccepted until independent review passes and the user records an explicit result decision. Release publication and backup / restore remain P1.3.
+P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implemented and proved the local identity, browser-session, RBAC, security-audit and screen-device trust slice. The P1.2 candidate now implements the frozen three-screen inventory slice and has passed its local automated, browser, migration, Docker, rollback and independent-review gates. It is ready for explicit user result acceptance but remains unaccepted. Release publication and backup / restore remain P1.3.
 
 ## Frozen Product Boundaries
 

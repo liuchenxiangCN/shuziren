@@ -3,18 +3,19 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `FROZEN_NOT_STARTED`
+- State: `READY_FOR_USER_ACCEPTANCE`
 - Result: three-screen inventory and isolation
 - Base accepted runtime: commit `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`
 - Base acceptance record: commit `6c3d06c9ca916b5c08c1a1a71c80b06dc80f36b7`
-- Candidate: Pending
+- Candidate: commit `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`
 - Target logical schema / migration: `p1_control_plane_001` / `002_three_screen_inventory`
-- Gate summary: Pending
-- Independent review: Pending
+- Gate summary: PASS
+- Independent review: PASS; zero blocking and zero non-blocking findings on the final candidate
 - User decision: Pending
 
-This card freezes the complete P1.2 result and non-scope before implementation.
-Nothing in this card claims that multi-screen inventory is already implemented.
+This card froze the complete P1.2 result and non-scope before implementation.
+The final candidate now implements that frozen result and is ready for explicit
+user review. It is not accepted until the user records a decision.
 
 ## Frozen Observable Outcome
 

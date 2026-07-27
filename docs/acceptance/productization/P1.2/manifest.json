@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "batch": "P1.2",
+  "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "generated_at": "2026-07-27T15:34:00.0000000Z",
+  "gate_summary": "PASS",
+  "acceptance_state": "READY_FOR_USER_ACCEPTANCE",
+  "base_accepted": {
+    "commit": "8c18e5d6b10081eaaf608436440046894d235d46",
+    "tree": "9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd"
+  },
+  "candidate": {
+    "commit": "2ddd2116aad19babc9acbfde1110802eb3187c2b",
+    "tree": "565dbb3567e2a4ae5b872177d97449120477fe8c",
+    "branch": "codex/p1-2-three-screen-inventory",
+    "fingerprint_sha256": "16d8840cbf876bb08a5a33f92a7c30ac1e3cfa1da28f599ae374ae447deb87e1",
+    "fingerprint_file_count": 29,
+    "fingerprint_evidence": {
+      "path": "logs/productization/P1.2-20260727-222737/candidate-fingerprint-final.json",
+      "sha256": "788ead23a471223f56ea290e6b58591aa63705388d7db51506d701b7e5d94d04"
+    }
+  },
+  "database": {
+    "logical_schema_version": "p1_control_plane_001",
+    "migration_versions": [
+      "001_initial_identity_device_trust",
+      "002_three_screen_inventory"
+    ],
+    "migration_checksums_sha256": [
+      "fd7094d87568fddc42c339a4861a6004a136dfb26ed6d1a11549cdb7a5db95ce",
+      "a7614a243ec06ae6b4065d2a05eff5c7f048df9a7203b079648f455bed9e5465"
+    ]
+  },
+  "evidence_root": "logs/productization/P1.2-20260727-222737",
+  "gates": [
+    {
+      "id": "backend_quality_and_negative_tests",
+      "status": "PASS",
+      "note": "Scoped Ruff format/check passed and all 14 backend tests passed.",
+      "evidence": [
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/api-ruff-final.txt",
+          "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/api-pytest-final.txt",
+          "sha256": "d6a6bb566999ab908ae8d611932a4769dadb803360ed727638520b306ef38195"
+        }
+      ]
+    },
+    {
+      "id": "frontend_build_and_browser_workflow",
+      "status": "PASS",
+      "note": "Pinned pnpm 9.15.4 build passed; the 1280 by 720 implementation and auditor workflows had no horizontal overflow or captured console warning/error.",
+      "evidence": [
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/web-build-final.txt",
+          "sha256": "ab31200df8c8a9c6e3ab0f0b23e5c4e0e1e2b7d1dfe18b09aa9961882568383e"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/browser-evidence.json",
+          "sha256": "07aad9906c24e52b77363f38a14d86bf1099db7f6e10d5bc6330a56453468336"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/screenshots/implementation-three-screen-inventory-1280x720.png",
+          "sha256": "eb3e9abed2fbc95777491b6c3e96c2975e49631c58e7015cbcccb4599b0e6530"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/screenshots/auditor-read-only-inventory-1280x720.png",
+          "sha256": "abea60445e97716526a81ce4c72cb33dd8016b97081621d82731be3514520399"
+        }
+      ]
+    },
+    {
+      "id": "accepted_p1_1_upgrade_and_fail_closed",
+      "status": "PASS",
+      "note": "SQLite backup preserved the accepted source, upgraded the copy to exact 002 with three screens and clean foreign keys, propagated native migration failure, withheld the target env on failure and restored the parent process key.",
+      "evidence": [
+        {
+          "path": "logs/productization/P1.2-20260727-222737/migration/accepted-p1-1-upgrade-final.txt",
+          "sha256": "87d3fc87d39525d13bd4f2c373e7bacd8cb70a6c90ac3b87ebeef962c200f104"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/migration/accepted-p1-1-upgrade-final-probe.json",
+          "sha256": "872c12b4d2d4bffce8d615f06fb6bc3ddddd5a4b2ad0a781bec8f12630abcf49"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/migration/failclosed-native-error-probe.json",
+          "sha256": "28fa0b46d2fba901689deca79373aa28a9c3212c4b69a0cd6cb4708ff848242b"
+        }
+      ]
+    },
+    {
+      "id": "secret_scan",
+      "status": "PASS",
+      "note": "343 final evidence files, candidate files, six bundle files and all local control-plane SQLite copies had zero exact local-Secret, unapproved pattern or dangerous FVS-reference findings. Four prefix matches were synthetic rejection fixtures.",
+      "evidence": {
+        "path": "logs/productization/P1.2-20260727-222737/security/secret-scan-final.json",
+        "sha256": "40bdd759c435fb5bf7b1157e53530d25b70b8e275a9e140fed7616e15f6b9fa3"
+      }
+    },
+    {
+      "id": "docker_compose",
+      "status": "PASS",
+      "note": "Exact-candidate images built, API health and /manage returned 200, generated-env database selection used migration 002 with three screens and clean foreign keys, and Compose shut down cleanly.",
+      "evidence": [
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/docker-build-final.txt",
+          "sha256": "3441e0d6dd3fdd2f72841c0eaace9081e5ff6fa45604c13e253fd09837a527dd"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/docker-probe-final.json",
+          "sha256": "a09610965581e594c1b879689e6528d94b7be3644bf502628ff6b2a77775e0a1"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/docker-down-final.txt",
+          "sha256": "dad4627a3c4cd88db021b6c88263ddb26a61efae0efd140560022ca1e981fc2a"
+        }
+      ]
+    },
+    {
+      "id": "target_contract_validation",
+      "status": "PASS",
+      "note": "The unchanged P1 target validator passed 2,722 checks under both PowerShell hosts and all 191 self-test cases passed.",
+      "evidence": [
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/target-contract-validator-pwsh7-final.txt",
+          "sha256": "17e9fe5aa228204a559e15995cc800cccb5d3e8ce6c6c924c3bdb13461919106"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/target-contract-validator-winps-final.txt",
+          "sha256": "17e9fe5aa228204a559e15995cc800cccb5d3e8ce6c6c924c3bdb13461919106"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/target-contract-self-test.txt",
+          "sha256": "b6f3cc5b273e761bbb99550d3c034a51061443f59249575886e12b64068bd133"
+        }
+      ]
+    },
+    {
+      "id": "document_lifecycle",
+      "status": "PASS",
+      "note": "Final acceptance-package lifecycle lint passed 332 checks and 147 links under PowerShell 7 and Windows PowerShell 5.1.",
+      "evidence": [
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/doc-lifecycle-lint-pwsh7-final.txt",
+          "sha256": "87aa8823ea991c1e36f3888bb12c01aff3dc2088f714cebfb80ec1541c8fdfe1"
+        },
+        {
+          "path": "logs/productization/P1.2-20260727-222737/test-results/doc-lifecycle-lint-winps-final.txt",
+          "sha256": "360d62547b6602b372a2afd1ba1fcf2f3aaea4917ab8f35833041755b3649aef"
+        }
+      ]
+    }
+  ],
+  "independent_reviews": [
+    {
+      "task_id": "/root/p1_2_independent_review",
+      "reviewer": "Hilbert",
+      "candidate_commit": "2f0c4f3a4889b41910c4dc1397df4394762784dd",
+      "candidate_tree": "865f160734ff91b4e901daeb3d53be6bfd66c279",
+      "status": "FAIL",
+      "conclusion": "Blocking environment, Secret/DSN, scope/replay and migration fail-closed findings required a superseding candidate; SQLite main-file copy was also replaced with the backup API.",
+      "report": {
+        "path": "logs/productization/P1.2-20260727-222737/independent-review/first-review-fail.txt",
+        "sha256": "6c0f17bce822ade83e34d8a89a6e06632be19dbff8786c56a70fb347856003fc"
+      },
+      "disposition": "REMEDIATED_IN_FINAL_CANDIDATE"
+    },
+    {
+      "task_id": "/root/p1_2_independent_review",
+      "reviewer": "Hilbert",
+      "candidate_commit": "2ddd2116aad19babc9acbfde1110802eb3187c2b",
+      "candidate_tree": "565dbb3567e2a4ae5b872177d97449120477fe8c",
+      "status": "PASS",
+      "blocking_findings": 0,
+      "nonblocking_findings": 0,
+      "conclusion": "The candidate satisfies the frozen P1.2 result, security, migration, recovery, evidence-integrity and accepted-P1.1 rollback requirements and may enter explicit user acceptance.",
+      "report": {
+        "path": "logs/productization/P1.2-20260727-222737/independent-review/final-review-pass.txt",
+        "sha256": "1e2549cca1fa0f53cf322b6f3a33ba2476a08de2e4ec0ea5e63f1ab2c5a98a07"
+      }
+    }
+  ],
+  "independent_review_status": "PASS",
+  "rollback": {
+    "status": "PASS",
+    "target_commit": "8c18e5d6b10081eaaf608436440046894d235d46",
+    "target_tree": "9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd",
+    "note": "The accepted P1.1 runtime archive passed its original ten tests; its route probe retained migration 001 and no P1.2 inventory routes.",
+    "evidence": [
+      {
+        "path": "logs/productization/P1.2-20260727-222737/rollback/accepted-p1-1-pytest.txt",
+        "sha256": "7436be0563db2f7966b4175b5102082fd5287b560c343ac2046b5ff79dc167c8"
+      },
+      {
+        "path": "logs/productization/P1.2-20260727-222737/rollback/accepted-p1-1-route-probe.json",
+        "sha256": "bbf62722a526162d1f1805980529e9fd0920ac0fb9f713e19af6966129c7a0cb"
+      },
+      {
+        "path": "logs/productization/P1.2-20260727-222737/rollback/accepted-p1-1-runtime.zip",
+        "sha256": "ff7e5190d9e47de6ddbc0c10c254960a115eff73a4de31404b1d69f6becbd863"
+      }
+    ]
+  },
+  "user_decision": {
+    "status": "PENDING",
+    "decision": null,
+    "date": null,
+    "conversation_reference": null
+  }
+}
