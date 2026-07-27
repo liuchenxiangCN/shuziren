@@ -9,6 +9,27 @@
 
 ## 2026-07-27
 
+### P1.3 Activation And Result Freeze
+
+#### Completed Facts
+
+- The user explicitly instructed Codex to complete P1.3, activating it as the
+  sole current result batch.
+- Froze the complete P1.3 result card and non-scope before implementation.
+  The result covers development-preview draft validation/Mock preview,
+  different-user approval, immutable normal releases, single-screen/group
+  publication, credential-bound acknowledgement, forward rollback, encrypted
+  online-source logical backup/restore and three-day runtime-detail retention.
+- Preserved accepted P1.2 runtime commit
+  `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree
+  `565dbb3567e2a4ae5b872177d97449120477fe8c`, plus a verified pre-`003`
+  database copy as the rollback target.
+- Kept real FineReport/FVS/plugin behavior, production activation, external
+  RecoverySecurityLedger/WORM/OperationalFence, full-loss recovery, PostgreSQL
+  and customer RPO/RTO certification outside the frozen batch.
+- No P1.3 runtime implementation or verification result is claimed by this
+  activation and result-card freeze.
+
 ### P1.2 User Acceptance
 
 #### Completed Facts

@@ -32,6 +32,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [acceptance/productization/P1.0](acceptance/productization/P1.0) | Acceptance evidence | P1.0 target-contract result card and evidence |
 | [acceptance/productization/P1.1](acceptance/productization/P1.1) | Acceptance evidence | Accepted P1.1 identity and device-trust result |
 | [acceptance/productization/P1.2](acceptance/productization/P1.2) | Acceptance evidence | Accepted P1.2 three-screen inventory result and decision |
+| [acceptance/productization/P1.3](acceptance/productization/P1.3) | Acceptance evidence | Active P1.3 publish, rollback and recovery result card |
 
 ## Product Target
 

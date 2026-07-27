@@ -26,17 +26,22 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product Blockers
 
-### P1.3 Awaiting Explicit Activation
+### P1.3 Active
 
 P1.2 was explicitly accepted on 2026-07-27. Candidate
 `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree
 `565dbb3567e2a4ae5b872177d97449120477fe8c`, is the current runtime rollback
-baseline. P1.3 has not been activated.
+baseline. The user explicitly activated P1.3 on 2026-07-27, and the complete
+result/non-scope is frozen before implementation in the P1.3 acceptance card.
 
 - P1.2 proves the local default Site, group and independently addressable screen inventory without claiming publication or real FVS connectivity.
 - P1.3 must preserve accepted ownership, sibling non-disclosure, Secret rejection, immutable audit and device-trust behavior.
-- FVS credentials, FineReport identity bindings, configuration publication and recovery remain unimplemented.
-- No P1.3 result card, implementation or acceptance claim exists until the user explicitly starts the batch.
+- P1.3 implementation and all required migration, publication, acknowledgement,
+  rollback, backup/restore, retention, browser, Secret-scan and independent-review
+  evidence are pending.
+- Real FVS/plugin behavior, production activation, external anti-rollback
+  anchors, full-loss recovery, PostgreSQL and customer RPO/RTO certification
+  remain blocked or outside the frozen P1.3 result.
 
 ### P2 External Gate
 

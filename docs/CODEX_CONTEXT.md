@@ -15,9 +15,19 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P1.2 Accepted; P1.3 Awaiting Explicit Activation`. G0, P1.0, P1.1 and P1.2 were explicitly accepted on 2026-07-27.
+Current phase: `Productization P1.3 Publish, Rollback And Recovery`. G0, P1.0,
+P1.1 and P1.2 were explicitly accepted on 2026-07-27. The user explicitly
+activated P1.3 on 2026-07-27; its result card and non-scope are frozen.
 
-P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implemented and proved the local identity, browser-session, RBAC, security-audit and screen-device trust slice. P1.2 implemented and proved the three-screen inventory slice and is now the accepted runtime rollback baseline. Release publication and backup / restore remain P1.3; no P1.3 result card or implementation is active.
+P1.0 froze the accepted target domain model, data model, identity and permission
+model, configuration-release state machines, storage / recovery decision and
+control-plane API contract. P1.1 implemented and proved the local identity,
+browser-session, RBAC, security-audit and screen-device trust slice. P1.2
+implemented and proved the three-screen inventory slice and remains the accepted
+runtime rollback baseline. P1.3 is authorized to implement only the frozen
+development-preview draft/release, publication/acknowledgement, forward
+rollback, encrypted online-source backup/restore and three-day runtime-detail
+retention result. No P1.3 runtime implementation is claimed by activation.
 
 ## Frozen Product Boundaries
 
@@ -52,9 +62,11 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 
 Accepted P1.1 and P1.2 behavior is recorded separately in
 [acceptance/productization/P1.1](acceptance/productization/P1.1) and
-[acceptance/productization/P1.2](acceptance/productization/P1.2). P1.3 and later
-target behavior under [product/contracts](product/contracts) remains
-unimplemented.
+[acceptance/productization/P1.2](acceptance/productization/P1.2). The active
+P1.3 result boundary is frozen in
+[acceptance/productization/P1.3/ACCEPTANCE_CARD.md](acceptance/productization/P1.3/ACCEPTANCE_CARD.md).
+Until factual candidate evidence exists, all P1.3 and later target behavior under
+[product/contracts](product/contracts) remains unimplemented.
 
 ## Non-Negotiable Rules
 
