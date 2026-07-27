@@ -470,7 +470,7 @@ function formatTime(value?: number | null) {
         <section v-else class="cp-card">
           <div class="cp-card-title">
             <div>
-              <p class="cp-eyebrow">HMAC chained · append only</p>
+              <p class="cp-eyebrow">SHA-256 chained · append only</p>
               <h2>安全审计事件</h2>
             </div>
             <button v-if="canAudit" @click="run(loadActiveView)">刷新</button>
