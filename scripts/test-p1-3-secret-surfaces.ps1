@@ -94,7 +94,7 @@ $dangerousPatterns = @(
         [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
     ),
     [regex]::new(
-        '(?i)\b(?:api[_-]?key|client[_-]?secret|password|passwd|pwd|dsn)\s*[:=]\s*["'']?(?!replace_me\b|synthetic\b|<)[^\s"'']{12,}',
+        '(?i)\b(?:api[_-]?key|client[_-]?secret|password|passwd|pwd|dsn)\s*[:=]\s*["''](?!replace_me\b|synthetic\b|<)[^"'']{12,}["'']',
         [System.Text.RegularExpressions.RegexOptions]::CultureInvariant
     )
 )
