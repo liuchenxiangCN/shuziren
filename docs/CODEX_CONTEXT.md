@@ -15,9 +15,9 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `G0 Acceptance Gate`. Documentation governance and the result-driven roadmap are implemented; the user result decision is pending.
+Current phase: `Productization P1.0 Target Contract Result Pack`. G0 was explicitly accepted on 2026-07-27.
 
-P0 product definition is complete. After G0 acceptance, the queued phase is `Productization P1.0`: target domain model, data model, identity model, storage decision and control-plane API contract result pack. P1.0 is contract design only.
+P1.0 freezes the target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.0 is contract design only; product runtime remains the existing single-instance POC.
 
 ## Frozen Product Boundaries
 

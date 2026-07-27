@@ -29,6 +29,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [DEV_LOG.md](DEV_LOG.md) | Authoritative current | Factual productization work after G0 |
 | [CHANGELOG.md](CHANGELOG.md) | Authoritative current | Productization release-facing changes |
 | [acceptance/productization/G0](acceptance/productization/G0) | Acceptance evidence | G0 result card, checks, limitations and decision |
+| [acceptance/productization/P1.0](acceptance/productization/P1.0) | Acceptance evidence | P1.0 target-contract result card and evidence |
 
 ## Product Target
 
@@ -37,10 +38,11 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [01_PROJECT_BRIEF.md](01_PROJECT_BRIEF.md) | Target not implemented | Product position and boundary |
 | [02_PRODUCT_BLUEPRINT.md](02_PRODUCT_BLUEPRINT.md) | Target not implemented | User value and product workflows |
 | [17_STANDARD_PRODUCT_DESIGN.md](17_STANDARD_PRODUCT_DESIGN.md) | Target not implemented | Standard product design |
-| [product/contracts/README.md](product/contracts/README.md) | Target not implemented | P1 target contract namespace |
+| [product/contracts/README.md](product/contracts/README.md) | Target not implemented | P1 domain, identity, state, data, storage and API target contracts |
 | [integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md](integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md) | Target not implemented / external gate | Official plugin evidence and connector boundary |
 | [decisions/ADR-0026-finereport-fvs-productization.md](decisions/ADR-0026-finereport-fvs-productization.md) | Accepted ADR | Productization decision |
 | [decisions/ADR-0027-result-driven-development-and-document-lifecycle.md](decisions/ADR-0027-result-driven-development-and-document-lifecycle.md) | Accepted ADR | Result-driven development and document lifecycle |
+| [decisions/ADR-0028-p1-control-plane-foundation.md](decisions/ADR-0028-p1-control-plane-foundation.md) | Proposed ADR | P1 control-plane foundation; awaits P1.0 acceptance |
 
 ## Implemented POC Baseline
 

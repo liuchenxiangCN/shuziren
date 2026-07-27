@@ -9,6 +9,27 @@
 
 ## 2026-07-27
 
+### P1.0 Target Contract Result Pack
+
+#### Completed Facts
+
+- The user explicitly accepted G0 and authorized P1 work.
+- Activated P1.0 as the sole result batch and froze its result card and non-scope before contract work.
+- Added target domain, identity / RBAC, device trust, configuration-release, relational data, storage / recovery and control-plane API contracts under `docs/product/contracts/`.
+- Added a machine-readable registry for 31 entities, five exact roles, 22 permissions, nine exact state machines, IAM parameters, storage decisions, 70 API operations and the three-screen isolation fixture.
+- Proposed ADR-0028 for the P1 control-plane foundation; it remains Proposed until explicit P1.0 acceptance.
+- Added ResolutionFingerprint binding from validation through release creation, immutable ConfigLayer/FineReport/Secret versions, composite PublicationTarget ownership keys and exact control-plane ETag versus device CAS rules.
+- Added bootstrap/reset/session API closure, default-deny draft-field authorization, administrator-only FineReport identity management and typed different-user approval for production high-risk actions.
+- Replaced the same-backup-domain recovery journal idea with an authenticated RecoverySecurityLedger and an independently held monotonic anchor that fail closed against user/password/device credential rollback.
+- Expanded independent contract validation to 69 reject fixtures covering exact state/role/API drift, field authorization, high-risk approval, security-ledger recovery, immutable deletion and three-screen isolation.
+- Kept implemented POC API, data and runtime code unchanged.
+
+#### Verification To Date
+
+- `scripts/validate-p1-target-contracts.ps1` passed 1439 contract, state, RBAC, storage, API and Markdown consistency checks.
+- `scripts/test-p1-target-contracts.ps1` passed the baseline plus 69 reject fixtures.
+- Final lifecycle, evidence, fingerprint, rollback and independent-review conclusions are recorded only after the candidate is complete.
+
 ### G0 Documentation Governance And Result-Driven Planning
 
 #### Completed
@@ -37,6 +58,10 @@
 - The rollback exporter produced a P0-preserving tree from base commit `8e293af1f56e5d7623b0af3dfd408e6086e736c2`, restored six root documents, preserved eleven P0 artifacts, excluded G0-only files and rejected unsafe workspace / `.git` targets.
 - Independent architecture and documentation-gate reviewers passed the remediated candidate. Their task IDs and conclusions are recorded in the G0 manifest.
 - Runtime and database-migration tests were `N/A` because the candidate changes documentation, governance scripts and repository metadata only; no runtime path changed.
+
+#### User Decision
+
+- Explicitly accepted (`通过`) on 2026-07-27 in the Codex task that started P1 development.
 
 ## 2026-07-26
 

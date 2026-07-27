@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "batch": "P1.0",
+  "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "generated_at": "2026-07-27T00:40:18.8520544Z",
+  "gate_summary": "PASS_PENDING_INDEPENDENT_REVIEW_AND_ROLLBACK",
+  "acceptance_state": "CANDIDATE_VERIFYING",
+  "candidate": {
+    "kind": "working_tree",
+    "base_accepted_commit": "226e2d48d0731f989c3895e4abc5237cee2b2d10",
+    "fingerprint_sha256": "DE13234D6DDC51F2A34F4FFFD4AFF020A0BB0EF53B4704D118EF4DAFF6632E71",
+    "file_count": 26,
+    "scope": "P1.0 target contracts, proposed ADR, governance synchronization and validation scripts; runtime unchanged"
+  },
+  "database": {
+    "logical_schema_version": "p1_control_plane_001",
+    "runtime_schema_change": "N/A",
+    "migration_version": "N/A",
+    "reason": "Target design only; no runtime database or migration changed"
+  },
+  "gates": [
+    {
+      "name": "p1_contract_validation",
+      "status": "PASS",
+      "summary": "P1_CONTRACT_OK checks=1439 operations=70 entities=31 roles=5"
+    },
+    {
+      "name": "p1_negative_fixture_self_test",
+      "status": "PASS",
+      "summary": "P1_CONTRACT_SELF_TEST_OK cases=70"
+    },
+    {
+      "name": "documentation_lifecycle",
+      "status": "PASS",
+      "summary": "DOC_LIFECYCLE_OK checks=298 links=136 files=108 plugin_files=1"
+    },
+    {
+      "name": "diff_checks",
+      "status": "PASS",
+      "summary": "git diff --check and git diff --cached --check returned no findings"
+    },
+    {
+      "name": "runtime_and_database",
+      "status": "N/A",
+      "reason": "P1.0 is target-contract design only and changes no runtime, implemented POC contract or database migration"
+    }
+  ],
+  "independent_reviews": [],
+  "evidence": {},
+  "rollback": {
+    "status": "IN_PROGRESS"
+  },
+  "user_decision": {
+    "status": "PENDING",
+    "date": null,
+    "conversation_reference": null
+  }
+}

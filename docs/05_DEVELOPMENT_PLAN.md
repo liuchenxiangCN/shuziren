@@ -44,8 +44,8 @@ The following rules apply to every phase:
 | Stage | Result Theme | User Acceptance Outcome | Status |
 | --- | --- | --- | --- |
 | P0 | Product boundary | Product scope, target customer and constraints are frozen | Done |
-| G0 | Documentation and result governance | Codex reads one current task and every batch has an evidence gate | Acceptance |
-| P1 | Multi-screen control closed loop | Three screens can be registered, configured, published and rolled back independently | Queued |
+| G0 | Documentation and result governance | Codex reads one current task and every batch has an evidence gate | Accepted |
+| P1 | Multi-screen control closed loop | Three screens can be registered, configured, published and rolled back independently | P1.0 in progress; authority: [NEXT_ACTIONS.md](NEXT_ACTIONS.md) |
 | P2 | Per-screen capabilities and querying | Different provider combinations and controlled data sources work without cross-screen impact | Planned |
 | P3 | Renderer extension mechanism | Test renderers and asset versions can switch safely without claiming real 2D / 3D support | Planned |
 | P4 | Management and operations closed loops | Each product role completes its daily task without editing code or YAML | Planned |

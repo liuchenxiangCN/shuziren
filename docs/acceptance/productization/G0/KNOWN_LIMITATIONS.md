@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- Candidate: working tree documentation state on 2026-07-27
+- Candidate: commit `226e2d48d0731f989c3895e4abc5237cee2b2d10`
 
 ## Limitations
 
@@ -13,6 +13,6 @@
 - Stable-path POC documents remain in `docs/` to avoid breaking runtime references and historical links; lifecycle banners and the index prevent them from being treated as product target truth.
 - Customer fixture files under `docs/demo_data` and `docs/demo_knowledge` remain at their existing runtime-compatible paths and are explicitly classified as POC fixtures.
 - The local FineReport plugin ZIP is not moved or deleted; it is ignored by Git and remains non-distributable vendor evidence.
-- The candidate remains an uncommitted working tree until the user requests a Git operation; its reproducible file fingerprint, file count and evidence hashes identify the reviewed state.
+- The accepted G0 candidate is commit `226e2d48d0731f989c3895e4abc5237cee2b2d10`; the later user-decision update is acceptance evidence, not a change to the reviewed candidate.
 - Raw rollback and fingerprint evidence is local under ignored `logs/productization/`; the tracked manifest contains sanitized hashes and conclusions.
-- G0 is not accepted until the user records a result decision.
+- G0 was explicitly accepted on 2026-07-27. This acceptance does not accept or implement any P1 result.

@@ -3,16 +3,16 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- Candidate: working tree documentation state on 2026-07-27
+- Candidate: commit `226e2d48d0731f989c3895e4abc5237cee2b2d10`
 - Result: documentation governance and result-driven development plan
-- Candidate commit: uncommitted P0 + G0 working-tree candidate based on `8e293af1f56e5d7623b0af3dfd408e6086e736c2`
+- Candidate commit: `226e2d48d0731f989c3895e4abc5237cee2b2d10`
 - Candidate fingerprint: recorded in `manifest.json`; acceptance evidence files are excluded to avoid a circular hash
 - Base committed version: `8e293af1f56e5d7623b0af3dfd408e6086e736c2`
 - Database schema / migration: `N/A` — documentation-only batch
 - Rollback target: a verified recovery tree built from the base runtime, six exact pre-G0 root documents and eleven preserved P0 product-definition artifacts, including the three productized entry documents
 - Rollback procedure: run `scripts/export-g0-rollback-target.ps1 -Destination <empty-directory>`, verify its proof, then switch to the exported tree through a separately approved workspace operation
 - Post-restore verification: recorded in `manifest.json`; runtime data is unchanged
-- User decision: Pending
+- User decision: `通过` on 2026-07-27
 
 ## Observable Outcome
 

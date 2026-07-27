@@ -26,13 +26,20 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product Blockers
 
-### P1 Decisions
+### P1.0 Decisions Awaiting Acceptance
 
-- Select the embedded control-plane database engine.
-- Define supported external control-plane storage.
-- Freeze default backup medium and frequency.
-- Freeze target RPO and RTO.
-- Freeze local IAM password, session, lockout and reset policy.
+The P1.0 candidate proposes:
+
+- release-pinned SQLite 3 as the embedded engine, with WAL, full synchronous durability, foreign keys and one active control-plane instance;
+- PostgreSQL 16 as the only V1 external control-plane store;
+- an encrypted filesystem backup bundle on a separate production mount, scheduled hourly with 24 hourly, 7 daily and 4 weekly generations;
+- an embedded-store target of `RPO <= 1 hour` and reference single-site `RTO <= 2 hours`, remaining unverified until P1.3;
+- a 15-to-128-code-point local password policy, Argon2id floor, progressive lockout, 30-minute idle / 8-hour absolute sessions and single-use 15-minute reset tokens;
+- three separate credential planes for users, screen devices and FineReport data identities;
+- ResolutionFingerprint-bound release creation, default-deny changed-field authorization and typed different-user approval for production high-risk effects;
+- an authenticated RecoverySecurityLedger with a monotonic anchor outside the live store, backups and ledger so restore cannot revive disabled users, older password generations or predecessor/revoked device credentials.
+
+These choices are target design only and remain open until the P1.0 user decision. Runtime, migration and recovery risks remain open until later P1 evidence.
 
 ### P2 External Gate
 

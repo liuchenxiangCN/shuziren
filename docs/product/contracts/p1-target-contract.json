@@ -1,0 +1,1959 @@
+{
+  "schema_version": 1,
+  "contract_version": "p1.0-target-v1",
+  "logical_schema_version": "p1_control_plane_001",
+  "lifecycle": "TARGET_NOT_IMPLEMENTED",
+  "implemented": false,
+  "identity_planes": [
+    {
+      "id": "control_plane_user",
+      "credential_type": "local_password_server_session",
+      "scope_source": "authenticated_user_membership",
+      "request_asserted_scope": false
+    },
+    {
+      "id": "screen_device",
+      "credential_type": "device_enrollment_device_credential",
+      "scope_source": "credential_record",
+      "request_asserted_scope": false
+    },
+    {
+      "id": "finereport_data_identity",
+      "credential_type": "secret_referenced_display_or_service_identity",
+      "scope_source": "screen_owned_identity_binding",
+      "request_asserted_scope": false
+    }
+  ],
+  "entities": [
+    "Tenant",
+    "Deployment",
+    "Site",
+    "ScreenGroup",
+    "ScreenInstance",
+    "DeviceEnrollment",
+    "DeviceCredential",
+    "DigitalHumanInstance",
+    "FineReportIdentityBinding",
+    "FineReportIdentityBindingVersion",
+    "RuntimeBinding",
+    "UserAccount",
+    "AuthSession",
+    "BootstrapGrant",
+    "PasswordResetToken",
+    "SecretRecord",
+    "SecretVersion",
+    "ConfigDraft",
+    "ConfigDraftRevision",
+    "ConfigLayerRevision",
+    "ResolutionFingerprint",
+    "ConfigRelease",
+    "ReleaseTarget",
+    "Publication",
+    "PublicationTarget",
+    "HighRiskAction",
+    "HighRiskApproval",
+    "BackupRecord",
+    "RestorePlan",
+    "RecoverySecurityLedger",
+    "SecurityAuditEvent"
+  ],
+  "permissions": [
+    "user.manage",
+    "role.assign",
+    "screen.read",
+    "screen.manage",
+    "device.enroll",
+    "device.revoke",
+    "config.read",
+    "config.edit_business",
+    "config.edit_technical",
+    "config.validate",
+    "config.preview",
+    "config.approve",
+    "release.publish",
+    "release.rollback",
+    "secret.metadata.read",
+    "secret.write",
+    "finereport.binding.manage",
+    "operation.read",
+    "backup.create",
+    "backup.restore",
+    "risk.approve",
+    "audit.read"
+  ],
+  "roles": {
+    "platform_admin": [
+      "user.manage",
+      "role.assign",
+      "screen.read",
+      "screen.manage",
+      "device.enroll",
+      "device.revoke",
+      "config.read",
+      "config.edit_business",
+      "config.edit_technical",
+      "config.validate",
+      "config.preview",
+      "config.approve",
+      "release.publish",
+      "release.rollback",
+      "secret.metadata.read",
+      "secret.write",
+      "finereport.binding.manage",
+      "operation.read",
+      "backup.create",
+      "backup.restore",
+      "risk.approve",
+      "audit.read"
+    ],
+    "implementation_engineer": [
+      "screen.read",
+      "screen.manage",
+      "device.enroll",
+      "config.read",
+      "config.edit_business",
+      "config.edit_technical",
+      "config.validate",
+      "config.preview",
+      "release.publish",
+      "release.rollback",
+      "secret.metadata.read",
+      "operation.read"
+    ],
+    "business_operator": [
+      "screen.read",
+      "config.read",
+      "config.edit_business",
+      "config.validate",
+      "config.preview",
+      "operation.read"
+    ],
+    "operations_engineer": [
+      "screen.read",
+      "config.read",
+      "operation.read",
+      "backup.create",
+      "audit.read"
+    ],
+    "auditor": [
+      "screen.read",
+      "config.read",
+      "operation.read",
+      "audit.read"
+    ]
+  },
+  "state_machines": {
+    "bootstrap_grant": {
+      "states": [
+        "ISSUED",
+        "CONSUMED",
+        "EXPIRED",
+        "REVOKED"
+      ],
+      "initial": "ISSUED",
+      "terminal": [
+        "CONSUMED",
+        "EXPIRED",
+        "REVOKED"
+      ],
+      "transitions": [
+        {
+          "from": "ISSUED",
+          "to": "CONSUMED",
+          "operation": "complete_bootstrap"
+        },
+        {
+          "from": "ISSUED",
+          "to": "EXPIRED",
+          "operation": "expire"
+        },
+        {
+          "from": "ISSUED",
+          "to": "REVOKED",
+          "operation": "revoke"
+        }
+      ]
+    },
+    "password_reset_token": {
+      "states": [
+        "ISSUED",
+        "CONSUMED",
+        "EXPIRED",
+        "REVOKED"
+      ],
+      "initial": "ISSUED",
+      "terminal": [
+        "CONSUMED",
+        "EXPIRED",
+        "REVOKED"
+      ],
+      "transitions": [
+        {
+          "from": "ISSUED",
+          "to": "CONSUMED",
+          "operation": "consume"
+        },
+        {
+          "from": "ISSUED",
+          "to": "EXPIRED",
+          "operation": "expire"
+        },
+        {
+          "from": "ISSUED",
+          "to": "REVOKED",
+          "operation": "revoke"
+        }
+      ]
+    },
+    "auth_session": {
+      "states": [
+        "ACTIVE",
+        "IDLE_EXPIRED",
+        "ABSOLUTE_EXPIRED",
+        "REVOKED"
+      ],
+      "initial": "ACTIVE",
+      "terminal": [
+        "IDLE_EXPIRED",
+        "ABSOLUTE_EXPIRED",
+        "REVOKED"
+      ],
+      "transitions": [
+        {
+          "from": "ACTIVE",
+          "to": "IDLE_EXPIRED",
+          "operation": "expire_idle"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "ABSOLUTE_EXPIRED",
+          "operation": "expire_absolute"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "REVOKED",
+          "operation": "revoke"
+        }
+      ]
+    },
+    "device_enrollment": {
+      "states": [
+        "ISSUED",
+        "CLAIMED",
+        "EXPIRED",
+        "REVOKED"
+      ],
+      "initial": "ISSUED",
+      "terminal": [
+        "CLAIMED",
+        "EXPIRED",
+        "REVOKED"
+      ],
+      "transitions": [
+        {
+          "from": "ISSUED",
+          "to": "CLAIMED",
+          "operation": "claim"
+        },
+        {
+          "from": "ISSUED",
+          "to": "EXPIRED",
+          "operation": "expire"
+        },
+        {
+          "from": "ISSUED",
+          "to": "REVOKED",
+          "operation": "revoke"
+        }
+      ]
+    },
+    "device_credential": {
+      "states": [
+        "PENDING_ACTIVATION",
+        "ACTIVE",
+        "EXPIRED",
+        "REVOKED"
+      ],
+      "entry_states": {
+        "enrollment_claim": "ACTIVE",
+        "rotation_successor": "PENDING_ACTIVATION"
+      },
+      "terminal": [
+        "EXPIRED",
+        "REVOKED"
+      ],
+      "transitions": [
+        {
+          "from": "PENDING_ACTIVATION",
+          "to": "ACTIVE",
+          "operation": "activate_successor_and_revoke_predecessor"
+        },
+        {
+          "from": "PENDING_ACTIVATION",
+          "to": "EXPIRED",
+          "operation": "expire"
+        },
+        {
+          "from": "PENDING_ACTIVATION",
+          "to": "REVOKED",
+          "operation": "hard_revoke"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "REVOKED",
+          "operation": "hard_revoke_or_successor_activation"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "EXPIRED",
+          "operation": "expire"
+        }
+      ]
+    },
+    "config_draft": {
+      "states": [
+        "DRAFT",
+        "VALIDATED",
+        "PREVIEWED",
+        "APPROVAL_PENDING",
+        "APPROVED",
+        "REJECTED",
+        "RELEASED",
+        "ABANDONED"
+      ],
+      "initial": "DRAFT",
+      "terminal": [
+        "RELEASED",
+        "ABANDONED"
+      ],
+      "transitions": [
+        {
+          "from": "DRAFT",
+          "to": "VALIDATED",
+          "operation": "validate"
+        },
+        {
+          "from": "VALIDATED",
+          "to": "PREVIEWED",
+          "operation": "preview"
+        },
+        {
+          "from": "PREVIEWED",
+          "to": "APPROVAL_PENDING",
+          "operation": "submit_for_approval"
+        },
+        {
+          "from": "APPROVAL_PENDING",
+          "to": "APPROVED",
+          "operation": "approve"
+        },
+        {
+          "from": "APPROVAL_PENDING",
+          "to": "REJECTED",
+          "operation": "reject"
+        },
+        {
+          "from": "APPROVED",
+          "to": "RELEASED",
+          "operation": "create_release"
+        },
+        {
+          "from": "VALIDATED",
+          "to": "DRAFT",
+          "operation": "create_revision"
+        },
+        {
+          "from": "PREVIEWED",
+          "to": "DRAFT",
+          "operation": "create_revision"
+        },
+        {
+          "from": "REJECTED",
+          "to": "DRAFT",
+          "operation": "create_revision"
+        },
+        {
+          "from": "APPROVAL_PENDING",
+          "to": "DRAFT",
+          "operation": "withdraw_and_create_revision"
+        },
+        {
+          "from": "APPROVED",
+          "to": "DRAFT",
+          "operation": "create_revision_after_stale_fingerprint"
+        },
+        {
+          "from": "DRAFT",
+          "to": "ABANDONED",
+          "operation": "abandon"
+        },
+        {
+          "from": "VALIDATED",
+          "to": "ABANDONED",
+          "operation": "abandon"
+        },
+        {
+          "from": "PREVIEWED",
+          "to": "ABANDONED",
+          "operation": "abandon"
+        },
+        {
+          "from": "REJECTED",
+          "to": "ABANDONED",
+          "operation": "abandon"
+        }
+      ]
+    },
+    "publication_target": {
+      "states": [
+        "QUEUED",
+        "WAITING_FOR_DEVICE",
+        "APPLYING",
+        "ACTIVE",
+        "FAILED",
+        "CANCELLED",
+        "SUPERSEDED"
+      ],
+      "initial": "QUEUED",
+      "terminal": [
+        "FAILED",
+        "CANCELLED",
+        "SUPERSEDED"
+      ],
+      "transitions": [
+        {
+          "from": "QUEUED",
+          "to": "WAITING_FOR_DEVICE",
+          "operation": "mark_offline"
+        },
+        {
+          "from": "QUEUED",
+          "to": "APPLYING",
+          "operation": "begin_apply"
+        },
+        {
+          "from": "WAITING_FOR_DEVICE",
+          "to": "APPLYING",
+          "operation": "device_reconnect"
+        },
+        {
+          "from": "QUEUED",
+          "to": "CANCELLED",
+          "operation": "cancel"
+        },
+        {
+          "from": "WAITING_FOR_DEVICE",
+          "to": "CANCELLED",
+          "operation": "cancel"
+        },
+        {
+          "from": "APPLYING",
+          "to": "ACTIVE",
+          "operation": "acknowledge_matching_release"
+        },
+        {
+          "from": "APPLYING",
+          "to": "FAILED",
+          "operation": "fail_apply"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "SUPERSEDED",
+          "operation": "activate_newer_target"
+        }
+      ]
+    },
+    "restore_plan": {
+      "states": [
+        "VALIDATING",
+        "READY",
+        "EXECUTING",
+        "RECONCILING_SECURITY",
+        "COMPLETED",
+        "FAILED",
+        "ABORTED"
+      ],
+      "initial": "VALIDATING",
+      "terminal": [
+        "COMPLETED",
+        "FAILED",
+        "ABORTED"
+      ],
+      "transitions": [
+        {
+          "from": "VALIDATING",
+          "to": "READY",
+          "operation": "validation_pass"
+        },
+        {
+          "from": "VALIDATING",
+          "to": "FAILED",
+          "operation": "validation_fail"
+        },
+        {
+          "from": "READY",
+          "to": "EXECUTING",
+          "operation": "execute"
+        },
+        {
+          "from": "READY",
+          "to": "ABORTED",
+          "operation": "abort"
+        },
+        {
+          "from": "EXECUTING",
+          "to": "RECONCILING_SECURITY",
+          "operation": "verified_data_cutover"
+        },
+        {
+          "from": "EXECUTING",
+          "to": "FAILED",
+          "operation": "safe_failure"
+        },
+        {
+          "from": "RECONCILING_SECURITY",
+          "to": "COMPLETED",
+          "operation": "security_ledger_reconciled_and_epochs_advanced"
+        },
+        {
+          "from": "RECONCILING_SECURITY",
+          "to": "FAILED",
+          "operation": "security_reconciliation_fail_closed"
+        }
+      ]
+    },
+    "high_risk_action": {
+      "states": [
+        "PENDING",
+        "APPROVED",
+        "REJECTED",
+        "EXPIRED",
+        "CONSUMED",
+        "FAILED"
+      ],
+      "initial": "PENDING",
+      "terminal": [
+        "REJECTED",
+        "EXPIRED",
+        "CONSUMED",
+        "FAILED"
+      ],
+      "transitions": [
+        {
+          "from": "PENDING",
+          "to": "APPROVED",
+          "operation": "approve_by_different_user"
+        },
+        {
+          "from": "PENDING",
+          "to": "REJECTED",
+          "operation": "reject_by_different_user"
+        },
+        {
+          "from": "PENDING",
+          "to": "EXPIRED",
+          "operation": "expire"
+        },
+        {
+          "from": "APPROVED",
+          "to": "CONSUMED",
+          "operation": "atomically_execute_exact_request_hash"
+        },
+        {
+          "from": "APPROVED",
+          "to": "EXPIRED",
+          "operation": "expire"
+        },
+        {
+          "from": "APPROVED",
+          "to": "FAILED",
+          "operation": "precondition_or_authorization_changed"
+        }
+      ]
+    }
+  },
+  "invariants": {
+    "max_active_digital_humans_per_screen": 1,
+    "separate_identity_credentials": true,
+    "device_scope_from_credential": true,
+    "permission_checked_every_request": true,
+    "ui_is_not_authorization_source": true,
+    "config_release_immutable": true,
+    "release_target_immutable": true,
+    "rollback_creates_new_release": true,
+    "group_target_set_frozen": true,
+    "approval_binds_resolution_fingerprint": true,
+    "release_targets_created_with_release": true,
+    "publication_never_creates_release_targets": true,
+    "publication_target_matches_release_and_screen": true,
+    "desired_and_applied_release_separate": true,
+    "secret_reveal_permission_exists": false,
+    "restore_overwrites_active_store": false,
+    "restore_fails_closed_without_fresh_security_anchor": true,
+    "password_reset_never_enables_user": true,
+    "password_reset_revokes_sessions_and_advances_authentication_epoch": true,
+    "bootstrap_completion_invalidates_other_grants": true,
+    "user_and_device_security_mutations_require_ledger_commit": true,
+    "permission_denial_fallback_allowed": false
+  },
+  "configuration_authorization": {
+    "policy_id": "config_draft_spec_fields",
+    "deny_unclassified_fields": true,
+    "path_syntax": "normalized_RFC6901",
+    "path_match": "most_specific_exact_or_declared_subtree",
+    "authorization_mode": "all_changed_paths_all_permissions",
+    "atomic_rejection": true,
+    "partial_write_allowed": false,
+    "field_permissions": {
+      "/welcome_text": [
+        "config.edit_business"
+      ],
+      "/persona": [
+        "config.edit_business"
+      ],
+      "/business_policy": [
+        "config.edit_business"
+      ],
+      "/fvs_binding_ref": [
+        "config.edit_technical"
+      ],
+      "/fine_report_identity_ref": [
+        "config.edit_technical",
+        "finereport.binding.manage"
+      ],
+      "/digital_human_instance_id": [
+        "config.edit_technical"
+      ],
+      "/capability_profile_ref": [
+        "config.edit_technical"
+      ],
+      "/technical_policy": [
+        "config.edit_technical"
+      ]
+    },
+    "fine_report_binding_permissions_all": [
+      "screen.manage",
+      "secret.write",
+      "finereport.binding.manage"
+    ]
+  },
+  "resolution_policy": {
+    "fingerprint_algorithm": "SHA-256",
+    "bound_at": "validation",
+    "inheritance_layer_entity": "ConfigLayerRevision",
+    "inheritance_order": [
+      "product_default",
+      "tenant",
+      "deployment",
+      "site",
+      "screen_group",
+      "screen_instance"
+    ],
+    "approval_binds": [
+      "draft_revision_id",
+      "draft_content_hash",
+      "resolution_fingerprint_hash",
+      "target_set_hash",
+      "group_resource_revision",
+      "inheritance_layer_revisions",
+      "per_screen_effective_content_hashes",
+      "fine_report_binding_versions",
+      "secret_versions"
+    ],
+    "release_creation": "atomically_revalidate_fingerprint_and_create_release_targets",
+    "source_change_result": "RESOLUTION_FINGERPRINT_STALE",
+    "publication_creates_release_targets": false
+  },
+  "data_integrity": {
+    "immutable_api_resources": [
+      "ConfigRelease",
+      "ReleaseTarget",
+      "ConfigLayerRevision",
+      "FineReportIdentityBindingVersion",
+      "SecretVersion",
+      "ResolutionFingerprint",
+      "SecurityAuditEvent"
+    ],
+    "publication_target_composite_foreign_key": [
+      "tenant_id",
+      "deployment_id",
+      "release_id",
+      "screen_id",
+      "release_target_id"
+    ],
+    "publication_target_references_release_target_key": [
+      "tenant_id",
+      "deployment_id",
+      "release_id",
+      "screen_id",
+      "release_target_id"
+    ],
+    "publication_target_references_publication_key": [
+      "tenant_id",
+      "deployment_id",
+      "publication_id",
+      "release_id"
+    ]
+  },
+  "high_risk_policy": {
+    "standard_production_policy_id": "production_four_eyes_v1",
+    "approval_ttl_minutes": 15,
+    "request_hash_algorithm": "SHA-256",
+    "recent_reauthentication_minutes": 10,
+    "reason_required": true,
+    "initiator_must_differ_from_approver": true,
+    "single_use": true,
+    "production_requires_human_approval": true,
+    "generic_action_creation_forbidden": true,
+    "protected_endpoint_creates_typed_action": true,
+    "request_accepts_only_allowlisted_typed_operation_schemas": true,
+    "request_requires_target_operation_authorization": true,
+    "approver_requires_risk_approve_and_target_operation_authorization": true,
+    "execution_rechecks_requester_and_executor_target_authorization": true,
+    "request_hash_binds": [
+      "http_method",
+      "canonical_path",
+      "tenant_id",
+      "deployment_id",
+      "requester_user_id",
+      "resource_ids",
+      "canonical_body",
+      "if_match",
+      "expected_generations",
+      "reason",
+      "policy_version",
+      "recovery_security_ledger_head"
+    ],
+    "development_test_auto_approval_requires_explicit_audit_policy": true,
+    "protected_operations": [
+      "publishToScreen",
+      "publishToScreenGroup",
+      "rollbackScreen",
+      "rollbackScreenGroup",
+      "revokeDeviceCredential",
+      "rotateSecret",
+      "putFineReportIdentityBinding",
+      "executeRestorePlan"
+    ]
+  },
+  "iam_policy": {
+    "password_min_code_points": 15,
+    "password_max_code_points": 128,
+    "password_composition_required": false,
+    "periodic_password_change_required": false,
+    "bootstrap_secret": {
+      "entropy_bits_min": 256,
+      "ttl_minutes": 30,
+      "single_use": true,
+      "stored_as_digest": true
+    },
+    "password_hash": {
+      "algorithm": "Argon2id",
+      "memory_kib_min": 19456,
+      "iterations_min": 2,
+      "parallelism_min": 1
+    },
+    "lockout": {
+      "attempts": 5,
+      "window_minutes": 15,
+      "durations_minutes": [
+        15,
+        30,
+        60
+      ]
+    },
+    "session": {
+      "idle_minutes": 30,
+      "absolute_hours": 8,
+      "high_risk_reauthentication_minutes": 10,
+      "entropy_bits_min": 256
+    },
+    "reset_token": {
+      "ttl_minutes": 15,
+      "entropy_bits_min": 256,
+      "single_use": true,
+      "stored_as_digest": true
+    }
+  },
+  "device_policy": {
+    "enrollment_ttl_minutes": 15,
+    "credential_entropy_bits_min": 256,
+    "rotation_activation_minutes": 10,
+    "hard_revoke_increments_epoch": true
+  },
+  "storage": {
+    "embedded": {
+      "engine": "SQLite",
+      "minimum_version": "3.45",
+      "journal_mode": "WAL",
+      "synchronous": "FULL",
+      "foreign_keys": true,
+      "active_control_plane_instances": 1,
+      "network_filesystem_allowed": false
+    },
+    "external": {
+      "engine": "PostgreSQL",
+      "major_version": 16,
+      "current_supported_minor_required": true,
+      "certification_status": "UNVERIFIED"
+    },
+    "backup": {
+      "backend": "filesystem_bundle",
+      "separate_mount_required_for_production": true,
+      "schedule_minutes": 60,
+      "retention_hourly": 24,
+      "retention_daily": 7,
+      "retention_weekly": 4,
+      "rpo_minutes_target": 60,
+      "rto_minutes_target": 120,
+      "restore_in_place": false,
+      "recovery_key_inside_bundle": false,
+      "bundle_encryption": "AEAD_AES_256_GCM",
+      "password_hashes_and_secret_ciphertext_inside_encrypted_bundle": true,
+      "manifest_forbidden_fields": [
+        "password",
+        "password_hash",
+        "secret_value",
+        "token",
+        "device_credential",
+        "database_dsn",
+        "recovery_key"
+      ]
+    },
+    "recovery_security_ledger": {
+      "format_version": 1,
+      "append_only": true,
+      "chain_algorithm": "HMAC-SHA-256",
+      "record_encryption": "AEAD_AES_256_GCM",
+      "key_outside_live_store_and_backup_root": true,
+      "ledger_outside_live_store_and_backup_root": true,
+      "anchor_outside_live_store_backup_root_and_ledger": true,
+      "anchor_type": "admin_controlled_monotonic_worm_or_keystore",
+      "production_anchor_required": true,
+      "restore_never_overwrites_replays_or_prunes_ledger": true,
+      "record_states": [
+        "PREPARED",
+        "COMMITTED",
+        "ABORTED"
+      ],
+      "security_mutation_protocol": [
+        "append_prepared_and_fsync",
+        "commit_domain_row_with_ledger_sequence",
+        "append_committed_and_advance_anchor"
+      ],
+      "unresolved_prepared_result": "FAIL_CLOSED_FOR_SUBJECT",
+      "tracked_security_facts": [
+        "control_plane_security_epoch",
+        "bootstrap_completed",
+        "user_enabled_state",
+        "user_account_state_generation",
+        "user_authentication_epoch",
+        "user_authorization_epoch",
+        "user_credential_generation",
+        "user_password_state",
+        "device_family_state",
+        "device_family_generation",
+        "device_family_active_credential_version",
+        "device_family_revocation_epoch",
+        "latest_chain_head"
+      ],
+      "backup_manifest_binds": [
+        "security_ledger_sequence",
+        "security_ledger_head_hash",
+        "security_ledger_key_id"
+      ],
+      "restore_plan_and_approval_bind_current_ledger_head": true,
+      "execute_requires_unchanged_current_ledger_head": true,
+      "post_restore_checkpoint_required_before_completed": true,
+      "restore_user_rules": {
+        "newer_disabled_state_wins": true,
+        "maximum_authentication_epoch_wins": true,
+        "older_password_generation_authentication_allowed": false,
+        "older_password_generation_result": "RESET_REQUIRED"
+      },
+      "restore_device_rules": {
+        "maximum_family_revocation_epoch_wins": true,
+        "revoked_family_remains_revoked": true,
+        "older_or_mismatched_active_version_authentication_allowed": false,
+        "older_or_mismatched_active_version_result": "REENROLL_REQUIRED"
+      },
+      "restore_token_rules": {
+        "all_auth_sessions_invalidated": true,
+        "all_one_time_tokens_invalidated": true,
+        "all_device_sessions_invalidated": true
+      },
+      "missing_stale_or_unverifiable_result": "FAIL_CLOSED"
+    }
+  },
+  "retention": {
+    "runtime_detail_days_default": 3,
+    "runtime_detail_days_configurable": true,
+    "security_audit_uses_runtime_policy": false,
+    "config_release_uses_runtime_policy": false,
+    "device_revocation_uses_runtime_policy": false
+  },
+  "api": {
+    "surfaces": {
+      "control_plane": "/api/v1/control-plane",
+      "device": "/api/v1/device"
+    },
+    "forbidden_request_scope_fields": [
+      "tenant_id",
+      "deployment_id",
+      "operator"
+    ],
+    "control_plane_forbidden_actor_fields": [
+      "operator",
+      "actor_id"
+    ],
+    "device_forbidden_request_scope_fields": [
+      "tenant_id",
+      "deployment_id",
+      "site_id",
+      "screen_id",
+      "digital_human_instance_id"
+    ],
+    "forbidden_response_fields": [
+      "password",
+      "password_hash",
+      "secret_value",
+      "database_dsn",
+      "recovery_key",
+      "session_digest",
+      "csrf_secret",
+      "reauthentication_proof"
+    ],
+    "operations": [
+      {
+        "operation_id": "completeBootstrap",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/bootstrap:complete",
+        "required_permissions_any": [],
+        "idempotency": "required",
+        "concurrency": "atomic_single_use",
+        "scope": "bootstrap_secret",
+        "response_secret": "none",
+        "response_cache_control": "no-store",
+        "async": false
+      },
+      {
+        "operation_id": "createAuthSession",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/auth/sessions",
+        "required_permissions_any": [],
+        "idempotency": "not_applicable",
+        "concurrency": "rate_limit",
+        "scope": "unauthenticated",
+        "response_secret": "one_time_auth_session_cookie",
+        "response_cache_control": "no-store",
+        "async": false
+      },
+      {
+        "operation_id": "getCurrentAuthSession",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/auth/session",
+        "required_permissions_any": [],
+        "idempotency": "inherent",
+        "concurrency": "not_applicable",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "reauthenticateAuthSession",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/auth/session:reauthenticate",
+        "required_permissions_any": [],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "response_cache_control": "no-store",
+        "async": false
+      },
+      {
+        "operation_id": "listOwnAuthSessions",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/auth/sessions",
+        "required_permissions_any": [],
+        "idempotency": "inherent",
+        "concurrency": "snapshot_pagination",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "revokeOwnAuthSession",
+        "surface": "control_plane",
+        "method": "DELETE",
+        "path": "/auth/sessions/{auth_session_id}",
+        "required_permissions_any": [],
+        "idempotency": "inherent",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "deleteCurrentAuthSession",
+        "surface": "control_plane",
+        "method": "DELETE",
+        "path": "/auth/session",
+        "required_permissions_any": [],
+        "idempotency": "inherent",
+        "concurrency": "not_applicable",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "createUser",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/users",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "state_precondition",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "updateUser",
+        "surface": "control_plane",
+        "method": "PATCH",
+        "path": "/users/{user_id}",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "request_precondition",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "disableUser",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/users/{user_id}:disable",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match_and_security_ledger_head",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "enableUser",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/users/{user_id}:enable",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match_and_security_ledger_head",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "unlockUser",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/users/{user_id}:unlock",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "issuePasswordReset",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/users/{user_id}:issue-password-reset",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "state_precondition",
+        "scope": "authenticated_tenant",
+        "response_secret": "one_time_reset_token",
+        "response_cache_control": "no-store",
+        "high_risk_policy": "recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "consumePasswordReset",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/auth/password-resets:consume",
+        "required_permissions_any": [],
+        "idempotency": "required",
+        "concurrency": "atomic_single_use",
+        "scope": "password_reset_token",
+        "response_secret": "none",
+        "response_cache_control": "no-store",
+        "async": false
+      },
+      {
+        "operation_id": "listUserAuthSessions",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/users/{user_id}/auth-sessions",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "snapshot_pagination",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "revokeUserAuthSession",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/users/{user_id}/auth-sessions/{auth_session_id}:revoke",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "replaceUserRoles",
+        "surface": "control_plane",
+        "method": "PUT",
+        "path": "/users/{user_id}/role-assignments",
+        "required_permissions_any": [
+          "role.assign"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "listSites",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/sites",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "snapshot_pagination",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getSite",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/sites/{site_id}",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "createScreenGroup",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/sites/{site_id}/screen-groups",
+        "required_permissions_any": [
+          "screen.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "state_precondition",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "updateScreenGroup",
+        "surface": "control_plane",
+        "method": "PATCH",
+        "path": "/screen-groups/{screen_group_id}",
+        "required_permissions_any": [
+          "screen.manage"
+        ],
+        "idempotency": "request_precondition",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "createScreenInstance",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/sites/{site_id}/screen-instances",
+        "required_permissions_any": [
+          "screen.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "state_precondition",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "updateScreenInstance",
+        "surface": "control_plane",
+        "method": "PATCH",
+        "path": "/screen-instances/{screen_id}",
+        "required_permissions_any": [
+          "screen.manage"
+        ],
+        "idempotency": "request_precondition",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "createDigitalHumanInstance",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/screen-instances/{screen_id}/digital-human-instances",
+        "required_permissions_any": [
+          "screen.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "state_precondition",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getRuntimeBinding",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/screen-instances/{screen_id}/runtime-binding",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getFineReportIdentityBinding",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/screen-instances/{screen_id}/fine-report-identity-binding",
+        "required_permissions_any": [],
+        "required_permissions_all": [
+          "screen.read",
+          "secret.metadata.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "putFineReportIdentityBinding",
+        "surface": "control_plane",
+        "method": "PUT",
+        "path": "/screen-instances/{screen_id}/fine-report-identity-binding",
+        "required_permissions_any": [],
+        "required_permissions_all": [
+          "screen.manage",
+          "secret.write",
+          "finereport.binding.manage"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "if_match_or_if_none_match_star",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "production_four_eyes_v1",
+        "async": false
+      },
+      {
+        "operation_id": "issueDeviceEnrollment",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/screen-instances/{screen_id}/device-enrollments",
+        "required_permissions_any": [
+          "device.enroll"
+        ],
+        "idempotency": "required",
+        "concurrency": "state_precondition",
+        "scope": "authenticated_tenant",
+        "response_secret": "one_time_enrollment_secret",
+        "response_cache_control": "no-store",
+        "async": false
+      },
+      {
+        "operation_id": "getDeviceEnrollment",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/device-enrollments/{enrollment_id}",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "revokeDeviceEnrollment",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/device-enrollments/{enrollment_id}:revoke",
+        "required_permissions_any": [
+          "device.enroll"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "revokeDeviceCredential",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/screen-instances/{screen_id}/device-credentials/{credential_id}:revoke",
+        "required_permissions_any": [
+          "device.revoke"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match_and_credential_epoch",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "production_four_eyes_v1",
+        "async": false
+      },
+      {
+        "operation_id": "createSecret",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/secrets",
+        "required_permissions_any": [
+          "secret.write"
+        ],
+        "idempotency": "required",
+        "concurrency": "state_precondition",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "rotateSecret",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/secrets/{secret_ref}:rotate",
+        "required_permissions_any": [
+          "secret.write"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "production_four_eyes_v1",
+        "async": false
+      },
+      {
+        "operation_id": "getSecretMetadata",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/secrets/{secret_ref}",
+        "required_permissions_any": [
+          "secret.metadata.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getHighRiskAction",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/high-risk-actions/{high_risk_action_id}",
+        "required_permissions_any": [
+          "operation.read",
+          "risk.approve"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "authorization_rule": "requester_or_risk_approve_with_target_scope",
+        "async": false
+      },
+      {
+        "operation_id": "listPendingHighRiskActions",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/high-risk-actions",
+        "required_permissions_any": [
+          "risk.approve"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "snapshot_pagination",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "approveHighRiskAction",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/high-risk-actions/{high_risk_action_id}:approve",
+        "required_permissions_any": [
+          "risk.approve"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "approval_requires_expected_request_hash": true,
+        "high_risk_policy": "different_user_recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "rejectHighRiskAction",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/high-risk-actions/{high_risk_action_id}:reject",
+        "required_permissions_any": [
+          "risk.approve"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "approval_requires_expected_request_hash": true,
+        "high_risk_policy": "different_user_recent_reauthentication_reason",
+        "async": false
+      },
+      {
+        "operation_id": "createConfigDraft",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/config-drafts",
+        "required_permissions_any": [
+          "config.edit_business",
+          "config.edit_technical"
+        ],
+        "idempotency": "required",
+        "concurrency": "state_precondition",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getConfigDraft",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/config-drafts/{draft_id}",
+        "required_permissions_any": [
+          "config.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "replaceConfigDraftSpec",
+        "surface": "control_plane",
+        "method": "PUT",
+        "path": "/config-drafts/{draft_id}/spec",
+        "required_permissions_any": [
+          "config.edit_business",
+          "config.edit_technical"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "field_permission_policy": "config_draft_spec_fields",
+        "async": false
+      },
+      {
+        "operation_id": "validateConfigDraft",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/config-drafts/{draft_id}:validate",
+        "required_permissions_any": [
+          "config.validate"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "previewConfigDraft",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/config-drafts/{draft_id}:preview",
+        "required_permissions_any": [
+          "config.preview"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "submitConfigDraftApproval",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/config-drafts/{draft_id}:submit-for-approval",
+        "required_permissions_any": [
+          "config.edit_business",
+          "config.edit_technical"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "approveConfigDraft",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/config-drafts/{draft_id}:approve",
+        "required_permissions_any": [
+          "config.approve"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "different_editor_reason",
+        "async": false
+      },
+      {
+        "operation_id": "rejectConfigDraft",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/config-drafts/{draft_id}:reject",
+        "required_permissions_any": [
+          "config.approve"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "createConfigRelease",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/config-drafts/{draft_id}:release",
+        "required_permissions_any": [
+          "release.publish"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getConfigRelease",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/config-releases/{release_id}",
+        "required_permissions_any": [
+          "config.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "immutable",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "diffConfigReleases",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/config-release-diffs",
+        "required_permissions_any": [
+          "config.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "immutable",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "publishToScreen",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/screen-instances/{screen_id}/publications",
+        "required_permissions_any": [
+          "release.publish"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match_and_binding_generation",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "production_four_eyes_v1",
+        "async": true
+      },
+      {
+        "operation_id": "publishToScreenGroup",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/screen-groups/{screen_group_id}/publications",
+        "required_permissions_any": [
+          "release.publish"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match_group_and_binding_generations",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "production_four_eyes_v1",
+        "async": true
+      },
+      {
+        "operation_id": "rollbackScreen",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/screen-instances/{screen_id}/rollbacks",
+        "required_permissions_any": [
+          "release.rollback"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match_and_binding_generation",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "production_four_eyes_v1",
+        "async": true
+      },
+      {
+        "operation_id": "rollbackScreenGroup",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/screen-groups/{screen_group_id}/rollbacks",
+        "required_permissions_any": [
+          "release.rollback"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match_group_and_binding_generations",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "production_four_eyes_v1",
+        "async": true
+      },
+      {
+        "operation_id": "getPublication",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/publications/{publication_id}",
+        "required_permissions_any": [
+          "config.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "immutable_plan",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "cancelPublicationTarget",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/publications/{publication_id}/targets/{screen_id}:cancel",
+        "required_permissions_any": [
+          "release.publish"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getStorageProfile",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/storage-profile",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "createBackup",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/backups",
+        "required_permissions_any": [
+          "backup.create"
+        ],
+        "idempotency": "required",
+        "concurrency": "storage_epoch",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": true
+      },
+      {
+        "operation_id": "getBackup",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/backups/{backup_id}",
+        "required_permissions_any": [
+          "operation.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "immutable",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "verifyBackup",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/backups/{backup_id}:verify",
+        "required_permissions_any": [
+          "backup.create"
+        ],
+        "idempotency": "required",
+        "concurrency": "backup_hash",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": true
+      },
+      {
+        "operation_id": "createRestorePlan",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/restore-plans",
+        "required_permissions_any": [
+          "backup.restore"
+        ],
+        "idempotency": "required",
+        "concurrency": "backup_hash_and_control_plane_epoch",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "executeRestorePlan",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/restore-plans/{restore_plan_id}:execute",
+        "required_permissions_any": [
+          "backup.restore"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match_and_control_plane_epoch",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "high_risk_policy": "production_four_eyes_v1",
+        "async": true
+      },
+      {
+        "operation_id": "abortRestorePlan",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/restore-plans/{restore_plan_id}:abort",
+        "required_permissions_any": [
+          "backup.restore"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getOperation",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/operations/{operation_id}",
+        "required_permissions_any": [
+          "operation.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "listAuditEvents",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/audit-events",
+        "required_permissions_any": [
+          "audit.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "cursor_pagination",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "claimDeviceEnrollment",
+        "surface": "device",
+        "method": "POST",
+        "path": "/enrollments:claim",
+        "required_permissions_any": [],
+        "idempotency": "required",
+        "concurrency": "atomic_single_use",
+        "scope": "enrollment_token",
+        "response_secret": "one_time_device_credential",
+        "response_cache_control": "no-store",
+        "async": false
+      },
+      {
+        "operation_id": "rotateDeviceCredential",
+        "surface": "device",
+        "method": "POST",
+        "path": "/credentials:rotate",
+        "required_permissions_any": [],
+        "idempotency": "required",
+        "concurrency": "credential_epoch",
+        "scope": "credential_bound_screen",
+        "response_secret": "one_time_successor_credential",
+        "response_cache_control": "no-store",
+        "async": false
+      },
+      {
+        "operation_id": "getDeviceRuntimeBinding",
+        "surface": "device",
+        "method": "GET",
+        "path": "/runtime-binding",
+        "required_permissions_any": [],
+        "idempotency": "inherent",
+        "concurrency": "binding_generation",
+        "scope": "credential_bound_screen",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getDeviceCurrentRelease",
+        "surface": "device",
+        "method": "GET",
+        "path": "/config-releases/current",
+        "required_permissions_any": [],
+        "idempotency": "inherent",
+        "concurrency": "binding_generation",
+        "scope": "credential_bound_screen",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "acknowledgeDeviceRelease",
+        "surface": "device",
+        "method": "POST",
+        "path": "/config-releases/{release_target_id}:ack",
+        "required_permissions_any": [],
+        "idempotency": "required",
+        "concurrency": "binding_generation_and_content_hash",
+        "scope": "credential_bound_screen",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "recordDeviceHeartbeat",
+        "surface": "device",
+        "method": "POST",
+        "path": "/heartbeats",
+        "required_permissions_any": [],
+        "idempotency": "required",
+        "concurrency": "sample_window",
+        "scope": "credential_bound_screen",
+        "response_secret": "none",
+        "async": false
+      }
+    ]
+  },
+  "three_screen_fixture": {
+    "site_id": "019fa100-0000-7000-8000-000000000001",
+    "screens": [
+      {
+        "screen_id": "019fa100-0000-7000-8000-000000000101",
+        "digital_human_instance_id": "019fa100-0000-7000-8000-000000000201",
+        "desired_release": "A",
+        "applied_release": "A",
+        "binding_generation": 10
+      },
+      {
+        "screen_id": "019fa100-0000-7000-8000-000000000102",
+        "digital_human_instance_id": "019fa100-0000-7000-8000-000000000202",
+        "desired_release": "B",
+        "applied_release": "B",
+        "binding_generation": 17
+      },
+      {
+        "screen_id": "019fa100-0000-7000-8000-000000000103",
+        "digital_human_instance_id": "019fa100-0000-7000-8000-000000000203",
+        "desired_release": "C",
+        "applied_release": "C",
+        "binding_generation": 4
+      }
+    ],
+    "single_screen_publication": {
+      "target_screen_id": "019fa100-0000-7000-8000-000000000102",
+      "new_release": "D",
+      "expected_binding_generation": 17,
+      "changed_screen_ids": [
+        "019fa100-0000-7000-8000-000000000102"
+      ],
+      "unchanged_screen_ids": [
+        "019fa100-0000-7000-8000-000000000101",
+        "019fa100-0000-7000-8000-000000000103"
+      ]
+    }
+  }
+}

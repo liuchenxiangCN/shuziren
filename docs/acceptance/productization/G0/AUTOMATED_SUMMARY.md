@@ -3,11 +3,11 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- Candidate: uncommitted P0 + G0 working tree based on `8e293af1f56e5d7623b0af3dfd408e6086e736c2`
+- Candidate: commit `226e2d48d0731f989c3895e4abc5237cee2b2d10`
 - Candidate fingerprint: `FBB3264058311B6B65805C0D9C7269723DA4797CD5DB0C41AA660F29BBD96A01`
 - Automated gates: `PASS`
 - Independent reviews: `PASS`
-- User decision: `Pending`
+- User decision: `通过` on 2026-07-27
 
 The fingerprint covers 57 modified, staged or untracked non-ignored candidate files. G0 acceptance summaries and raw logs are excluded to avoid circular evidence hashes.
 
@@ -94,4 +94,4 @@ Earlier independent findings about delayed P2 concurrency gates, conditional acc
 - Rollback exporter: `7A1E37A6AFDD5E9EB739C2B1D7318C4FEEC31777DBE6C6C59490EAF80FF32530`.
 - Candidate-fingerprint script: `8FE1021548E7807C440C4D2943E57660D453192F9A140BA6AD7903F108B3E00D`.
 
-The machine-readable gate record is `manifest.json`. User silence is not acceptance; P1.0 remains queued until an explicit decision is recorded.
+The machine-readable gate record is `manifest.json`. The user explicitly accepted G0 on 2026-07-27, so P1.0 may start.

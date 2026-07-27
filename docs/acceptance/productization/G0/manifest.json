@@ -3,10 +3,13 @@
   "batch": "G0",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
   "generated_at": "2026-07-26T23:17:37.6530724Z",
+  "candidate_evidence_generated_at": "2026-07-26T23:17:37.6530724Z",
+  "decision_recorded_at": "2026-07-26T23:57:51.9991358Z",
   "gate_summary": "PASS",
-  "acceptance_state": "AWAITING_EXPLICIT_USER_DECISION",
+  "acceptance_state": "ACCEPTED",
   "candidate": {
-    "kind": "working_tree",
+    "kind": "commit",
+    "commit": "226e2d48d0731f989c3895e4abc5237cee2b2d10",
     "base_commit": "8e293af1f56e5d7623b0af3dfd408e6086e736c2",
     "fingerprint_sha256": "FBB3264058311B6B65805C0D9C7269723DA4797CD5DB0C41AA660F29BBD96A01",
     "file_count": 57,
@@ -158,8 +161,9 @@
     "post_restore_result": "PASS: base runtime exported; six pre-G0 root documents restored; eleven P0 artifacts preserved including productized entries; G0-only files absent; unsafe targets rejected"
   },
   "user_decision": {
-    "status": "PENDING",
-    "date": null,
-    "conversation_reference": null
+    "status": "ACCEPTED",
+    "decision": "通过",
+    "date": "2026-07-27",
+    "conversation_reference": "Current Codex task: explicit user message confirming G0 completion and starting P1"
   }
 }

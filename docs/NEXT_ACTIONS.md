@@ -9,79 +9,80 @@
 
 ## Current Phase
 
-`G0 Acceptance Gate`: documentation governance and result-driven P1-P5 planning are implemented and awaiting the user's result decision.
+`Productization P1.0 Target Contract Result Pack`.
 
-P0 product definition is complete. Product runtime remains the existing single-instance POC baseline.
+G0 was explicitly accepted on 2026-07-27. Product runtime remains the existing single-instance POC baseline.
 
 ## Next Task
 
-Review the G0 result package and record `通过`, `条件通过` or `不通过`.
+Complete and verify the P1.0 target contract result pack, then present it for explicit user acceptance.
 
 ### User-Visible Result
 
-G0 must demonstrate:
+P1.0 must provide:
 
-1. Codex has one small current context and one active task.
-2. Historical POC instructions remain available but cannot direct current work.
-3. Implemented POC contracts and target product contracts have separate namespaces.
-4. Customer-specific fixtures and POC delivery material are visibly classified.
-5. The FineReport plugin ZIP cannot enter Git.
-6. P1-P5 are organized as user-visible vertical results, not sequential technical departments.
-7. Every future batch requires automated gates, independent Codex review, evidence and rollback.
-8. Root `AGENTS.md` and `README.md` have stable, non-overlapping responsibilities and cannot duplicate dynamic task status.
+1. A business-readable domain diagram for Tenant, Deployment, Site, ScreenGroup, ScreenInstance, DeviceEnrollment, DigitalHumanInstance and RuntimeBinding.
+2. Separate identity models for control-plane users, screen devices and FineReport display / service identities.
+3. A role-action matrix and frozen local password, session, lockout and reset policy.
+4. Screen-enrollment and configuration-release state walkthroughs.
+5. An immutable release, targeted publication and rollback contract that preserves three-screen isolation.
+6. A relational target data model with ownership, uniqueness, foreign-key and optimistic-concurrency rules.
+7. A frozen embedded / external control-plane storage, migration, backup, restore, retention, RPO and RTO decision.
+8. A versioned control-plane API contract with user-operation examples, authorization, idempotency and understandable failure semantics.
 
 ### Result Package
 
-- [acceptance/productization/G0/ACCEPTANCE_CARD.md](acceptance/productization/G0/ACCEPTANCE_CARD.md)
-- [acceptance/productization/G0/AUTOMATED_SUMMARY.md](acceptance/productization/G0/AUTOMATED_SUMMARY.md)
-- [acceptance/productization/G0/KNOWN_LIMITATIONS.md](acceptance/productization/G0/KNOWN_LIMITATIONS.md)
-- [acceptance/productization/G0/manifest.json](acceptance/productization/G0/manifest.json)
-- [acceptance/productization/G0/USER_DECISION.md](acceptance/productization/G0/USER_DECISION.md)
+- [acceptance/productization/P1.0/ACCEPTANCE_CARD.md](acceptance/productization/P1.0/ACCEPTANCE_CARD.md)
+- [acceptance/productization/P1.0/AUTOMATED_SUMMARY.md](acceptance/productization/P1.0/AUTOMATED_SUMMARY.md)
+- [acceptance/productization/P1.0/KNOWN_LIMITATIONS.md](acceptance/productization/P1.0/KNOWN_LIMITATIONS.md)
+- [acceptance/productization/P1.0/manifest.json](acceptance/productization/P1.0/manifest.json)
+- [acceptance/productization/P1.0/USER_DECISION.md](acceptance/productization/P1.0/USER_DECISION.md)
+- [product/contracts/README.md](product/contracts/README.md)
+
+The user decision remains Pending until an explicit result decision is received.
 
 ### User Result Scenarios
 
-1. Open [00_INDEX.md](00_INDEX.md) and confirm current, target, as-built, customer and archive material are separated.
-2. Open this file and confirm it contains only the G0 acceptance task.
-3. Open [CODEX_CONTEXT.md](CODEX_CONTEXT.md) and confirm it describes the current product without old POC next-step instructions.
-4. Open [05_DEVELOPMENT_PLAN.md](05_DEVELOPMENT_PLAN.md) and confirm P1-P5 are expressed as observable results, automated gates, user scenarios and stop conditions.
-5. Open [RESULT_ACCEPTANCE_STANDARD.md](RESULT_ACCEPTANCE_STANDARD.md) and confirm the user is not required to inspect source code.
-6. Review the automated summary and known limitations.
-7. Open root `AGENTS.md` and `README.md`; confirm both route the current task to this file and neither declares a phase or next batch.
+1. Follow the domain diagram from one Site to three independently bound screens.
+2. Walk a device from one-time enrollment through credential rotation and revocation.
+3. Compare administrator, implementation, operations and audit permissions.
+4. Walk a draft through validation, preview, approval, publication and rollback.
+5. Trace a single-screen publish and prove the other two screen bindings do not change.
+6. Review backup, restore, RPO and RTO behavior for embedded and external storage.
+7. Match API examples to the same user operations and failure paths.
 
 ### Automated Gates
 
-- One `Current Phase` and one `Next Task` in current entry documents.
-- Current context and task stay within line budgets.
-- Root `AGENTS.md` and `README.md` stay within line budgets and contain no dynamic phase / task declaration.
-- Root routing paths, target / as-built markers, scoped links, secret patterns and vendor-binary boundaries pass.
-- Required lifecycle markers exist.
-- Active Markdown links resolve.
-- No stale POC next-step directive appears in current entry documents.
-- Customer-specific terms do not enter current product documents.
-- Implemented POC contracts carry `AS_BUILT_POC`.
-- Archive snapshots carry `ARCHIVED_POC_SNAPSHOT`.
-- FineReport plugin ZIP is not tracked.
-- `git diff --check` passes.
+- Contract index, lifecycle markers, links and machine-readable artifacts validate.
+- Domain, data, identity, RBAC, state-machine and API names are consistent.
+- Forbidden state transitions, mutable published releases and cross-screen targeting are rejected by negative fixtures.
+- API operations define authorization, idempotency or optimistic concurrency where applicable.
+- Secret values cannot appear in ordinary API responses, audit details or backup manifests.
+- Storage, migration, backup, restore, RPO and RTO decisions are explicit.
+- `git diff --check` and the repository lifecycle lint pass.
 
 ### Non-Scope
 
-- No runtime code changes.
-- No target domain or API contract design.
-- No management UI implementation.
-- No database, FineReport plugin or Renderer implementation.
-- No deletion of historical POC evidence.
+- No runtime code, database, migration, management UI or HTTP endpoint implementation.
+- No P1.1 identity or device-trust implementation.
+- No P1.2 three-screen inventory implementation.
+- No P1.3 publish, rollback or recovery implementation.
+- No FineReport plugin, database-query Provider or Renderer implementation.
+- No change to the implemented POC API or data contracts.
 
 ### Stop Conditions
 
-- A current entry still sends Codex to a POC phase.
-- A root entry duplicates a current phase, next task or post-acceptance phase.
-- Current and target contracts can be confused.
-- A customer-specific document is presented as a product default.
-- The plugin archive is tracked or distributed.
-- The lifecycle check fails.
+- A target contract is described as implemented.
+- A control-plane user, screen device and FineReport data identity can be confused or reused.
+- A published release can be edited in place.
+- A single-screen operation can implicitly target another screen.
+- UI authorization can differ from API authorization.
+- A Secret value can be returned, logged or placed in a plaintext backup manifest.
+- Storage or recovery decisions remain ambiguous.
+- Contract consistency, negative-fixture or lifecycle checks fail.
 
-## Queued After G0 Acceptance
+## Queued After P1.0 Acceptance
 
-`Productization P1.0`: target domain, data, identity, configuration-release, storage / recovery and control-plane API contract result pack.
+`Productization P1.1 Identity And Device Trust`.
 
-P1.0 remains contract design only. Its detailed scope and stop conditions are in [05_DEVELOPMENT_PLAN.md](05_DEVELOPMENT_PLAN.md).
+P1.1 remains queued until P1.0 receives an explicit user result decision.

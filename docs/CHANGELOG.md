@@ -11,6 +11,9 @@
 
 ### Added
 
+- P1.0 target domain, identity / RBAC, device trust, configuration-release, data, storage / recovery and control-plane API contracts.
+- A machine-readable P1 contract registry plus validator and negative-fixture self-test.
+- Proposed ADR-0028 for SQLite / PostgreSQL, local IAM, device credentials, backup / recovery and API foundation decisions.
 - Documentation lifecycle and archive policy.
 - Result acceptance standard for Codex-driven development.
 - Target product contract namespace under `docs/product/contracts/`.
@@ -24,8 +27,12 @@
 
 ### Changed
 
+- G0 is explicitly accepted, and P1.0 is the sole active result batch.
+- The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
+- P1.0 validation now binds target membership and inheritance through ResolutionFingerprint, creates immutable ReleaseTargets only with ConfigRelease and separates control-plane ETag checks from device acknowledgement CAS.
+- Recovery anti-rollback now uses an authenticated RecoverySecurityLedger and a separate monotonic anchor rather than a journal that could roll back with the backup.
 - Current context now contains only the product snapshot, current phase, as-built boundary and non-negotiable rules.
-- Next Actions now contains exactly one active G0 acceptance batch and queues P1.0 after user acceptance.
+- Next Actions contains exactly one active result batch and queues its successor only after explicit user acceptance.
 - P1-P5 now use vertical user-visible result batches, automated gates, independent review, evidence and rollback instead of traditional component phases.
 - Current risk tracking no longer mixes POC现场 issues, customer tasks and product risks.
 - POC API and data contracts are explicitly classified as implemented POC truth, not target product contracts.
@@ -38,10 +45,12 @@
 
 ### Security
 
+- P1.0 separates user, device and FineReport data credentials; freezes local password/session/lockout/reset targets; prohibits Secret reveal; requires default-deny changed-field authorization and typed different-user production approval; and fails recovery closed against account/password/device generation rollback.
 - FineReport official plugin archives are excluded from Git and remain outside product distribution.
 - Result acceptance treats cross-screen leakage, authorization bypass, Secret exposure, data corruption and unrecoverable changes as immediate failures.
 
 ### Not Implemented
 
 - G0 changes documentation and development governance only.
+- P1.0 is target contract design only. Its RBAC, device trust, multi-screen storage, API, migration, backup and restore behaviors are not implemented.
 - Multi-screen runtime, target control-plane APIs, RBAC, database querying, FineReport plugin calling and real 2D / 3D rendering remain unimplemented product targets.
