@@ -849,10 +849,16 @@ class ControlPlaneService:
         idempotency_key: str,
         high_risk_action_id: str | None,
     ) -> dict[str, Any]:
+        command = self._device_enrollment_command(
+            context.principal,
+            screen_id=screen_id,
+            idempotency_key=idempotency_key,
+            high_risk_action_id=high_risk_action_id,
+        )
         return self._request_or_execute_protected(
             context,
             operation_id="issueDeviceEnrollment",
-            command={"screen_id": screen_id},
+            command=command,
             reason=reason,
             idempotency_key=idempotency_key,
             high_risk_action_id=high_risk_action_id,
@@ -1117,24 +1123,28 @@ class ControlPlaneService:
                 raise ControlPlaneError(401, "AUTHENTICATION_REQUIRED", "Enrollment token is invalid")
             if enrollment["state"] != "ISSUED" or enrollment["expires_at"] <= now:
                 raise ControlPlaneError(409, "INVALID_STATE_TRANSITION", "Enrollment is no longer claimable")
-            family = connection.execute(
-                """
-                SELECT * FROM device_credential_families
-                WHERE tenant_id = ? AND deployment_id = ? AND screen_id = ?
-                """,
-                (enrollment["tenant_id"], enrollment["deployment_id"], enrollment["screen_id"]),
-            ).fetchone()
-            if family is not None:
-                if family["state"] == "ACTIVE":
-                    raise ControlPlaneError(
-                        409,
-                        "ACTIVE_DEVICE_FAMILY_EXISTS",
-                        "An active device family already exists",
-                    )
+            family = self._current_screen_family(
+                connection,
+                enrollment["tenant_id"],
+                enrollment["deployment_id"],
+                enrollment["screen_id"],
+            )
+            if family is not None and family["state"] == "ACTIVE":
                 raise ControlPlaneError(
                     409,
-                    "INVALID_STATE_TRANSITION",
-                    "A terminal device family cannot be reopened",
+                    "ACTIVE_DEVICE_FAMILY_EXISTS",
+                    "An active device family already exists",
+                )
+            if not self._family_precondition_matches(
+                family,
+                state=enrollment["family_precondition_state"],
+                family_id=enrollment["family_precondition_id"],
+                revision=enrollment["family_precondition_revision"],
+            ):
+                raise ControlPlaneError(
+                    409,
+                    "RESOURCE_VERSION_CONFLICT",
+                    "Device family changed after enrollment issuance",
                 )
             family_id = opaque_id("dcf")
             credential_id = opaque_id("dvc")
@@ -1847,24 +1857,28 @@ class ControlPlaneService:
             metadata = self._metadata(connection)
             if command["screen_id"] != metadata["fixture_screen_id"]:
                 raise ControlPlaneError(404, "NOT_FOUND", "Screen trust target was not found")
-            family = connection.execute(
-                """
-                SELECT state FROM device_credential_families
-                WHERE tenant_id = ? AND deployment_id = ? AND screen_id = ?
-                """,
-                (principal.tenant_id, principal.deployment_id, command["screen_id"]),
-            ).fetchone()
-            if family is not None:
-                if family["state"] == "ACTIVE":
-                    raise ControlPlaneError(
-                        409,
-                        "ACTIVE_DEVICE_FAMILY_EXISTS",
-                        "An active device family already exists",
-                    )
+            family = self._current_screen_family(
+                connection,
+                principal.tenant_id,
+                principal.deployment_id,
+                command["screen_id"],
+            )
+            if family is not None and family["state"] == "ACTIVE":
                 raise ControlPlaneError(
                     409,
-                    "INVALID_STATE_TRANSITION",
-                    "A terminal device family cannot be reopened",
+                    "ACTIVE_DEVICE_FAMILY_EXISTS",
+                    "An active device family already exists",
+                )
+            if not self._family_precondition_matches(
+                family,
+                state=command["family_precondition_state"],
+                family_id=command["family_precondition_id"],
+                revision=command["family_precondition_revision"],
+            ):
+                raise ControlPlaneError(
+                    409,
+                    "RESOURCE_VERSION_CONFLICT",
+                    "Device family changed after four-eyes approval",
                 )
             enrollment_id = opaque_id("enr")
             token_secret = opaque_secret()
@@ -1872,15 +1886,20 @@ class ControlPlaneService:
             connection.execute(
                 """
                 INSERT INTO device_enrollments(
-                    enrollment_id, tenant_id, deployment_id, screen_id, token_verifier_hmac,
+                    enrollment_id, tenant_id, deployment_id, screen_id,
+                    family_precondition_state, family_precondition_id,
+                    family_precondition_revision, token_verifier_hmac,
                     verifier_key_id, state, issued_by_user_id, issued_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'ISSUED', ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED', ?, ?, ?)
                 """,
                 (
                     enrollment_id,
                     principal.tenant_id,
                     principal.deployment_id,
                     command["screen_id"],
+                    command["family_precondition_state"],
+                    command["family_precondition_id"],
+                    command["family_precondition_revision"],
                     self.keys.digest("ONE_TIME_TOKEN_VERIFIER_PEPPER", token_secret),
                     self.keys.key_id("ONE_TIME_TOKEN_VERIFIER_PEPPER"),
                     principal.user_id,
@@ -2222,6 +2241,144 @@ class ControlPlaneService:
         if metadata is None:
             raise ControlPlaneError(503, "CONTROL_PLANE_NOT_INITIALIZED", "Control plane is not initialized")
         return metadata
+
+    def _device_enrollment_command(
+        self,
+        principal: Principal,
+        *,
+        screen_id: str,
+        idempotency_key: str,
+        high_risk_action_id: str | None,
+    ) -> dict[str, Any]:
+        with self.store.connect() as connection:
+            action = None
+            replayed_request = False
+            if high_risk_action_id is not None:
+                action = connection.execute(
+                    """
+                    SELECT operation_id, command_json FROM high_risk_actions
+                    WHERE high_risk_action_id = ?
+                    """,
+                    (high_risk_action_id,),
+                ).fetchone()
+            else:
+                request_record = connection.execute(
+                    """
+                    SELECT result_json FROM idempotency_records
+                    WHERE phase = 'request:issueDeviceEnrollment'
+                        AND principal_key = ? AND idempotency_key_digest = ?
+                    """,
+                    (principal.user_id, self._idempotency_key_digest(idempotency_key)),
+                ).fetchone()
+                if request_record is not None:
+                    replayed_request = True
+                    try:
+                        action_id = json.loads(request_record["result_json"])["high_risk_action_id"]
+                    except (TypeError, KeyError, json.JSONDecodeError) as exc:
+                        raise ControlPlaneError(
+                            409,
+                            "IDEMPOTENCY_EVIDENCE_INVALID",
+                            "Enrollment request evidence is invalid",
+                        ) from exc
+                    action = connection.execute(
+                        """
+                        SELECT operation_id, command_json FROM high_risk_actions
+                        WHERE high_risk_action_id = ?
+                        """,
+                        (action_id,),
+                    ).fetchone()
+                    if action is None:
+                        raise ControlPlaneError(
+                            409,
+                            "IDEMPOTENCY_EVIDENCE_INVALID",
+                            "Enrollment request evidence is invalid",
+                        )
+            if action is not None and action["operation_id"] == "issueDeviceEnrollment":
+                try:
+                    command = json.loads(action["command_json"])
+                except (TypeError, json.JSONDecodeError) as exc:
+                    raise ControlPlaneError(
+                        409,
+                        "IDEMPOTENCY_EVIDENCE_INVALID",
+                        "Enrollment approval evidence is invalid",
+                    ) from exc
+                if not isinstance(command, dict) or set(command) != {
+                    "screen_id",
+                    "family_precondition_state",
+                    "family_precondition_id",
+                    "family_precondition_revision",
+                }:
+                    raise ControlPlaneError(
+                        409,
+                        "IDEMPOTENCY_EVIDENCE_INVALID",
+                        "Enrollment approval evidence is invalid",
+                    )
+                if command["screen_id"] != screen_id:
+                    code = "IDEMPOTENCY_KEY_REUSED" if replayed_request else "HIGH_RISK_ACTION_MISMATCH"
+                    raise ControlPlaneError(409, code, "Enrollment screen changed")
+                return command
+
+            family = self._current_screen_family(
+                connection,
+                principal.tenant_id,
+                principal.deployment_id,
+                screen_id,
+            )
+            if family is not None and family["state"] == "ACTIVE":
+                raise ControlPlaneError(
+                    409,
+                    "ACTIVE_DEVICE_FAMILY_EXISTS",
+                    "An active device family already exists",
+                )
+            if family is None:
+                return {
+                    "screen_id": screen_id,
+                    "family_precondition_state": "ABSENT",
+                    "family_precondition_id": None,
+                    "family_precondition_revision": None,
+                }
+            return {
+                "screen_id": screen_id,
+                "family_precondition_state": family["state"],
+                "family_precondition_id": family["family_id"],
+                "family_precondition_revision": family["revision"],
+            }
+
+    @staticmethod
+    def _current_screen_family(
+        connection: sqlite3.Connection,
+        tenant_id: str,
+        deployment_id: str,
+        screen_id: str,
+    ) -> sqlite3.Row | None:
+        return connection.execute(
+            """
+            SELECT * FROM device_credential_families
+            WHERE tenant_id = ? AND deployment_id = ? AND screen_id = ?
+            ORDER BY
+                CASE WHEN state = 'ACTIVE' THEN 0 ELSE 1 END,
+                created_at DESC,
+                rowid DESC
+            LIMIT 1
+            """,
+            (tenant_id, deployment_id, screen_id),
+        ).fetchone()
+
+    @staticmethod
+    def _family_precondition_matches(
+        family: sqlite3.Row | None,
+        *,
+        state: str,
+        family_id: str | None,
+        revision: int | None,
+    ) -> bool:
+        if state == "ABSENT":
+            return family is None and family_id is None and revision is None
+        if state not in {"REVOKED", "REENROLL_REQUIRED"} or family is None:
+            return False
+        return (
+            family["state"] == state and family["family_id"] == family_id and family["revision"] == revision
+        )
 
     def _idempotency_lookup(
         self,

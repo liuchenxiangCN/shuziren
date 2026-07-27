@@ -228,6 +228,28 @@ def test_schema_is_repeatable_and_preview_is_explicit(
             """
         ).fetchone()
         assert migration == (MIGRATION_VERSION, MIGRATION_CHECKSUM_SHA256)
+        active_family_index = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'index'
+                AND name = 'idx_device_credential_family_active_screen'
+            """
+        ).fetchone()
+        assert active_family_index is not None
+        assert "WHERE state = 'ACTIVE'" in active_family_index[0]
+        family_indexes = connection.execute("PRAGMA index_list(device_credential_families)").fetchall()
+        assert any(
+            row[1] == "idx_device_credential_family_active_screen" and row[2] == 1 and row[4] == 1
+            for row in family_indexes
+        )
+        enrollment_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(device_enrollments)").fetchall()
+        }
+        assert {
+            "family_precondition_state",
+            "family_precondition_id",
+            "family_precondition_revision",
+        } <= enrollment_columns
         verifier = connection.execute(
             "SELECT password_verifier FROM users WHERE normalized_username = 'admin-a'"
         ).fetchone()[0]
@@ -752,6 +774,7 @@ def test_unreachable_one_time_device_material_fails_closed(
     )
     assert claim_issue.status_code == 201
     enrollment_token = claim_issue.json()["enrollment_token"]
+    enrollment_id = claim_issue.json()["enrollment"]["enrollment_id"]
     device = TestClient(app, base_url="https://device.test")
     claimed = device.post(
         "/api/v1/device/enrollments:claim",
@@ -765,8 +788,9 @@ def test_unreachable_one_time_device_material_fails_closed(
         claim_response_expires_at = connection.execute(
             """
             SELECT response_expires_at FROM idempotency_records
-            WHERE phase = 'claimDeviceEnrollment'
-            """
+            WHERE phase = 'claimDeviceEnrollment' AND principal_key = ?
+            """,
+            (enrollment_id,),
         ).fetchone()[0]
     service.clock = lambda: claim_response_expires_at + 1
     try:
@@ -782,7 +806,7 @@ def test_unreachable_one_time_device_material_fails_closed(
     with sqlite3.connect(database_path) as connection:
         terminal = connection.execute(
             """
-            SELECT c.state, c.last_authenticated_at, f.state,
+            SELECT c.state, c.last_authenticated_at, f.state, f.family_id,
                 f.active_credential_id, f.pending_credential_id
             FROM device_credentials c
             JOIN device_credential_families f ON f.family_id = c.family_id
@@ -790,7 +814,9 @@ def test_unreachable_one_time_device_material_fails_closed(
             """,
             (credential_id,),
         ).fetchone()
-        assert terminal == ("REVOKED", None, "REENROLL_REQUIRED", None, None)
+        assert terminal[:3] == ("REVOKED", None, "REENROLL_REQUIRED")
+        original_family_id = terminal[3]
+        assert terminal[4:] == (None, None)
     assert (
         device.get(
             "/api/v1/device/runtime-binding",
@@ -798,6 +824,61 @@ def test_unreachable_one_time_device_material_fails_closed(
         ).status_code
         == 401
     )
+
+    reenroll_payload = {"reason": "replace an unreachable claimed credential"}
+    reenroll_action = request_action(
+        implementation,
+        csrf_impl,
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        reenroll_payload,
+        "request-reenroll-after-unreachable-claim",
+    )
+    approve_action(admin, csrf_admin, reenroll_action, key="approve-reenroll-after-unreachable-claim")
+    reenrollment = implementation.post(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "Idempotency-Key": "execute-reenroll-after-unreachable-claim",
+                "High-Risk-Action-ID": reenroll_action["high_risk_action_id"],
+            },
+        ),
+        json=reenroll_payload,
+    )
+    assert reenrollment.status_code == 201, reenrollment.text
+    reenrolled = device.post(
+        "/api/v1/device/enrollments:claim",
+        headers={"Idempotency-Key": "claim-reenrolled-credential"},
+        json={"enrollment_token": reenrollment.json()["enrollment_token"]},
+    )
+    assert reenrolled.status_code == 200, reenrolled.text
+    assert (
+        device.get(
+            "/api/v1/device/runtime-binding",
+            headers={"Authorization": f"DeviceCredential {reenrolled.json()['credential']}"},
+        ).status_code
+        == 200
+    )
+    with sqlite3.connect(database_path) as connection:
+        replacement_family = connection.execute(
+            """
+            SELECT c.family_id, f.state
+            FROM device_credentials c
+            JOIN device_credential_families f ON f.family_id = c.family_id
+            WHERE c.credential_id = ?
+            """,
+            (reenrolled.json()["credential_id"],),
+        ).fetchone()
+        preserved_terminal = connection.execute(
+            """
+            SELECT state, active_credential_id, pending_credential_id
+            FROM device_credential_families WHERE family_id = ?
+            """,
+            (original_family_id,),
+        ).fetchone()
+        assert replacement_family[0] != original_family_id
+        assert replacement_family[1] == "ACTIVE"
+        assert preserved_terminal == ("REENROLL_REQUIRED", None, None)
 
 
 def test_device_enrollment_rotation_activation_and_family_revoke(
@@ -907,6 +988,11 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     assert claimed.status_code == 200, claimed.text
     credential = claimed.json()["credential"]
     credential_id = claimed.json()["credential_id"]
+    with sqlite3.connect(database_path) as connection:
+        original_family_id = connection.execute(
+            "SELECT family_id FROM device_credentials WHERE credential_id = ?",
+            (credential_id,),
+        ).fetchone()[0]
     claim_replay = device.post(
         "/api/v1/device/enrollments:claim",
         headers={"Idempotency-Key": "claim-enrollment"},
@@ -1091,9 +1177,24 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
         json={"enrollment_token": terminal_enrollment_token},
     )
     assert terminal_family_claim.status_code == 409
-    assert terminal_family_claim.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+    assert terminal_family_claim.json()["error"]["code"] == "RESOURCE_VERSION_CONFLICT"
 
-    terminal_issue_payload = {"reason": "terminal family must not reopen"}
+    stale_approval_payload = {"reason": "prove approval is bound to the revoked family generation"}
+    stale_approval_action = request_action(
+        implementation,
+        csrf_impl,
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        stale_approval_payload,
+        "request-stale-family-generation",
+    )
+    approve_action(
+        admin_b,
+        csrf_b,
+        stale_approval_action,
+        key="approve-stale-family-generation",
+    )
+
+    terminal_issue_payload = {"reason": "create a fresh family after hard revocation"}
     terminal_issue_action = request_action(
         implementation,
         csrf_impl,
@@ -1118,15 +1219,66 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
         ),
         json=terminal_issue_payload,
     )
-    assert terminal_issue.status_code == 409
-    assert terminal_issue.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+    assert terminal_issue.status_code == 201, terminal_issue.text
+    replacement_enrollment_token = terminal_issue.json()["enrollment_token"]
+    replacement_claim = device.post(
+        "/api/v1/device/enrollments:claim",
+        headers={"Idempotency-Key": "claim-after-terminal-family"},
+        json={"enrollment_token": replacement_enrollment_token},
+    )
+    assert replacement_claim.status_code == 200, replacement_claim.text
+    replacement_credential = replacement_claim.json()["credential"]
+    replacement_credential_id = replacement_claim.json()["credential_id"]
+    with sqlite3.connect(database_path) as connection:
+        replacement_family_id = connection.execute(
+            "SELECT family_id FROM device_credentials WHERE credential_id = ?",
+            (replacement_credential_id,),
+        ).fetchone()[0]
+        preserved_old_family = connection.execute(
+            """
+            SELECT state, active_credential_id, pending_credential_id
+            FROM device_credential_families WHERE family_id = ?
+            """,
+            (original_family_id,),
+        ).fetchone()
+        active_families = connection.execute(
+            """
+            SELECT COUNT(*) FROM device_credential_families
+            WHERE tenant_id = 'tenant-test' AND deployment_id = 'deployment-test'
+                AND screen_id = 'screen-trust-fixture' AND state = 'ACTIVE'
+            """
+        ).fetchone()[0]
+        assert replacement_family_id != original_family_id
+        assert preserved_old_family == ("REVOKED", None, None)
+        assert active_families == 1
+    assert (
+        device.get(
+            "/api/v1/device/runtime-binding",
+            headers={"Authorization": f"DeviceCredential {replacement_credential}"},
+        ).status_code
+        == 200
+    )
+    stale_approval_execution = implementation.post(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "Idempotency-Key": "execute-stale-family-generation",
+                "High-Risk-Action-ID": stale_approval_action["high_risk_action_id"],
+            },
+        ),
+        json=stale_approval_payload,
+    )
+    assert stale_approval_execution.status_code == 409
+    assert stale_approval_execution.json()["error"]["code"] == "ACTIVE_DEVICE_FAMILY_EXISTS"
 
     with sqlite3.connect(database_path) as connection:
         claim_response_expires_at = connection.execute(
             """
             SELECT response_expires_at FROM idempotency_records
-            WHERE phase = 'claimDeviceEnrollment'
-            """
+            WHERE phase = 'claimDeviceEnrollment' AND principal_key = ?
+            """,
+            (issued.json()["enrollment"]["enrollment_id"],),
         ).fetchone()[0]
     service.clock = lambda: claim_response_expires_at + 1
     try:
@@ -1144,8 +1296,9 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
             """
             SELECT response_nonce, response_ciphertext, response_aad_json
             FROM idempotency_records
-            WHERE phase = 'claimDeviceEnrollment'
-            """
+            WHERE phase = 'claimDeviceEnrollment' AND principal_key = ?
+            """,
+            (issued.json()["enrollment"]["enrollment_id"],),
         ).fetchone()
         assert replay_material == (None, None, None)
 
@@ -1153,10 +1306,12 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     for secret_value in (
         enrollment_token,
         terminal_enrollment_token,
+        replacement_enrollment_token,
         credential,
         expiring_successor,
         successor,
         pending_at_revoke,
+        replacement_credential,
         PASSWORDS["admin-a"],
     ):
         assert secret_value.encode() not in database_bytes
@@ -1168,10 +1323,12 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     for secret_value in (
         enrollment_token,
         terminal_enrollment_token,
+        replacement_enrollment_token,
         credential,
         expiring_successor,
         successor,
         pending_at_revoke,
+        replacement_credential,
         PASSWORDS["admin-a"],
     ):
         assert secret_value not in audit_text

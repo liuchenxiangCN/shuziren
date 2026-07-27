@@ -132,6 +132,11 @@ CREATE TABLE IF NOT EXISTS device_enrollments (
     tenant_id TEXT NOT NULL,
     deployment_id TEXT NOT NULL,
     screen_id TEXT NOT NULL,
+    family_precondition_state TEXT NOT NULL CHECK (
+        family_precondition_state IN ('ABSENT', 'REVOKED', 'REENROLL_REQUIRED')
+    ),
+    family_precondition_id TEXT REFERENCES device_credential_families(family_id) ON DELETE RESTRICT,
+    family_precondition_revision INTEGER,
     token_verifier_hmac TEXT NOT NULL UNIQUE,
     verifier_key_id TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('ISSUED', 'CLAIMED', 'EXPIRED', 'REVOKED')),
@@ -140,7 +145,19 @@ CREATE TABLE IF NOT EXISTS device_enrollments (
     expires_at REAL NOT NULL,
     claimed_at REAL,
     revoked_at REAL,
-    revision INTEGER NOT NULL DEFAULT 1
+    revision INTEGER NOT NULL DEFAULT 1,
+    CHECK (
+        (
+            family_precondition_state = 'ABSENT'
+            AND family_precondition_id IS NULL
+            AND family_precondition_revision IS NULL
+        )
+        OR (
+            family_precondition_state IN ('REVOKED', 'REENROLL_REQUIRED')
+            AND family_precondition_id IS NOT NULL
+            AND family_precondition_revision >= 1
+        )
+    )
 );
 
 CREATE TABLE IF NOT EXISTS device_credential_families (
@@ -154,9 +171,11 @@ CREATE TABLE IF NOT EXISTS device_credential_families (
     pending_credential_id TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
-    revision INTEGER NOT NULL DEFAULT 1,
-    UNIQUE (tenant_id, deployment_id, screen_id)
+    revision INTEGER NOT NULL DEFAULT 1
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_device_credential_family_active_screen
+    ON device_credential_families(tenant_id, deployment_id, screen_id)
+    WHERE state = 'ACTIVE';
 
 CREATE TABLE IF NOT EXISTS device_credentials (
     credential_id TEXT PRIMARY KEY,
