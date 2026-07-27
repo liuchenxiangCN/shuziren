@@ -13,6 +13,6 @@
 - Network `createUser` correctly creates only a disabled, passwordless, empty-role `PROVISIONING` record. Complete target-person credential setup, custodian binding, role replacement and enablement are not yet implemented; the preview's usable auditor and implementation identities come only from explicit local initialization.
 - Production activation, external monotonic anchors, full security-ledger recovery, PostgreSQL and backup / restore remain unverified.
 - Local API/web startup and the complete browser workflow passed. The retained screenshot shows the sanitized auditor view and contains no observed credential material.
-- Docker / Compose execution is Blocked on the current host because the Docker CLI is unavailable; no image digest or container smoke is claimed.
+- An isolated Docker / Compose build and runtime smoke passed for the API and web preview. This is local packaging evidence only; production HTTPS, customer infrastructure, orchestrator, backup and upgrade behavior remain uncertified.
 - FineReport plugin behavior remains Blocked by the P2 external gate.
-- The first independent Codex review failed the earlier candidate and its findings are remediated in the current candidate. Independent re-review of the repaired commit is Pending; P1.1 must not be presented for user acceptance until it passes.
+- Two independent review rounds failed earlier candidates and their findings are remediated in the current candidate. Final re-review of the frozen commit is Pending; P1.1 must not be presented for user acceptance until it passes.

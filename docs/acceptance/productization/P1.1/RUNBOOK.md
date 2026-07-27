@@ -56,6 +56,10 @@ Stop both foreground processes with `Ctrl+C`.
 
 ## Optional Docker Preview
 
+The candidate Docker build and isolated API/web runtime smoke have passed. Docker
+is the preferred customer-delivery packaging path, but it remains optional for
+local development.
+
 ```powershell
 docker compose --env-file .env.p1-1-preview up --build
 ```
@@ -81,6 +85,7 @@ The browser uses a `Secure` host-only cookie. Standard production must run behin
 9. Use the displayed one-time enrollment material immediately. It is kept only in current page memory.
 10. Rotate the returned device credential and call 认证并激活 with the successor.
 11. As an administrator, load credential metadata, request whole-family revocation, have the other administrator approve, then execute the identical revoke.
+12. Issue and claim a new enrollment for the same screen. Confirm the old family remains terminal and a distinct new family is the only active family.
 
 Created network users intentionally remain non-authoritative `PROVISIONING` records in this batch. Production custodian/person binding, credential setup, role replacement and enabling are not simulated by a privileged fallback endpoint.
 

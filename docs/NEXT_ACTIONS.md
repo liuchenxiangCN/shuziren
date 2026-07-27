@@ -11,11 +11,11 @@
 
 `Productization P1.1 Identity And Device Trust`.
 
-G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. Repaired P1.1 candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b` is frozen with required local automated, browser and rollback gates passing, but it remains unaccepted and the accepted runtime baseline is still the single-instance POC.
+G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. Final P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46` is frozen with required local automated, browser, Docker and rollback gates passing, but it remains unaccepted and the accepted runtime baseline is still the single-instance POC.
 
 ## Next Task
 
-Rerun the same separate read-only Codex review against repaired P1.1 candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b`; if it passes with no blocking finding, record the conclusion and present the local identity and screen-device trust result for explicit user acceptance.
+Rerun the same separate read-only Codex review against final P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`; if it passes with no blocking finding, record the conclusion and present the local identity and screen-device trust result for explicit user acceptance.
 
 ### User-Visible Result
 
@@ -27,6 +27,7 @@ P1.1 must provide:
 4. An authorized implementation engineer can request a one-time credential for a pre-existing screen trust target through typed approval.
 5. A device can claim enrollment once, authenticate with a separate screen-bound credential, rotate to a pending successor and activate that successor on first use.
 6. An administrator can hard-revoke the complete credential family through typed approval; old, successor and replayed credentials then fail closed.
+7. A fresh enrollment after hard revocation or `REENROLL_REQUIRED` creates a distinct active family while the old terminal family remains immutable history.
 
 ### Result Package
 
@@ -39,7 +40,7 @@ P1.1 must provide:
 - [acceptance/productization/P1.1/IMPLEMENTED_DATA.md](acceptance/productization/P1.1/IMPLEMENTED_DATA.md)
 - [acceptance/productization/P1.1/RUNBOOK.md](acceptance/productization/P1.1/RUNBOOK.md)
 
-Independent review task `/root/p1_1_independent_review` returned `FAIL` for earlier candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e`. Its session-revocation, rotation-replay, terminal-family, key-purpose, one-time evidence, reauthentication-idempotency and named-migration findings are remediated with rebuilt evidence. Re-review of the repaired candidate and the user decision remain Pending. P1.1 cannot be presented for acceptance until that re-review passes.
+Independent review task `/root/p1_1_independent_review` returned `FAIL` for candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` and then `FAIL` for candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b`. The first round's session-revocation, rotation-replay, terminal-family, key-purpose, one-time evidence, reauthentication-idempotency and named-migration findings are remediated. The second round's permanent screen-lock finding is remediated by preserving terminal history while allowing one distinct fresh active family, with stale-generation rejection. Final-candidate re-review and the user decision remain Pending. P1.1 cannot be presented for acceptance until that re-review passes.
 
 ### User Result Scenarios
 
@@ -49,7 +50,8 @@ Independent review task `/root/p1_1_independent_review` returned `FAIL` for earl
 4. Request enrollment for the trust-only screen fixture, approve with the other administrator, execute the exact request and claim it once.
 5. Rotate the active device credential, activate the successor on first authenticated use and confirm the predecessor is revoked.
 6. Hard-revoke the credential family with different-user approval and confirm every family credential is rejected.
-7. Trigger failed logins, stale ETags, missing Origin / CSRF, self-approval, altered-command replay and cross-screen selectors and confirm fail-closed results.
+7. Issue and claim a fresh enrollment for the same screen; confirm the old family remains terminal and exactly one distinct new family is active.
+8. Trigger failed logins, stale ETags, missing Origin / CSRF, self-approval, altered-command replay and cross-screen selectors and confirm fail-closed results.
 
 ### Automated Gates
 
@@ -59,7 +61,7 @@ Independent review task `/root/p1_1_independent_review` returned `FAIL` for earl
 - Secure host-only session cookie, exact-Origin, CSRF, idle / absolute expiry, rotation and revocation pass.
 - API RBAC denial for auditor and implementation roles passes.
 - Different-user approval, exact-command binding, self-approval denial and stale-precondition rejection pass.
-- Enrollment single use, exact idempotency replay window, credential rotation activation and family-wide hard revocation pass.
+- Enrollment single use, exact idempotency replay window, credential rotation activation, family-wide hard revocation, fresh-family re-enrollment and stale-generation denial pass.
 - Device credential-derived screen scope passes and client-selected tenant, deployment, site or screen scope is rejected.
 - Secret scans cover API responses, audit details, the frontend bundle and evidence.
 - Web type-check / build and a browser workflow smoke pass where the environment supports them.

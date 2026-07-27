@@ -22,30 +22,33 @@
 
 #### Completed Facts To Date
 
-- Frozen repaired P1.1 candidate commit `45dd8ff9455c1ab62a408d26c15f15a14256341b`, tree `8b730d5e1122515ee242887a6a5b9a8ab86d633b`.
+- Frozen final P1.1 candidate commit `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`.
 - Added a separate P1.1 SQLite control-plane store at logical schema `p1_control_plane_001`; the POC `sessions.db` and existing POC route meanings are unchanged.
 - Added Argon2id local-password verification, progressive lockout, opaque server-side browser sessions, exact-Origin / CSRF enforcement, idle / absolute expiry and session rotation on reauthentication.
 - Added the exact accepted five-role permission catalog and API-side authorization; auditors can read sanitized audit events but cannot read user administration or device credential metadata.
 - Added typed high-risk action request, different-user approval / rejection and original-initiator exact-command resubmission for user creation, device enrollment and device-family revocation. Approval records evidence but cannot execute the effect.
 - Added one-time screen-bound enrollment, HMAC-only token / credential storage, AES-GCM five-minute exact response replay, device credential rotation with pending-successor activation and atomic whole-family revocation.
+- Added issuance-time absent / terminal family preconditions and a partial active-family uniqueness constraint. A fresh post-terminal enrollment creates a distinct family, preserves old terminal history and rejects stale pre-issued or changed-generation enrollment.
 - Added versioned domain-separated SHA-256-chained append-only security audit records with SQLite update/delete denial triggers and sanitized API-denial events.
 - Added `/manage` as a separate management preview without changing the existing conversation, Ops or POC configuration views.
 - Added an explicit development-only initializer. Production startup does not auto-create identities, passwords, roles, screen targets or cryptographic keys.
 - Added a local PowerShell API launcher so Docker is optional for development preview; it imports only allowlisted preview settings, forces the local database path and never prints root-key material.
+- Added the missing web workspace package declaration required for reproducible pinned pnpm 9.15.4 and Docker builds.
 - Hardened generic authentication failures, password validation, bounded idempotency/precondition headers, operation/route-bound sensitive request evidence, terminal expiry persistence and expired one-time ciphertext destruction.
 - The first independent Codex review rejected candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` with four blocking and two medium findings. The repaired candidate checks revoked-session state/revision updates, preserves exact reauthentication and device-rotation idempotency, cleans unreachable one-time device material, prevents terminal-family reopening, uses only frozen key-purpose names, stores one-time response encryption-key/AAD evidence and implements checksum-backed migration `001_initial_identity_device_trust`.
+- The second independent review rejected candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b` only because the historical screen-uniqueness constraint permanently prevented a fresh family after hard revocation or `REENROLL_REQUIRED`. The final candidate replaces it with partial active-family uniqueness and generation-bound enrollment.
 - Kept Site / ScreenGroup / production ScreenInstance inventory, publication, rollback, recovery, Secret and FineReport identity behavior outside P1.1.
 
 #### Verification To Date
 
-- Backend Ruff formatting/check and ten integration tests pass, covering named-migration checksum/repeatability/no-auto-bootstrap, frozen key purposes, password/session/CSRF/lockout, idempotent reauthentication, auditor denial, different-user command binding, terminal expiry, enrollment replay destruction, unreachable one-time-material cleanup, exact rotation replay, terminal-family denial, activation, predecessor rejection, whole-family revocation, audit-chain verification and database/audit plaintext scans.
+- Backend Ruff formatting/check and ten integration tests pass, covering named-migration checksum/repeatability/no-auto-bootstrap, frozen key purposes, password/session/CSRF/lockout, idempotent reauthentication, auditor denial, different-user command binding, terminal expiry, enrollment replay destruction, unreachable one-time-material cleanup, exact rotation replay, stale pre-issued enrollment denial, fresh-family re-enrollment after `REVOKED` and `REENROLL_REQUIRED`, activation, predecessor rejection, whole-family revocation, audit-chain verification and database/audit plaintext scans.
 - The Vue TypeScript check and Vite production build pass.
-- A real local browser workflow at 1280 by 720 passed administrator login, role inspection, different-user user creation, auditor denial/audit read, device enrollment/claim/rotation/activation/revocation and password reauthentication with no horizontal overflow or captured console warning/error.
-- The repaired-candidate sanitized auditor screenshot SHA-256 is `3da0034de5b63773ca9656846c05eefdb8a0fb2cfe843bd334fa996f706a6151`.
+- A real local browser workflow at 1280 by 720 passed administrator login, role inspection, different-user user creation, auditor denial/audit read, device enrollment/claim/rotation/activation/revocation, fresh-family re-enrollment and password reauthentication with no horizontal overflow or captured console warning/error.
+- The final-candidate sanitized auditor screenshot SHA-256 is `80b11a1706e734fe7dcc9fc8083a841b7532760ebd31582d9472f4b91c20aacb`.
 - P1 contract validation passed 2,722 checks and lifecycle lint passed 314 checks under both PowerShell hosts. Candidate-diff, bundle and evidence secret scanning returned zero findings.
 - Detached-worktree rollback to P1.0 passed contract/lifecycle checks and POC API import, then the temporary worktree was removed.
-- Docker / Compose preview is Blocked on the current host because the Docker CLI is unavailable; Docker is optional for the local preview and no container result is claimed.
-- Independent re-review of the repaired candidate remains Pending, so the candidate is not yet presented for user acceptance.
+- The pinned pnpm 9.15.4 frontend build and isolated Docker / Compose API/web build-runtime smoke pass; `/api/health` and `/manage` returned HTTP 200, and the Compose project shut down cleanly.
+- Final re-review of the frozen candidate remains Pending, so the candidate is not yet presented for user acceptance.
 
 ### P1.0 Target Contract Result Pack
 

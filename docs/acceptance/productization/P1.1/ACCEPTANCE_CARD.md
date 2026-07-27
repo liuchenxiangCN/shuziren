@@ -6,9 +6,9 @@
 - State: `CANDIDATE_FROZEN_REVIEW_PENDING`
 - Result: local identity and screen-device trust
 - Base accepted version: commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`, tree `33752e13a385b4980cd3ecca309ad0f27d9307ae`
-- Candidate: commit `45dd8ff9455c1ab62a408d26c15f15a14256341b`, tree `8b730d5e1122515ee242887a6a5b9a8ab86d633b`
-- Database schema / migration: `p1_control_plane_001` / `001_initial_identity_device_trust`, checksum `534b4947438f73c49cbc838cfa2adf8c7d306fef2724037b0f269d1ce338d7f0`; empty-store, repeat initialization and checksum-tamper rejection PASS
-- Gate summary: required local automated, browser and rollback gates PASS; optional Docker preview Blocked; repaired-candidate independent review Pending
+- Candidate: commit `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`
+- Database schema / migration: `p1_control_plane_001` / `001_initial_identity_device_trust`, checksum `fd7094d87568fddc42c339a4861a6004a136dfb26ed6d1a11549cdb7a5db95ce`; empty-store, repeat initialization and checksum-tamper rejection PASS
+- Gate summary: required local automated, browser and rollback gates PASS; optional Docker build/runtime smoke PASS; final-candidate independent review Pending
 - User decision: Pending
 
 ## Frozen Observable Outcome
@@ -21,6 +21,7 @@ P1.1 delivers one independently usable management slice:
 4. An authorized implementation engineer requests a one-time credential for a pre-existing screen trust target through typed approval.
 5. A device claims the enrollment once, authenticates with its own screen-bound credential, rotates to a pending successor and activates that successor on first use.
 6. An administrator hard-revokes the complete device credential family through typed approval; old, successor and replayed credentials then fail closed.
+7. A fresh enrollment issued after hard revocation or `REENROLL_REQUIRED` creates a distinct new family while the terminal family remains immutable history.
 
 The management UI and API must explain safe failures without exposing password, session, CSRF, enrollment or device credential material.
 
@@ -44,7 +45,8 @@ The management UI and API must explain safe failures without exposing password, 
 4. Request enrollment for the trust-only screen fixture, approve with the other administrator, execute the exact request and claim it once.
 5. Rotate the active device credential, activate the successor on first authenticated use and confirm the predecessor is revoked.
 6. Hard-revoke the credential family with different-user approval and confirm every family credential is rejected.
-7. Trigger failed logins, stale ETags, missing Origin / CSRF, self-approval, altered-command replay and cross-screen selectors and confirm fail-closed results.
+7. Issue and claim a fresh enrollment after hard revocation and confirm the old family stays terminal while exactly one distinct new family is active.
+8. Trigger failed logins, stale ETags, stale enrollment generations, missing Origin / CSRF, self-approval, altered-command replay and cross-screen selectors and confirm fail-closed results.
 
 ## Frozen Automated Gates
 
@@ -54,10 +56,11 @@ The management UI and API must explain safe failures without exposing password, 
 - Secure host-only session cookie, exact-Origin, CSRF, idle / absolute expiry, rotation and revocation.
 - API RBAC denial for auditor and implementation roles.
 - Different-user approval, exact-command binding, self-approval denial and stale-precondition rejection.
-- Enrollment single use, exact idempotency replay window, credential rotation activation and family-wide hard revocation.
+- Enrollment single use, exact idempotency replay window, credential rotation activation, family-wide hard revocation and fresh-family re-enrollment with stale-generation rejection.
 - Device credential-derived screen scope and rejection of client-selected tenant, deployment, site or screen scope.
 - Secret scan of API responses, audit details, frontend bundle and evidence.
 - Web type-check / build and browser workflow smoke where the environment supports it.
+- Reproducible pnpm 9.15.4 web build and isolated Docker Compose API/web smoke.
 - `git diff --check`, P1 target-contract validation and repository lifecycle lint.
 
 ## Frozen Non-Scope
@@ -88,6 +91,8 @@ The P1.1 store is a new, separate `data/control-plane.db`. Rollback preserves it
 
 ## Review Boundary
 
-Independent review task `/root/p1_1_independent_review` rejected earlier candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` with four blocking and two medium findings. The findings covered revoked-session reauthentication, rotation replay and lost-successor cleanup, terminal-family reopening, key-purpose and one-time-response evidence drift, ignored reauthentication idempotency and an unimplemented named migration.
+Independent review task `/root/p1_1_independent_review` rejected candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` with four blocking and two medium findings. The findings covered revoked-session reauthentication, rotation replay and lost-successor cleanup, terminal-family reopening, key-purpose and one-time-response evidence drift, ignored reauthentication idempotency and an unimplemented named migration.
 
-Those findings are remediated in the candidate above with regression coverage and rebuilt evidence. The repaired candidate is not yet eligible for user acceptance: the same separate read-only Codex task must rerun the critical negative tests and bind its conclusion to the new commit and tree before the acceptance prompt is issued.
+The same reviewer then rejected candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b` because a full historical screen uniqueness constraint permanently prevented the fresh family required after hard revocation or failed credential delivery.
+
+Both review rounds are remediated in the candidate above with regression coverage and rebuilt evidence. The final candidate is not yet eligible for user acceptance: the same separate read-only Codex task must rerun the critical negative tests and bind its conclusion to commit `8c18e5d6b10081eaaf608436440046894d235d46` and tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd` before the acceptance prompt is issued.

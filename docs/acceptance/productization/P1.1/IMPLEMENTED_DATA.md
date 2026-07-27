@@ -20,8 +20,8 @@ P1.1 uses a new control-plane database, separate from the POC `sessions.db`. SQL
 | `role_assignments` | Exact role and scope rows; unique per user / role / scope |
 | `auth_sessions` | HMAC session and CSRF verifiers, expiry, recent reauthentication, state and ETag revision |
 | `high_risk_actions` | Typed command digest, initiator / approver epochs, immutable command JSON and approval state |
-| `device_enrollments` | HMAC one-time enrollment verifier, preselected screen, state, expiry and ETag revision |
-| `device_credential_families` | Screen-bound family state, active / pending pointers, credential epoch and ETag revision |
+| `device_enrollments` | HMAC one-time enrollment verifier, preselected screen, issuance-time absent / terminal family precondition, state, expiry and ETag revision |
+| `device_credential_families` | Screen-bound historical family state, active / pending pointers, credential epoch and ETag revision; a partial unique index permits at most one `ACTIVE` family per screen |
 | `device_credentials` | HMAC verifier, version, activation deadline, last authenticated time and state |
 | `idempotency_records` | Phase, operation, canonical route, principal, domain-separated idempotency-key digest, sensitive request HMAC / key ID and either sanitized result or AES-GCM one-time response with encryption key ID and canonical AAD evidence |
 | `security_audit_events` | Append-only sequence, sanitized detail JSON and versioned domain-separated SHA-256 hash-chain evidence |
@@ -34,8 +34,9 @@ P1.1 uses a new control-plane database, separate from the POC `sessions.db`. SQL
 - Role assignments reference an existing user and use only `DEPLOYMENT`, `SITE` or `SCREEN`.
 - The store contains only HMAC verifiers for session, CSRF, enrollment and device material.
 - Device scope is read from the credential family; no device request field selects tenant, deployment, Site or screen.
-- A screen has at most one credential family, one active credential pointer and one pending successor pointer.
-- A terminal `REVOKED` or `REENROLL_REQUIRED` credential family is never reopened in place.
+- A screen has at most one `ACTIVE` credential family. Any number of terminal historical families may remain preserved, and each family has at most one active credential pointer and one pending successor pointer.
+- A terminal `REVOKED` or `REENROLL_REQUIRED` credential family is never reopened in place; a fresh enrollment bound to that exact terminal generation creates a distinct family.
+- Enrollment issuance and claim bind the absent or terminal family precondition. Activation of another family or any generation change makes a pre-issued enrollment stale and rejects it before a credential family is created.
 - Rotation creates only `PENDING_ACTIVATION`; first authenticated successor use revokes the predecessor and activates the successor in one transaction.
 - Hard revocation advances the family credential epoch exactly once and revokes both active and pending credential rows.
 - One idempotency key with a changed request digest is rejected.

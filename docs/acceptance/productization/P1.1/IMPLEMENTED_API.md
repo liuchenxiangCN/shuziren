@@ -25,7 +25,7 @@ The existing POC routes in [../../../06_API_CONTRACT.md](../../../06_API_CONTRAC
 | `getHighRiskAction` | `GET /api/v1/control-plane/high-risk-actions/{id}` | Initiator or authorized approver; sanitized digest and state only |
 | `approveHighRiskAction` | `POST /api/v1/control-plane/high-risk-actions/{id}:approve` | Different user, recent reauthentication, exact digest / ETag and idempotency; records evidence only |
 | `rejectHighRiskAction` | `POST /api/v1/control-plane/high-risk-actions/{id}:reject` | Same separation as approval; no protected effect |
-| `issueDeviceEnrollment` | `POST /api/v1/control-plane/screen-instances/{screen_id}/device-enrollments` | `device.enroll`, different-user approval and exact trust-fixture target |
+| `issueDeviceEnrollment` | `POST /api/v1/control-plane/screen-instances/{screen_id}/device-enrollments` | `device.enroll`, different-user approval and exact trust-fixture target; binds the current absent or terminal family generation so a later change fails closed |
 | `getDeviceEnrollment` | `GET /api/v1/control-plane/device-enrollments/{id}` | Sanitized state and ETag; no enrollment material |
 | `getDeviceCredentialMetadata` | `GET /api/v1/control-plane/screen-instances/{screen_id}/device-credentials/{credential_id}` | `device.revoke`; family ETag / epoch and non-secret credential state |
 | `revokeDeviceCredential` | `POST /api/v1/control-plane/screen-instances/{screen_id}/device-credentials/{credential_id}:revoke` | Different-user approval, family ETag and epoch; atomically revokes active and pending credentials |
@@ -35,7 +35,7 @@ The existing POC routes in [../../../06_API_CONTRACT.md](../../../06_API_CONTRAC
 
 | Operation | Route | Implemented P1.1 behavior |
 | --- | --- | --- |
-| `claimDeviceEnrollment` | `POST /api/v1/device/enrollments:claim` | Atomic single use; returns one screen-bound credential; five-minute encrypted exact replay |
+| `claimDeviceEnrollment` | `POST /api/v1/device/enrollments:claim` | Atomic single use; verifies the issuance-time family generation, creates a distinct family when replacing a terminal family, returns one screen-bound credential and supports five-minute encrypted exact replay |
 | `rotateDeviceCredential` | `POST /api/v1/device/credentials:rotate` | Active credential only; one pending successor; five-minute encrypted exact replay |
 | trust probe within `getDeviceRuntimeBinding` | `GET /api/v1/device/runtime-binding` | Authenticates and activates a pending successor, then returns trust-only metadata plus `runtime_binding_status=NOT_IMPLEMENTED_P1_2` |
 
@@ -71,4 +71,4 @@ The protected route itself creates a `PENDING` action on the first typed request
 
 The API never returns password verifiers, session / CSRF verifiers, one-time-token verifiers, device verifiers, root keys or purpose-key material.
 
-An expired pending device successor is durably marked `EXPIRED`, its family pending pointer is cleared, and the still-active predecessor remains usable. If the five-minute encrypted replay expires before a rotation successor is proven reachable, that successor is revoked and its pending pointer is cleared so a fresh rotation can proceed. A terminal credential family cannot be reopened by a later issued or pre-issued enrollment.
+An expired pending device successor is durably marked `EXPIRED`, its family pending pointer is cleared, and the still-active predecessor remains usable. If the five-minute encrypted replay expires before a rotation successor is proven reachable, that successor is revoked and its pending pointer is cleared so a fresh rotation can proceed. A terminal credential family is never reopened in place. Only a fresh enrollment issued against the current terminal generation may create a distinct replacement family; a pre-issued or otherwise stale enrollment fails with a resource-version conflict.

@@ -14,6 +14,7 @@
 - P1.1 candidate local IAM, server-side browser sessions, fixed RBAC, typed different-user approval, append-only audit and screen-device trust APIs under separate `/api/v1/control-plane` and `/api/v1/device` namespaces.
 - A `/manage` development-preview console and an explicit local initializer that never auto-creates production identities or keys.
 - A PowerShell local API launcher and documented two-terminal preview path that do not require Docker.
+- A reproducible pinned pnpm 9.15.4 web workspace and verified Docker / Compose API/web preview path.
 - A separate `p1_control_plane_001` SQLite store using WAL, full synchronous durability, foreign keys, Argon2id password verifiers, purpose-separated HMAC / AEAD material and encrypted five-minute one-time response replay.
 - P1.0 target domain, identity / RBAC, device trust, configuration-release, data, storage / recovery and control-plane API contracts.
 - A machine-readable P1 contract registry plus validator and negative-fixture self-test.
@@ -32,7 +33,7 @@
 ### Changed
 
 - G0 and P1.0 are explicitly accepted, and P1.1 is the sole active result batch.
-- P1.1 local implementation is frozen at repaired candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b`; the earlier candidate failed independent review, and repaired-candidate re-review plus explicit user acceptance remain pending.
+- P1.1 local implementation is frozen at final candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets are remediated, and final-candidate re-review plus explicit user acceptance remain pending.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
 - P1.0 validation now binds target membership and inheritance through ResolutionFingerprint, creates immutable ReleaseTargets only with ConfigRelease and separates control-plane ETag checks from device acknowledgement CAS.
 - P1.0 release provenance now separates `NORMAL` approved-draft creation from exact-map `ROLLBACK` creation, with no cross-screen or credential-version substitution.
@@ -59,7 +60,7 @@
 - P1.1 candidate browser mutations require exact Origin and bound CSRF; login and reauthentication rotate opaque host-only Secure / HttpOnly cookies, and validation errors do not echo submitted inputs.
 - P1.1 candidate protected user/device mutations use different-user approval evidence that cannot execute the effect; altered-command replay and self-approval fail closed.
 - P1.1 candidate authentication failures no longer disclose unknown, disabled or locked account state; expired actions, enrollments, successor credentials and one-time replay ciphertext now become durable terminal evidence.
-- P1.1 repaired-candidate reauthentication and device rotation use exact request-bound idempotency; revoked sessions cannot issue successors, expired one-time delivery clears unreachable device material, and terminal device families cannot reopen.
+- P1.1 final-candidate reauthentication and device rotation use exact request-bound idempotency; revoked sessions cannot issue successors, expired one-time delivery clears unreachable device material, terminal device families never reopen, and a current post-terminal enrollment may create one distinct active replacement while stale enrollment generations fail closed.
 - P1.1 repaired-candidate key purposes are a strict subset of the frozen eighteen domains; sensitive requests retain their HMAC key ID, one-time AES-GCM records retain the response key ID and canonical AAD evidence, and the named migration is checksum-verified.
 - P1.0 separates user, device and FineReport data credentials; freezes local password/session/lockout/reset targets; prohibits Secret reveal; requires default-deny changed-field authorization, 18 non-reused cryptographic purpose domains and typed different-user/different-person production approval; and fails recovery closed against account/password/device generation rollback.
 - FineReport official plugin archives are excluded from Git and remain outside product distribution.

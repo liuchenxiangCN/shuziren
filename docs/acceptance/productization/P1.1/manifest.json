@@ -2,7 +2,7 @@
   "schema_version": 1,
   "batch": "P1.1",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
-  "generated_at": "2026-07-27T12:05:31.0064343Z",
+  "generated_at": "2026-07-27T13:18:43.8777398Z",
   "gate_summary": "PASS",
   "acceptance_state": "CANDIDATE_FROZEN_REVIEW_PENDING",
   "base_accepted": {
@@ -10,31 +10,31 @@
     "tree": "33752e13a385b4980cd3ecca309ad0f27d9307ae"
   },
   "candidate": {
-    "commit": "45dd8ff9455c1ab62a408d26c15f15a14256341b",
-    "tree": "8b730d5e1122515ee242887a6a5b9a8ab86d633b",
+    "commit": "8c18e5d6b10081eaaf608436440046894d235d46",
+    "tree": "9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd",
     "branch": "codex/p1-1-identity-device-trust"
   },
   "database": {
     "logical_schema_version": "p1_control_plane_001",
     "migration_version": "001_initial_identity_device_trust",
-    "migration_checksum_sha256": "534b4947438f73c49cbc838cfa2adf8c7d306fef2724037b0f269d1ce338d7f0"
+    "migration_checksum_sha256": "fd7094d87568fddc42c339a4861a6004a136dfb26ed6d1a11549cdb7a5db95ce"
   },
-  "evidence_root": "logs/productization/P1.1-20260727-repair",
+  "evidence_root": "logs/productization/P1.1-20260727-reenroll",
   "gates": [
     {
       "id": "backend_quality_tests_and_import",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-repair/test-results/backend-gates.txt",
-        "sha256": "1d74f0920a2b4de132c56a71eff254953fbde339a41262b6a4f23c4020507c11"
+        "path": "logs/productization/P1.1-20260727-reenroll/test-results/backend-gates.txt",
+        "sha256": "3149da5f68016df9d1d2f381957259aebb7c1ce71af64ac7138ee8c7a269cb63"
       }
     },
     {
       "id": "frontend_typecheck_and_build",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-repair/test-results/frontend-build.txt",
-        "sha256": "7cb083b2e13bfddf94f210c5378bc0b614a26bc427bb4564e460a2abfb25a9a1"
+        "path": "logs/productization/P1.1-20260727-reenroll/test-results/frontend-build.txt",
+        "sha256": "efa4b054c99a315fceabf09bec22ac3309fd92decc83436a01196952803b34b2"
       }
     },
     {
@@ -42,12 +42,12 @@
       "status": "PASS",
       "evidence": [
         {
-          "path": "logs/productization/P1.1-20260727-repair/test-results/browser-workflow.txt",
-          "sha256": "235fe489e2f836c846476197edc1bbad3796efe0e73c42827022d6f21f1526d1"
+          "path": "logs/productization/P1.1-20260727-reenroll/test-results/browser-workflow.txt",
+          "sha256": "c962461bb7fff37958fffe9b1010076ca3b7b582e99ef73e75959b81e70eb615"
         },
         {
-          "path": "logs/productization/P1.1-20260727-repair/screenshots/audit-role-preview.png",
-          "sha256": "3da0034de5b63773ca9656846c05eefdb8a0fb2cfe843bd334fa996f706a6151"
+          "path": "logs/productization/P1.1-20260727-reenroll/screenshots/audit-role-preview.png",
+          "sha256": "80b11a1706e734fe7dcc9fc8083a841b7532760ebd31582d9472f4b91c20aacb"
         }
       ]
     },
@@ -55,42 +55,49 @@
       "id": "schema_empty_and_repeat_initialization",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-repair/migration/schema-repeatability.txt",
-        "sha256": "106917e66393a17eb8e0097122ec866c2caaf0fe3a64f7b1f4be1512b10742f6"
+        "path": "logs/productization/P1.1-20260727-reenroll/migration/schema-repeatability.txt",
+        "sha256": "1217d3ba18087b215034cb57cef4f3cf04673c86a69c1803e3073875433675dc"
       }
     },
     {
       "id": "p1_contract_and_document_lifecycle",
       "status": "PASS",
+      "note": "The authoritative validator passed under PowerShell 7 and Windows PowerShell 5.1. The unchanged negative harness was not rerun because its host safety-parser child hung; prior independent PASS remains the applicable harness evidence.",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-repair/test-results/contract-lifecycle-gates.txt",
-        "sha256": "c3857348e302ab9cfd3cbcf4b5a78d19354b30540b102b2a9ecd9ea241f739e1"
+        "path": "logs/productization/P1.1-20260727-reenroll/test-results/contract-lifecycle-gates.txt",
+        "sha256": "e1ed9e50bb82479de45c63aff71a5ff5e2c3ce40153e5c6d6074d34fce391c0c"
       }
     },
     {
       "id": "candidate_repository_state",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-repair/test-results/repository-gates.txt",
-        "sha256": "0c887fa51fdd1db82dd11714d2094657f7adf08d1e1b1533253971790ac4dcfc"
+        "path": "logs/productization/P1.1-20260727-reenroll/test-results/repository-gates.txt",
+        "sha256": "408dafcfe8189c9a1fe1fd856418f63d73944f97a12d2172170fa26b648f581f"
       }
     },
     {
       "id": "secret_scan",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-repair/security/secret-scan.txt",
-        "sha256": "e3e03c9f73e48a955dcfab4829e61807a313e6c9420285b4b7b7dd2daab1a9cf"
+        "path": "logs/productization/P1.1-20260727-reenroll/security/secret-scan.txt",
+        "sha256": "7927b72585263475d9effb5da38400a2e8d2ec77bf3fd88bbd33166212a0dbe6"
       }
     },
     {
       "id": "optional_docker_preview",
-      "status": "Blocked",
-      "reason": "Docker CLI unavailable on this host; Docker is not required for the local development preview",
-      "evidence": {
-        "path": "logs/productization/P1.1-20260727-repair/test-results/docker-environment.txt",
-        "sha256": "a32928d05cae961286346b2204b5e661fbac4dab7d3c567e68898a808d6c331b"
-      }
+      "status": "PASS",
+      "note": "Pinned pnpm 9.15.4 build and isolated Compose API/web runtime smoke passed; this is local packaging evidence, not production deployment certification.",
+      "evidence": [
+        {
+          "path": "logs/productization/P1.1-20260727-reenroll/test-results/docker-environment.txt",
+          "sha256": "02622278f60e89701ea42334efe9177ed948c25e66abf4e8fb6a522198e94501"
+        },
+        {
+          "path": "logs/productization/P1.1-20260727-reenroll/test-results/docker-probe.txt",
+          "sha256": "24f35a88756bcb3971c2e27ff18aa0682364d29e356565d53021ba8f0ae83f39"
+        }
+      ]
     }
   ],
   "independent_reviews": [
@@ -100,22 +107,35 @@
       "candidate_commit": "f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e",
       "candidate_tree": "d7c6d0221ccb156a69858742b5cda45e3ef9554d",
       "status": "FAIL",
-      "conclusion": "Four blocking and two medium findings required session, rotation, terminal-family, key-purpose, one-time evidence, reauthentication-idempotency and named-migration remediation",
+      "conclusion": "Four blocking and two medium findings required session, rotation, terminal-family, key-purpose, one-time evidence, reauthentication-idempotency and named-migration remediation.",
       "report": {
-        "path": "logs/productization/P1.1-20260727-repair/independent-review/first-review-fail.txt",
+        "path": "logs/productization/P1.1-20260727-reenroll/independent-review/first-review-fail.txt",
         "sha256": "d3cb6874e7c4952d9c1814b7d1364281e921746436e105d36a3437f8d38bed8f"
       },
       "disposition": "REMEDIATED_IN_NEW_CANDIDATE"
+    },
+    {
+      "task_id": "/root/p1_1_independent_review",
+      "reviewer": "Fermat",
+      "candidate_commit": "45dd8ff9455c1ab62a408d26c15f15a14256341b",
+      "candidate_tree": "8b730d5e1122515ee242887a6a5b9a8ab86d633b",
+      "status": "FAIL",
+      "conclusion": "The historical screen uniqueness constraint permanently prevented a fresh family after hard revocation or REENROLL_REQUIRED.",
+      "report": {
+        "path": "logs/productization/P1.1-20260727-reenroll/independent-review/second-review-fail.txt",
+        "sha256": "4ba3fc960bb0f9fbb80a0bbc6ef3f2b1912b33c2c27c1ed62207adf480dd714c"
+      },
+      "disposition": "REMEDIATED_IN_FINAL_CANDIDATE"
     }
   ],
-  "independent_review_status": "REVIEW_PENDING_REPAIRED_CANDIDATE",
+  "independent_review_status": "REVIEW_PENDING_FINAL_CANDIDATE",
   "rollback": {
     "status": "PASS",
     "target_commit": "6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758",
     "target_tree": "33752e13a385b4980cd3ecca309ad0f27d9307ae",
     "evidence": {
-      "path": "logs/productization/P1.1-20260727-repair/rollback/rollback-verification.txt",
-      "sha256": "f84bf8e7c8d94f26f416b5026b52982fab30c4e324aad1aaacc7fa8a641f3fcb"
+      "path": "logs/productization/P1.1-20260727-reenroll/rollback/rollback-verification.txt",
+      "sha256": "c6c1c2c880a108cc782a6cf72fe8e2ad7d491620d7d0129a3dcf4222a5318454"
     }
   },
   "user_decision": {
