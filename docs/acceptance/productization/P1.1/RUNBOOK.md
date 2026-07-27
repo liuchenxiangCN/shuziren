@@ -99,4 +99,6 @@ data/control-plane.db
 .env.p1-1-preview
 ```
 
+The store verifies named migration `001_initial_identity_device_trust` and its source checksum at startup. A database created by an earlier pre-candidate P1.1 implementation is intentionally rejected instead of being silently relabeled; archive it and initialize a fresh development preview.
+
 Then run initialization again. Never delete or overwrite an unknown database or environment file.

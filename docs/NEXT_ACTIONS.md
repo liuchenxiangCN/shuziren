@@ -11,11 +11,11 @@
 
 `Productization P1.1 Identity And Device Trust`.
 
-G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. P1.1 candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` is frozen with required local automated, browser and rollback gates passing, but it remains unaccepted and the accepted runtime baseline is still the single-instance POC.
+G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. Repaired P1.1 candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b` is frozen with required local automated, browser and rollback gates passing, but it remains unaccepted and the accepted runtime baseline is still the single-instance POC.
 
 ## Next Task
 
-Obtain a separate read-only Codex review of the frozen P1.1 candidate, remediate any blocking finding, then present the reviewed local identity and screen-device trust result for explicit user acceptance.
+Rerun the same separate read-only Codex review against repaired P1.1 candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b`; if it passes with no blocking finding, record the conclusion and present the local identity and screen-device trust result for explicit user acceptance.
 
 ### User-Visible Result
 
@@ -39,7 +39,7 @@ P1.1 must provide:
 - [acceptance/productization/P1.1/IMPLEMENTED_DATA.md](acceptance/productization/P1.1/IMPLEMENTED_DATA.md)
 - [acceptance/productization/P1.1/RUNBOOK.md](acceptance/productization/P1.1/RUNBOOK.md)
 
-The independent review and user decision remain Pending. P1.1 cannot be presented for acceptance until the independent review passes.
+Independent review task `/root/p1_1_independent_review` returned `FAIL` for earlier candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e`. Its session-revocation, rotation-replay, terminal-family, key-purpose, one-time evidence, reauthentication-idempotency and named-migration findings are remediated with rebuilt evidence. Re-review of the repaired candidate and the user decision remain Pending. P1.1 cannot be presented for acceptance until that re-review passes.
 
 ### User Result Scenarios
 

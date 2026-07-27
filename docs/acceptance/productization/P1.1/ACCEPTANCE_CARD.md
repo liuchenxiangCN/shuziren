@@ -6,9 +6,9 @@
 - State: `CANDIDATE_FROZEN_REVIEW_PENDING`
 - Result: local identity and screen-device trust
 - Base accepted version: commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`, tree `33752e13a385b4980cd3ecca309ad0f27d9307ae`
-- Candidate: commit `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e`, tree `d7c6d0221ccb156a69858742b5cda45e3ef9554d`
-- Database schema / migration: `p1_control_plane_001` / `001_initial_identity_device_trust`; empty-store and repeat initialization PASS
-- Gate summary: required local automated, browser and rollback gates PASS; optional Docker preview Blocked; independent review Pending
+- Candidate: commit `45dd8ff9455c1ab62a408d26c15f15a14256341b`, tree `8b730d5e1122515ee242887a6a5b9a8ab86d633b`
+- Database schema / migration: `p1_control_plane_001` / `001_initial_identity_device_trust`, checksum `534b4947438f73c49cbc838cfa2adf8c7d306fef2724037b0f269d1ce338d7f0`; empty-store, repeat initialization and checksum-tamper rejection PASS
+- Gate summary: required local automated, browser and rollback gates PASS; optional Docker preview Blocked; repaired-candidate independent review Pending
 - User decision: Pending
 
 ## Frozen Observable Outcome
@@ -88,4 +88,6 @@ The P1.1 store is a new, separate `data/control-plane.db`. Rollback preserves it
 
 ## Review Boundary
 
-The candidate is not yet eligible for user acceptance. A separate read-only Codex review must rerun the critical negative tests and confirm the evidence before the acceptance prompt is issued.
+Independent review task `/root/p1_1_independent_review` rejected earlier candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` with four blocking and two medium findings. The findings covered revoked-session reauthentication, rotation replay and lost-successor cleanup, terminal-family reopening, key-purpose and one-time-response evidence drift, ignored reauthentication idempotency and an unimplemented named migration.
+
+Those findings are remediated in the candidate above with regression coverage and rebuilt evidence. The repaired candidate is not yet eligible for user acceptance: the same separate read-only Codex task must rerun the critical negative tests and bind its conclusion to the new commit and tree before the acceptance prompt is issued.

@@ -14,7 +14,7 @@ P1.1 uses a new control-plane database, separate from the POC `sessions.db`. SQL
 
 | Table | P1.1 purpose |
 | --- | --- |
-| `schema_migrations` | Applied logical schema version |
+| `schema_migrations` | Applied named migration version, source checksum and application time |
 | `control_plane_metadata` | Explicit `DEVELOPMENT_PREVIEW` profile, tenant, deployment and one trust-only screen fixture |
 | `users` | Local account state, Argon2id verifier, authentication / authorization epochs, lockout state and ETag revision |
 | `role_assignments` | Exact role and scope rows; unique per user / role / scope |
@@ -22,9 +22,9 @@ P1.1 uses a new control-plane database, separate from the POC `sessions.db`. SQL
 | `high_risk_actions` | Typed command digest, initiator / approver epochs, immutable command JSON and approval state |
 | `device_enrollments` | HMAC one-time enrollment verifier, preselected screen, state, expiry and ETag revision |
 | `device_credential_families` | Screen-bound family state, active / pending pointers, credential epoch and ETag revision |
-| `device_credentials` | HMAC verifier, version, activation deadline and state |
-| `idempotency_records` | Phase/principal/keyed idempotency digest and its key ID, request digest and either sanitized result or AES-GCM one-time response |
-| `security_audit_events` | Append-only sequence, sanitized detail JSON and HMAC hash-chain evidence |
+| `device_credentials` | HMAC verifier, version, activation deadline, last authenticated time and state |
+| `idempotency_records` | Phase, operation, canonical route, principal, domain-separated idempotency-key digest, sensitive request HMAC / key ID and either sanitized result or AES-GCM one-time response with encryption key ID and canonical AAD evidence |
+| `security_audit_events` | Append-only sequence, sanitized detail JSON and versioned domain-separated SHA-256 hash-chain evidence |
 
 ## Implemented Invariants
 
@@ -35,17 +35,19 @@ P1.1 uses a new control-plane database, separate from the POC `sessions.db`. SQL
 - The store contains only HMAC verifiers for session, CSRF, enrollment and device material.
 - Device scope is read from the credential family; no device request field selects tenant, deployment, Site or screen.
 - A screen has at most one credential family, one active credential pointer and one pending successor pointer.
+- A terminal `REVOKED` or `REENROLL_REQUIRED` credential family is never reopened in place.
 - Rotation creates only `PENDING_ACTIVATION`; first authenticated successor use revokes the predecessor and activates the successor in one transaction.
 - Hard revocation advances the family credential epoch exactly once and revokes both active and pending credential rows.
 - One idempotency key with a changed request digest is rejected.
-- One-time enrollment and device-credential responses are AES-256-GCM encrypted with purpose-derived material and expire after five minutes.
-- Expired one-time replay nonce and ciphertext are overwritten with null before the terminal replay error is returned.
+- Reauthentication, approval, rejection, protected request/execution, enrollment claim and device rotation persist operation and canonical-route-bound idempotency evidence.
+- One-time enrollment and device-credential responses are AES-256-GCM encrypted with `ONE_TIME_RESPONSE_ENCRYPTION`, its key ID and canonical AAD that binds the operation, route, principal, object IDs, idempotency digest, sensitive request HMAC / key ID and expiry.
+- Expired one-time replay nonce, ciphertext and AAD are overwritten with null before the terminal replay error is returned. Unreachable issued enrollment material is revoked; an unproven claimed credential closes its family; an unproven pending rotation successor is revoked and its pointer is cleared while the predecessor remains active.
 - Expired approval, enrollment and pending-successor states are committed separately from their fail-closed response so later reads cannot observe a rolled-back live state.
 - Audit-event UPDATE and DELETE are rejected by SQLite triggers.
 
 ## Key Material Boundary
 
-The live database stores key IDs, digests, nonces and ciphertext only. `CONTROL_PLANE_ROOT_KEY_B64` is supplied outside the database and derives distinct keys using HKDF-SHA-256 with a purpose-specific domain separator. P1.1 implements the purposes it uses; it does not claim the complete external monotonic key registry or production recovery anchors accepted in P1.0.
+The live database stores key IDs, digests, nonces and ciphertext only. `CONTROL_PLANE_ROOT_KEY_B64` is supplied outside the database and derives distinct keys using HKDF-SHA-256 with a purpose-specific domain separator. The seven P1.1 purposes are a strict subset of the frozen eighteen-purpose registry, including separate `HIGH_RISK_REQUEST_HMAC`, `SENSITIVE_REQUEST_DIGEST_HMAC` and `ONE_TIME_RESPONSE_ENCRYPTION`; no candidate-only purpose is introduced. P1.1 does not claim the complete external monotonic key registry or production recovery anchors accepted in P1.0.
 
 ## Explicitly Absent
 

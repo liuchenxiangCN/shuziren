@@ -16,7 +16,7 @@ The existing POC routes in [../../../06_API_CONTRACT.md](../../../06_API_CONTRAC
 | `createAuthSession` | `POST /api/v1/control-plane/auth/sessions` | Argon2id login, progressive lockout, account-enumeration-resistant generic failures, exact Origin, opaque Secure / HttpOnly cookie and header-only CSRF delivery |
 | `getCurrentAuthSession` | `GET /api/v1/control-plane/auth/session` | Sanitized current user, roles, permissions and session ETag; never rotates or returns CSRF |
 | `refreshCsrfToken` | `POST /api/v1/control-plane/auth/session:refresh-csrf` | Exact-Origin, authenticated CSRF rotation; plaintext only in `X-CSRF-Token` |
-| `reauthenticateAuthSession` | `POST /api/v1/control-plane/auth/session:reauthenticate` | Password confirmation plus session ETag; revokes predecessor and returns a rotated cookie / CSRF pair |
+| `reauthenticateAuthSession` | `POST /api/v1/control-plane/auth/session:reauthenticate` | Password confirmation plus session ETag and exact idempotency binding; state/revision-constrained predecessor revocation returns one rotated cookie / CSRF pair, while an exact successor replay returns metadata only |
 | `deleteCurrentAuthSession` | `DELETE /api/v1/control-plane/auth/session` | Revokes the server-side session and clears the cookie |
 | `listUsers` | `GET /api/v1/control-plane/users` | `user.manage`; sanitized user and role-assignment metadata |
 | `listRoleDefinitions` | `GET /api/v1/control-plane/role-definitions` | `role.assign`; exact `p1_roles_v1` catalog |
@@ -29,7 +29,7 @@ The existing POC routes in [../../../06_API_CONTRACT.md](../../../06_API_CONTRAC
 | `getDeviceEnrollment` | `GET /api/v1/control-plane/device-enrollments/{id}` | Sanitized state and ETag; no enrollment material |
 | `getDeviceCredentialMetadata` | `GET /api/v1/control-plane/screen-instances/{screen_id}/device-credentials/{credential_id}` | `device.revoke`; family ETag / epoch and non-secret credential state |
 | `revokeDeviceCredential` | `POST /api/v1/control-plane/screen-instances/{screen_id}/device-credentials/{credential_id}:revoke` | Different-user approval, family ETag and epoch; atomically revokes active and pending credentials |
-| `listAuditEvents` | `GET /api/v1/control-plane/audit-events` | `audit.read`; sanitized append-only HMAC-chained events |
+| `listAuditEvents` | `GET /api/v1/control-plane/audit-events` | `audit.read`; sanitized append-only, versioned SHA-256-chained events |
 
 ## Implemented Device Routes
 
@@ -69,6 +69,6 @@ The protected route itself creates a `PENDING` action on the first typed request
 }
 ```
 
-The API never returns password verifiers, session / CSRF verifiers, one-time-token verifiers, device verifiers, root keys or audit HMAC keys.
+The API never returns password verifiers, session / CSRF verifiers, one-time-token verifiers, device verifiers, root keys or purpose-key material.
 
-An expired pending device successor is durably marked `EXPIRED`, its family pending pointer is cleared, and the still-active predecessor remains usable. A later rotation receives the next unused family version.
+An expired pending device successor is durably marked `EXPIRED`, its family pending pointer is cleared, and the still-active predecessor remains usable. If the five-minute encrypted replay expires before a rotation successor is proven reachable, that successor is revoked and its pending pointer is cleared so a fresh rotation can proceed. A terminal credential family cannot be reopened by a later issued or pre-issued enrollment.

@@ -15,4 +15,4 @@
 - Local API/web startup and the complete browser workflow passed. The retained screenshot shows the sanitized auditor view and contains no observed credential material.
 - Docker / Compose execution is Blocked on the current host because the Docker CLI is unavailable; no image digest or container smoke is claimed.
 - FineReport plugin behavior remains Blocked by the P2 external gate.
-- Independent Codex review is Pending. The candidate must not be presented for user acceptance until that separate review passes.
+- The first independent Codex review failed the earlier candidate and its findings are remediated in the current candidate. Independent re-review of the repaired commit is Pending; P1.1 must not be presented for user acceptance until it passes.

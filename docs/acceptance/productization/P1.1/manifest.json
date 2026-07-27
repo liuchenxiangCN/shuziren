@@ -2,36 +2,39 @@
   "schema_version": 1,
   "batch": "P1.1",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "generated_at": "2026-07-27T12:05:31.0064343Z",
+  "gate_summary": "PASS",
   "acceptance_state": "CANDIDATE_FROZEN_REVIEW_PENDING",
   "base_accepted": {
     "commit": "6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758",
     "tree": "33752e13a385b4980cd3ecca309ad0f27d9307ae"
   },
   "candidate": {
-    "commit": "f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e",
-    "tree": "d7c6d0221ccb156a69858742b5cda45e3ef9554d",
+    "commit": "45dd8ff9455c1ab62a408d26c15f15a14256341b",
+    "tree": "8b730d5e1122515ee242887a6a5b9a8ab86d633b",
     "branch": "codex/p1-1-identity-device-trust"
   },
   "database": {
     "logical_schema_version": "p1_control_plane_001",
-    "migration_version": "001_initial_identity_device_trust"
+    "migration_version": "001_initial_identity_device_trust",
+    "migration_checksum_sha256": "534b4947438f73c49cbc838cfa2adf8c7d306fef2724037b0f269d1ce338d7f0"
   },
-  "evidence_root": "logs/productization/P1.1-20260727-local",
+  "evidence_root": "logs/productization/P1.1-20260727-repair",
   "gates": [
     {
       "id": "backend_quality_tests_and_import",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-local/test-results/backend-gates.txt",
-        "sha256": "df52a9df39df13f018eaeed71d6d2f2663052d90c0370eceec07e34a108b694e"
+        "path": "logs/productization/P1.1-20260727-repair/test-results/backend-gates.txt",
+        "sha256": "1d74f0920a2b4de132c56a71eff254953fbde339a41262b6a4f23c4020507c11"
       }
     },
     {
       "id": "frontend_typecheck_and_build",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-local/test-results/frontend-build.txt",
-        "sha256": "e82c94875a22f5a592a177badbcd53eab81be9e5105f3f6969ad694f6adf58f4"
+        "path": "logs/productization/P1.1-20260727-repair/test-results/frontend-build.txt",
+        "sha256": "7cb083b2e13bfddf94f210c5378bc0b614a26bc427bb4564e460a2abfb25a9a1"
       }
     },
     {
@@ -39,12 +42,12 @@
       "status": "PASS",
       "evidence": [
         {
-          "path": "logs/productization/P1.1-20260727-local/test-results/browser-workflow.txt",
-          "sha256": "69d164e9ead3fec285c9282dc31ab3569232cad9591ea21d10d647438ba4aac4"
+          "path": "logs/productization/P1.1-20260727-repair/test-results/browser-workflow.txt",
+          "sha256": "235fe489e2f836c846476197edc1bbad3796efe0e73c42827022d6f21f1526d1"
         },
         {
-          "path": "logs/productization/P1.1-20260727-local/screenshots/audit-role-preview.png",
-          "sha256": "741c6e9d1b8d1c96e36a2383b9e9839f33ad0854f512f19c950d3a23e4d2b21e"
+          "path": "logs/productization/P1.1-20260727-repair/screenshots/audit-role-preview.png",
+          "sha256": "3da0034de5b63773ca9656846c05eefdb8a0fb2cfe843bd334fa996f706a6151"
         }
       ]
     },
@@ -52,32 +55,32 @@
       "id": "schema_empty_and_repeat_initialization",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-local/migration/schema-repeatability.txt",
-        "sha256": "1bd3d0c6c86c41a00acd1dc70b0493ff8cc68ae0234b60fe1a03c1ffefe443eb"
+        "path": "logs/productization/P1.1-20260727-repair/migration/schema-repeatability.txt",
+        "sha256": "106917e66393a17eb8e0097122ec866c2caaf0fe3a64f7b1f4be1512b10742f6"
       }
     },
     {
       "id": "p1_contract_and_document_lifecycle",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-local/test-results/contract-lifecycle-gates.txt",
-        "sha256": "93cccf428e6a77e12975f276d4d86e6f8ce08ff89d2f3293d2977029666f4802"
+        "path": "logs/productization/P1.1-20260727-repair/test-results/contract-lifecycle-gates.txt",
+        "sha256": "c3857348e302ab9cfd3cbcf4b5a78d19354b30540b102b2a9ecd9ea241f739e1"
       }
     },
     {
       "id": "candidate_repository_state",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-local/test-results/repository-gates.txt",
-        "sha256": "980cb33b312d56f7c92f3f6106dcdb3a6654ecd0c7582922b9e7bcbc4362eca9"
+        "path": "logs/productization/P1.1-20260727-repair/test-results/repository-gates.txt",
+        "sha256": "0c887fa51fdd1db82dd11714d2094657f7adf08d1e1b1533253971790ac4dcfc"
       }
     },
     {
       "id": "secret_scan",
       "status": "PASS",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-local/security/secret-scan.txt",
-        "sha256": "d2b8818f9f37ec6264ae0ff717ed5efaf7b01d52ccf7bd6469c9295b584588ca"
+        "path": "logs/productization/P1.1-20260727-repair/security/secret-scan.txt",
+        "sha256": "e3e03c9f73e48a955dcfab4829e61807a313e6c9420285b4b7b7dd2daab1a9cf"
       }
     },
     {
@@ -85,19 +88,33 @@
       "status": "Blocked",
       "reason": "Docker CLI unavailable on this host; Docker is not required for the local development preview",
       "evidence": {
-        "path": "logs/productization/P1.1-20260727-local/test-results/docker-environment.txt",
-        "sha256": "fbf6ff5f70c6b89141ffed306f98f1e6221af3742835bc717d6442ec62e934ce"
+        "path": "logs/productization/P1.1-20260727-repair/test-results/docker-environment.txt",
+        "sha256": "a32928d05cae961286346b2204b5e661fbac4dab7d3c567e68898a808d6c331b"
       }
     }
   ],
-  "independent_reviews": [],
-  "independent_review_status": "PENDING",
+  "independent_reviews": [
+    {
+      "task_id": "/root/p1_1_independent_review",
+      "reviewer": "Fermat",
+      "candidate_commit": "f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e",
+      "candidate_tree": "d7c6d0221ccb156a69858742b5cda45e3ef9554d",
+      "status": "FAIL",
+      "conclusion": "Four blocking and two medium findings required session, rotation, terminal-family, key-purpose, one-time evidence, reauthentication-idempotency and named-migration remediation",
+      "report": {
+        "path": "logs/productization/P1.1-20260727-repair/independent-review/first-review-fail.txt",
+        "sha256": "d3cb6874e7c4952d9c1814b7d1364281e921746436e105d36a3437f8d38bed8f"
+      },
+      "disposition": "REMEDIATED_IN_NEW_CANDIDATE"
+    }
+  ],
+  "independent_review_status": "REVIEW_PENDING_REPAIRED_CANDIDATE",
   "rollback": {
     "status": "PASS",
     "target_commit": "6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758",
     "target_tree": "33752e13a385b4980cd3ecca309ad0f27d9307ae",
     "evidence": {
-      "path": "logs/productization/P1.1-20260727-local/rollback/rollback-verification.txt",
+      "path": "logs/productization/P1.1-20260727-repair/rollback/rollback-verification.txt",
       "sha256": "f84bf8e7c8d94f26f416b5026b52982fab30c4e324aad1aaacc7fa8a641f3fcb"
     }
   },
