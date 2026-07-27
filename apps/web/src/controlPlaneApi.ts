@@ -59,6 +59,85 @@ export interface AuditEvent {
   created_at: number;
 }
 
+export interface SiteInventory {
+  site_id: string;
+  tenant_id: string;
+  deployment_id: string;
+  slug: string;
+  display_name: string;
+  timezone: string;
+  status: 'ACTIVE';
+  screen_group_count: number;
+  screen_count: number;
+  resource_revision: number;
+  etag: string;
+}
+
+export interface ScreenGroupInventory {
+  screen_group_id: string;
+  tenant_id: string;
+  deployment_id: string;
+  site_id: string;
+  slug: string;
+  display_name: string;
+  member_screen_ids: string[];
+  resource_revision: number;
+  created_at: number;
+  updated_at: number;
+  etag: string;
+}
+
+export interface DigitalHumanInventory {
+  digital_human_instance_id: string;
+  screen_id: string;
+  status: 'ACTIVE';
+  resource_revision: number;
+  etag: string;
+}
+
+export interface RuntimeBindingInventory {
+  screen_id: string;
+  digital_human_instance_id?: string | null;
+  desired_release_target_id?: string | null;
+  applied_release_target_id?: string | null;
+  binding_generation: number;
+  inventory_status: 'INVENTORY_INCOMPLETE' | 'NOT_CONFIGURED_P1_3';
+  resource_revision: number;
+  etag: string;
+}
+
+export interface ScreenInventory {
+  screen_id: string;
+  tenant_id: string;
+  deployment_id: string;
+  site_id: string;
+  screen_group_id?: string | null;
+  slug: string;
+  display_name: string;
+  fvs_binding_ref?: string | null;
+  lifecycle_state: 'ACTIVE';
+  fvs_status: 'UNVERIFIED';
+  device_trust: {
+    state: string;
+    family_id?: string | null;
+    credential_epoch?: number | null;
+    family_etag?: string | null;
+  };
+  digital_human_instance?: DigitalHumanInventory | null;
+  runtime_binding: RuntimeBindingInventory;
+  resource_revision: number;
+  created_at: number;
+  updated_at: number;
+  etag: string;
+}
+
+interface InventoryPage<T> {
+  api_version: 'v1';
+  items: T[];
+  next_cursor?: string | null;
+  snapshot_expires_at?: number | null;
+}
+
 export class ControlPlaneApiError extends Error {
   status: number;
   code: string;
@@ -149,6 +228,92 @@ export function listRoleDefinitions(): Promise<{
   items: Array<{ role_id: string; permissions: string[]; catalog_version: string }>;
 }> {
   return controlPlaneRequest('/api/v1/control-plane/role-definitions');
+}
+
+export function listSites(): Promise<InventoryPage<SiteInventory>> {
+  return controlPlaneRequest('/api/v1/control-plane/sites');
+}
+
+export function listScreenGroups(): Promise<InventoryPage<ScreenGroupInventory>> {
+  return controlPlaneRequest('/api/v1/control-plane/screen-groups');
+}
+
+export function listScreenInstances(): Promise<InventoryPage<ScreenInventory>> {
+  return controlPlaneRequest('/api/v1/control-plane/screen-instances');
+}
+
+export function createScreenGroup(
+  siteId: string,
+  payload: { slug: string; display_name: string },
+): Promise<ScreenGroupInventory> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/sites/${encodeURIComponent(siteId)}/screen-groups`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('create-screen-group') },
+      body: JSON.stringify(payload),
+    },
+    { csrf: true },
+  );
+}
+
+export function updateScreenGroup(
+  group: ScreenGroupInventory,
+  payload: { display_name?: string; slug?: string; member_screen_ids?: string[] },
+): Promise<ScreenGroupInventory> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-groups/${encodeURIComponent(group.screen_group_id)}`,
+    {
+      method: 'PATCH',
+      headers: { 'If-Match': group.etag },
+      body: JSON.stringify(payload),
+    },
+    { csrf: true },
+  );
+}
+
+export function createScreenInstance(
+  siteId: string,
+  payload: { slug: string; display_name: string; fvs_binding_ref?: string | null },
+): Promise<ScreenInventory> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/sites/${encodeURIComponent(siteId)}/screen-instances`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('create-screen') },
+      body: JSON.stringify(payload),
+    },
+    { csrf: true },
+  );
+}
+
+export function updateScreenInstance(
+  screen: ScreenInventory,
+  payload: { slug?: string; display_name?: string; fvs_binding_ref?: string | null },
+): Promise<ScreenInventory> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screen.screen_id)}`,
+    {
+      method: 'PATCH',
+      headers: { 'If-Match': screen.etag },
+      body: JSON.stringify(payload),
+    },
+    { csrf: true },
+  );
+}
+
+export function createDigitalHumanInstance(
+  screenId: string,
+): Promise<DigitalHumanInventory> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/digital-human-instances`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('create-digital-human') },
+      body: JSON.stringify({}),
+    },
+    { csrf: true },
+  );
 }
 
 export function createUser(

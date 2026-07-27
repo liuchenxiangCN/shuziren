@@ -4,7 +4,10 @@ import base64
 import hashlib
 import json
 import secrets
+import shutil
 import sqlite3
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +27,13 @@ from app.control_plane.security import PURPOSES, PurposeKeyring, canonical_json,
 from app.control_plane.service import ROLE_PERMISSIONS, ControlPlaneService
 from app.control_plane.store import (
     LOGICAL_SCHEMA_VERSION,
+    MIGRATION_001_CHECKSUM_SHA256,
+    MIGRATION_001_VERSION,
     MIGRATION_CHECKSUM_SHA256,
     MIGRATION_VERSION,
+    MIGRATIONS,
+    SCHEMA_MIGRATIONS_SQL,
+    SCHEMA_SQL,
 )
 
 ORIGIN = "https://manage.test"
@@ -222,12 +230,12 @@ def test_schema_is_repeatable_and_preview_is_explicit(
         assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM control_plane_metadata").fetchone()[0] == 0
     with sqlite3.connect(database_path) as connection:
-        migration = connection.execute(
+        migrations = connection.execute(
             """
-            SELECT version, checksum_sha256 FROM schema_migrations
+            SELECT version, checksum_sha256 FROM schema_migrations ORDER BY rowid
             """
-        ).fetchone()
-        assert migration == (MIGRATION_VERSION, MIGRATION_CHECKSUM_SHA256)
+        ).fetchall()
+        assert migrations == [(version, checksum) for version, checksum, _ in MIGRATIONS]
         active_family_index = connection.execute(
             """
             SELECT sql FROM sqlite_master
@@ -889,26 +897,16 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     admin_a, csrf_a = login(app, "admin-a")
     admin_b, csrf_b = login(app, "admin-b")
 
-    wrong_screen_action = request_action(
-        implementation,
-        csrf_impl,
-        "/api/v1/control-plane/screen-instances/other-screen/device-enrollments",
-        {"reason": "prove a client-selected screen fails closed"},
-        "request-wrong-screen",
-    )
-    approve_action(admin_a, csrf_a, wrong_screen_action, key="approve-wrong-screen")
-    wrong_screen_execution = implementation.post(
+    wrong_screen_request = implementation.post(
         "/api/v1/control-plane/screen-instances/other-screen/device-enrollments",
         headers=mutation_headers(
             csrf_impl,
-            **{
-                "Idempotency-Key": "execute-wrong-screen",
-                "High-Risk-Action-ID": wrong_screen_action["high_risk_action_id"],
-            },
+            **{"Idempotency-Key": "request-wrong-screen"},
         ),
         json={"reason": "prove a client-selected screen fails closed"},
     )
-    assert wrong_screen_execution.status_code == 404
+    assert wrong_screen_request.status_code == 404
+    assert wrong_screen_request.json()["error"]["code"] == "NOT_FOUND"
 
     enrollment_payload = {"reason": "enroll trust-only screen fixture"}
     enrollment_action = request_action(
@@ -1030,7 +1028,7 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     )
     assert active.status_code == 200
     assert active.json()["screen_id"] == "screen-trust-fixture"
-    assert active.json()["runtime_binding_status"] == "NOT_IMPLEMENTED_P1_2"
+    assert active.json()["runtime_binding_status"] == "NOT_CONFIGURED_P1_3"
 
     expiring_rotation = device.post(
         "/api/v1/device/credentials:rotate",
@@ -1364,3 +1362,612 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
         )
         assert event["event_hash_schema_version"] == "p1_security_audit_event_hash_v1"
         previous_hash = event["event_hash"]
+
+
+def test_three_screen_inventory_api_isolation_scope_and_idempotency(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, service, database_path = control_plane
+    implementation, csrf = login(app, "implementation")
+
+    sites = implementation.get("/api/v1/control-plane/sites").json()["items"]
+    groups = implementation.get("/api/v1/control-plane/screen-groups").json()["items"]
+    screens = implementation.get("/api/v1/control-plane/screen-instances").json()["items"]
+    assert len(sites) == 1
+    assert sites[0]["slug"] == "site-default"
+    assert sites[0]["screen_count"] == 3
+    assert len(groups) == 1
+    assert groups[0]["slug"] == "group-main"
+    assert len(screens) == 3
+    assert screens[0]["screen_id"] == "screen-trust-fixture"
+    assert [screen["slug"] for screen in screens] == ["screen-1", "screen-2", "screen-3"]
+    for screen in screens[1:]:
+        parsed = uuid.UUID(screen["screen_id"])
+        assert parsed.version == 7
+        assert parsed.variant == uuid.RFC_4122
+    assert len({screen["fvs_binding_ref"] for screen in screens}) == 3
+    assert len({screen["digital_human_instance"]["digital_human_instance_id"] for screen in screens}) == 3
+    assert all(screen["fvs_status"] == "UNVERIFIED" for screen in screens)
+    assert all(screen["runtime_binding"]["inventory_status"] == "NOT_CONFIGURED_P1_3" for screen in screens)
+    assert all(screen["device_trust"]["state"] == "UNENROLLED" for screen in screens)
+
+    first_page = implementation.get("/api/v1/control-plane/screen-instances?limit=1").json()
+    assert len(first_page["items"]) == 1
+    cursor = first_page["next_cursor"]
+    paged_ids = [first_page["items"][0]["screen_id"]]
+    while cursor:
+        page = implementation.get(f"/api/v1/control-plane/screen-instances?limit=1&cursor={cursor}").json()
+        paged_ids.extend(item["screen_id"] for item in page["items"])
+        cursor = page["next_cursor"]
+    assert paged_ids == [screen["screen_id"] for screen in screens]
+
+    before = {
+        screen["screen_id"]: implementation.get(
+            f"/api/v1/control-plane/screen-instances/{screen['screen_id']}"
+        ).json()
+        for screen in screens
+    }
+    screen_two = screens[1]
+    updated = implementation.patch(
+        f"/api/v1/control-plane/screen-instances/{screen_two['screen_id']}",
+        headers=mutation_headers(csrf, **{"If-Match": screen_two["etag"]}),
+        json={
+            "display_name": "主展厅大屏 2",
+            "fvs_binding_ref": "https://fvs.example.test/show/screen-2",
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["display_name"] == "主展厅大屏 2"
+    assert updated.json()["fvs_status"] == "UNVERIFIED"
+    stale = implementation.patch(
+        f"/api/v1/control-plane/screen-instances/{screen_two['screen_id']}",
+        headers=mutation_headers(csrf, **{"If-Match": screen_two["etag"]}),
+        json={"display_name": "stale write must fail"},
+    )
+    assert stale.status_code == 412
+    assert stale.json()["error"]["code"] == "RESOURCE_VERSION_CONFLICT"
+    after = {
+        screen_id: implementation.get(f"/api/v1/control-plane/screen-instances/{screen_id}").json()
+        for screen_id in before
+    }
+    for unrelated in (screens[0]["screen_id"], screens[2]["screen_id"]):
+        assert after[unrelated] == before[unrelated]
+
+    secret_ref = implementation.patch(
+        f"/api/v1/control-plane/screen-instances/{screen_two['screen_id']}",
+        headers=mutation_headers(csrf, **{"If-Match": updated.json()["etag"]}),
+        json={"fvs_binding_ref": "https://user:password@fvs.example.test/screen"},
+    )
+    assert secret_ref.status_code == 422
+    assert secret_ref.json()["error"]["code"] == "SECRET_MATERIAL_FORBIDDEN"
+
+    create_key = "create-screen-idempotency"
+    create_payload = {
+        "slug": "screen-4",
+        "display_name": "大屏 4",
+        "fvs_binding_ref": "fvs-inventory-screen-4",
+    }
+    created = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-instances",
+        headers=mutation_headers(csrf, **{"Idempotency-Key": create_key}),
+        json=create_payload,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["runtime_binding"]["inventory_status"] == "INVENTORY_INCOMPLETE"
+    assert created.json()["digital_human_instance"] is None
+    replay = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-instances",
+        headers=mutation_headers(csrf, **{"Idempotency-Key": create_key}),
+        json=create_payload,
+    )
+    assert replay.status_code == 201
+    assert replay.json()["screen_id"] == created.json()["screen_id"]
+    mismatch = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-instances",
+        headers=mutation_headers(csrf, **{"Idempotency-Key": create_key}),
+        json={**create_payload, "display_name": "changed command"},
+    )
+    assert mismatch.status_code == 409
+    assert mismatch.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+    duplicate_screen_slug = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-instances",
+        headers=mutation_headers(
+            csrf,
+            **{"Idempotency-Key": "duplicate-screen-slug"},
+        ),
+        json={**create_payload, "display_name": "duplicate slug must fail"},
+    )
+    assert duplicate_screen_slug.status_code == 409
+    assert duplicate_screen_slug.json()["error"]["code"] == "DUPLICATE_RESOURCE"
+
+    digital_key = "create-digital-human-idempotency"
+    digital = implementation.post(
+        (f"/api/v1/control-plane/screen-instances/{created.json()['screen_id']}/digital-human-instances"),
+        headers=mutation_headers(csrf, **{"Idempotency-Key": digital_key}),
+        json={},
+    )
+    assert digital.status_code == 201, digital.text
+    digital_replay = implementation.post(
+        (f"/api/v1/control-plane/screen-instances/{created.json()['screen_id']}/digital-human-instances"),
+        headers=mutation_headers(csrf, **{"Idempotency-Key": digital_key}),
+        json={},
+    )
+    assert digital_replay.status_code == 201
+    assert digital_replay.json()["digital_human_instance_id"] == digital.json()["digital_human_instance_id"]
+    duplicate_digital = implementation.post(
+        (f"/api/v1/control-plane/screen-instances/{created.json()['screen_id']}/digital-human-instances"),
+        headers=mutation_headers(
+            csrf,
+            **{"Idempotency-Key": "create-second-digital-human"},
+        ),
+        json={},
+    )
+    assert duplicate_digital.status_code == 409
+    assert duplicate_digital.json()["error"]["code"] == "DUPLICATE_RESOURCE"
+    binding = implementation.get(
+        f"/api/v1/control-plane/screen-instances/{created.json()['screen_id']}/runtime-binding"
+    ).json()
+    assert binding["digital_human_instance_id"] == digital.json()["digital_human_instance_id"]
+    assert binding["inventory_status"] == "NOT_CONFIGURED_P1_3"
+    assert binding["binding_generation"] == 0
+
+    group = implementation.get(f"/api/v1/control-plane/screen-groups/{groups[0]['screen_group_id']}").json()
+    create_group_payload = {
+        "slug": "group-secondary",
+        "display_name": "辅助大屏组",
+    }
+    created_group = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-groups",
+        headers=mutation_headers(
+            csrf,
+            **{"Idempotency-Key": "create-group-idempotency"},
+        ),
+        json=create_group_payload,
+    )
+    assert created_group.status_code == 201, created_group.text
+    assert created_group.json()["member_screen_ids"] == []
+    replayed_group = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-groups",
+        headers=mutation_headers(
+            csrf,
+            **{"Idempotency-Key": "create-group-idempotency"},
+        ),
+        json=create_group_payload,
+    )
+    assert replayed_group.status_code == 201
+    assert replayed_group.json()["screen_group_id"] == created_group.json()["screen_group_id"]
+    changed_group_replay = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-groups",
+        headers=mutation_headers(
+            csrf,
+            **{"Idempotency-Key": "create-group-idempotency"},
+        ),
+        json={**create_group_payload, "display_name": "changed command"},
+    )
+    assert changed_group_replay.status_code == 409
+    assert changed_group_replay.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+    duplicate_group_slug = implementation.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-groups",
+        headers=mutation_headers(
+            csrf,
+            **{"Idempotency-Key": "duplicate-group-slug"},
+        ),
+        json={**create_group_payload, "display_name": "duplicate slug must fail"},
+    )
+    assert duplicate_group_slug.status_code == 409
+    assert duplicate_group_slug.json()["error"]["code"] == "DUPLICATE_RESOURCE"
+
+    pre_group_screens = {
+        item["screen_id"]: implementation.get(
+            f"/api/v1/control-plane/screen-instances/{item['screen_id']}"
+        ).json()
+        for item in [*screens, created.json()]
+    }
+    next_members = sorted([*group["member_screen_ids"], created.json()["screen_id"]])
+    group_update = implementation.patch(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}",
+        headers=mutation_headers(csrf, **{"If-Match": group["etag"]}),
+        json={"member_screen_ids": next_members},
+    )
+    assert group_update.status_code == 200, group_update.text
+    assert group_update.json()["member_screen_ids"] == next_members
+    post_group_screens = {
+        screen_id: implementation.get(f"/api/v1/control-plane/screen-instances/{screen_id}").json()
+        for screen_id in pre_group_screens
+    }
+    for unchanged_id in group["member_screen_ids"]:
+        assert post_group_screens[unchanged_id] == pre_group_screens[unchanged_id]
+    newly_grouped_before = pre_group_screens[created.json()["screen_id"]]
+    newly_grouped_after = post_group_screens[created.json()["screen_id"]]
+    assert newly_grouped_after["screen_group_id"] == group["screen_group_id"]
+    assert newly_grouped_after["resource_revision"] == newly_grouped_before["resource_revision"] + 1
+    assert newly_grouped_after["device_trust"] == newly_grouped_before["device_trust"]
+    assert newly_grouped_after["digital_human_instance"] == newly_grouped_before["digital_human_instance"]
+    assert newly_grouped_after["runtime_binding"] == newly_grouped_before["runtime_binding"]
+    stale_group = implementation.patch(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}",
+        headers=mutation_headers(csrf, **{"If-Match": group["etag"]}),
+        json={"member_screen_ids": group["member_screen_ids"]},
+    )
+    assert stale_group.status_code == 412
+
+    with service.store.transaction() as connection:
+        now = service.clock()
+        other_site_id = str(uuid.uuid4())
+        other_screen_id = str(uuid.uuid4())
+        connection.execute(
+            """
+            INSERT INTO sites(
+                site_id, tenant_id, deployment_id, slug, display_name, timezone,
+                status, created_at, updated_at
+            ) VALUES (?, 'tenant-test', 'deployment-test', 'site-other',
+                'Other', 'Asia/Shanghai', 'ACTIVE', ?, ?)
+            """,
+            (other_site_id, now, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO screen_instances(
+                screen_id, tenant_id, deployment_id, site_id, slug, display_name,
+                lifecycle_state, created_at, updated_at
+            ) VALUES (?, 'tenant-test', 'deployment-test', ?, 'screen-other',
+                'Other', 'ACTIVE', ?, ?)
+            """,
+            (other_screen_id, other_site_id, now, now),
+        )
+        connection.execute(
+            """
+            INSERT INTO runtime_bindings(
+                screen_id, tenant_id, deployment_id, site_id,
+                inventory_status, created_at, updated_at
+            ) VALUES (?, 'tenant-test', 'deployment-test', ?,
+                'INVENTORY_INCOMPLETE', ?, ?)
+            """,
+            (other_screen_id, other_site_id, now, now),
+        )
+    cross_site = implementation.patch(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}",
+        headers=mutation_headers(
+            csrf,
+            **{"If-Match": group_update.json()["etag"]},
+        ),
+        json={"member_screen_ids": [*next_members, other_screen_id]},
+    )
+    assert cross_site.status_code == 404
+    assert (
+        implementation.get(f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}").json()[
+            "member_screen_ids"
+        ]
+        == next_members
+    )
+
+    auditor, auditor_csrf = login(app, "auditor")
+    assert len(auditor.get("/api/v1/control-plane/screen-instances").json()["items"]) == 5
+    auditor_create = auditor.post(
+        f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-instances",
+        headers=mutation_headers(
+            auditor_csrf,
+            **{"Idempotency-Key": "auditor-create-screen"},
+        ),
+        json={
+            "slug": "auditor-screen",
+            "display_name": "Denied",
+            "fvs_binding_ref": None,
+        },
+    )
+    assert auditor_create.status_code == 403
+    assert (
+        auditor.post(
+            f"/api/v1/control-plane/sites/{sites[0]['site_id']}/screen-groups",
+            headers=mutation_headers(
+                auditor_csrf,
+                **{"Idempotency-Key": "auditor-create-group"},
+            ),
+            json={"slug": "auditor-group", "display_name": "Denied"},
+        ).status_code
+        == 403
+    )
+    assert (
+        auditor.patch(
+            f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}",
+            headers=mutation_headers(
+                auditor_csrf,
+                **{"If-Match": group_update.json()["etag"]},
+            ),
+            json={"display_name": "Denied"},
+        ).status_code
+        == 403
+    )
+    assert (
+        auditor.patch(
+            f"/api/v1/control-plane/screen-instances/{screen_two['screen_id']}",
+            headers=mutation_headers(
+                auditor_csrf,
+                **{"If-Match": updated.json()["etag"]},
+            ),
+            json={"display_name": "Denied"},
+        ).status_code
+        == 403
+    )
+    assert (
+        auditor.post(
+            (f"/api/v1/control-plane/screen-instances/{screen_two['screen_id']}/digital-human-instances"),
+            headers=mutation_headers(
+                auditor_csrf,
+                **{"Idempotency-Key": "auditor-create-digital-human"},
+            ),
+            json={},
+        ).status_code
+        == 403
+    )
+    selector = auditor.get(
+        "/api/v1/control-plane/screen-instances",
+        headers={"X-Tenant-ID": "tenant-test"},
+    )
+    assert selector.status_code == 400
+    assert selector.json()["error"]["code"] == "INVALID_REQUEST"
+
+    scoped_password = f"test-only-{secrets.token_urlsafe(18)}"
+    PASSWORDS["screen-auditor"] = scoped_password
+    with service.store.transaction() as connection:
+        now = service.clock()
+        user_id = "usr_screen_auditor"
+        connection.execute(
+            """
+            INSERT INTO users(
+                user_id, tenant_id, deployment_id, normalized_username, display_name,
+                account_state, password_verifier, credential_generation, created_at, updated_at
+            ) VALUES (?, 'tenant-test', 'deployment-test', 'screen-auditor',
+                'Screen Auditor', 'ACTIVE', ?, 1, ?, ?)
+            """,
+            (
+                user_id,
+                service.passwords.hash(scoped_password, username="screen-auditor"),
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO role_assignments(
+                assignment_id, user_id, role_id, scope_type, scope_id, created_at
+            ) VALUES ('rla_screen_auditor', ?, 'auditor', 'SCREEN', ?, ?)
+            """,
+            (user_id, screen_two["screen_id"], now),
+        )
+    scoped, _ = login(app, "screen-auditor")
+    scoped_screens = scoped.get("/api/v1/control-plane/screen-instances").json()["items"]
+    assert [item["screen_id"] for item in scoped_screens] == [screen_two["screen_id"]]
+    assert scoped.get("/api/v1/control-plane/sites").json()["items"] == []
+    assert scoped.get("/api/v1/control-plane/screen-groups").json()["items"] == []
+    assert scoped.get(f"/api/v1/control-plane/screen-instances/{screens[0]['screen_id']}").status_code == 404
+    sibling_digital_human_id = screens[0]["digital_human_instance"]["digital_human_instance_id"]
+    assert (
+        scoped.get(f"/api/v1/control-plane/digital-human-instances/{sibling_digital_human_id}").status_code
+        == 404
+    )
+    assert (
+        scoped.get(
+            f"/api/v1/control-plane/screen-instances/{screens[0]['screen_id']}/runtime-binding"
+        ).status_code
+        == 404
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA foreign_keys=ON")
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO runtime_bindings(
+                    screen_id, tenant_id, deployment_id, site_id,
+                    inventory_status, created_at, updated_at
+                ) VALUES ('missing-screen', 'tenant-test', 'deployment-test', ?,
+                    'INVENTORY_INCOMPLETE', 1, 1)
+                """,
+                (sites[0]["site_id"],),
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "DELETE FROM screen_instances WHERE screen_id = ?",
+                (screens[0]["screen_id"],),
+            )
+
+
+def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
+    tmp_path: Path,
+) -> None:
+    legacy_path = tmp_path / "accepted-p1-1.db"
+    with sqlite3.connect(legacy_path) as connection:
+        connection.executescript(SCHEMA_MIGRATIONS_SQL)
+        connection.executescript(SCHEMA_SQL)
+        connection.execute(
+            """
+            INSERT INTO schema_migrations(version, checksum_sha256, applied_at)
+            VALUES (?, ?, 1)
+            """,
+            (MIGRATION_001_VERSION, MIGRATION_001_CHECKSUM_SHA256),
+        )
+        connection.execute(
+            """
+            INSERT INTO control_plane_metadata(
+                singleton, profile, tenant_id, deployment_id, fixture_screen_id, created_at
+            ) VALUES (1, 'DEVELOPMENT_PREVIEW', 'tenant-upgrade',
+                'deployment-upgrade', 'screen-trust-fixture', 1)
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO device_credential_families(
+                family_id, tenant_id, deployment_id, screen_id, state,
+                credential_epoch, active_credential_id, created_at, updated_at, revision
+            ) VALUES ('family-preserved', 'tenant-upgrade', 'deployment-upgrade',
+                'screen-trust-fixture', 'ACTIVE', 7, 'credential-preserved', 2, 3, 5)
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO device_credentials(
+                credential_id, family_id, credential_version, verifier_hmac,
+                verifier_key_id, state, issued_at, activated_at,
+                last_authenticated_at, revision
+            ) VALUES ('credential-preserved', 'family-preserved', 4, 'verifier-preserved',
+                'key-preserved', 'ACTIVE', 2, 2, 3, 6)
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO security_audit_events(
+                event_id, event_type, actor_type, actor_id, target_type, target_id,
+                outcome, reason, details_json, previous_event_hash, event_hash,
+                event_hash_schema_version, created_at
+            ) VALUES ('audit-preserved', 'P1_1_ACCEPTED', 'SYSTEM', NULL,
+                'SCREEN', 'screen-trust-fixture', 'SUCCESS', NULL, '{}', NULL,
+                'audit-preserved-hash', 'p1_security_audit_event_hash_v1', 4)
+            """
+        )
+        connection.commit()
+    pre_migration_copy = tmp_path / "accepted-p1-1.pre-002.db"
+    shutil.copy2(legacy_path, pre_migration_copy)
+
+    root_key = PurposeKeyring.generate_root_base64()
+    service = ControlPlaneService(
+        str(legacy_path),
+        root_key,
+        preview_mode=True,
+    )
+    with service.store.connect() as connection:
+        migrations = connection.execute(
+            "SELECT version, checksum_sha256 FROM schema_migrations ORDER BY rowid"
+        ).fetchall()
+        assert [tuple(row) for row in migrations] == [
+            (version, checksum) for version, checksum, _ in MIGRATIONS
+        ]
+        assert tuple(
+            connection.execute(
+                """
+                SELECT state, credential_epoch, active_credential_id,
+                    created_at, updated_at, revision
+                FROM device_credential_families WHERE family_id = 'family-preserved'
+                """
+            ).fetchone()
+        ) == ("ACTIVE", 7, "credential-preserved", 2, 3, 5)
+        assert tuple(
+            connection.execute(
+                """
+                SELECT credential_version, verifier_hmac, verifier_key_id, state,
+                    issued_at, activated_at, last_authenticated_at, revision
+                FROM device_credentials WHERE credential_id = 'credential-preserved'
+                """
+            ).fetchone()
+        ) == (4, "verifier-preserved", "key-preserved", "ACTIVE", 2, 2, 3, 6)
+        screens = connection.execute("SELECT screen_id, slug FROM screen_instances ORDER BY slug").fetchall()
+        assert tuple(screens[0]) == ("screen-trust-fixture", "screen-1")
+        assert len(screens) == 3
+        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 2
+        assert (
+            connection.execute(
+                "SELECT event_type FROM security_audit_events ORDER BY sequence DESC LIMIT 1"
+            ).fetchone()[0]
+            == "THREE_SCREEN_INVENTORY_MIGRATED"
+        )
+    ControlPlaneService(str(legacy_path), root_key, preview_mode=True)
+    with service.store.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 2
+
+    with sqlite3.connect(pre_migration_copy) as connection:
+        assert connection.execute("SELECT version, checksum_sha256 FROM schema_migrations").fetchone() == (
+            MIGRATION_001_VERSION,
+            MIGRATION_001_CHECKSUM_SHA256,
+        )
+        assert (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sites'"
+            ).fetchone()
+            is None
+        )
+        assert connection.execute(
+            """
+            SELECT state, credential_epoch, active_credential_id, revision
+            FROM device_credential_families WHERE family_id = 'family-preserved'
+            """
+        ).fetchone() == ("ACTIVE", 7, "credential-preserved", 5)
+
+    failed_path = tmp_path / "failed-upgrade.db"
+    shutil.copy2(pre_migration_copy, failed_path)
+    with sqlite3.connect(failed_path) as connection:
+        connection.execute(
+            """
+            UPDATE device_credential_families
+            SET tenant_id = 'wrong-tenant'
+            WHERE family_id = 'family-preserved'
+            """
+        )
+        connection.commit()
+    with pytest.raises(RuntimeError, match="ownership mismatch"):
+        ControlPlaneService(
+            str(failed_path),
+            PurposeKeyring.generate_root_base64(),
+            preview_mode=True,
+        )
+    with sqlite3.connect(failed_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        assert (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sites'"
+            ).fetchone()
+            is None
+        )
+        assert connection.execute("SELECT state, revision FROM device_credential_families").fetchone() == (
+            "ACTIVE",
+            5,
+        )
+
+    reordered_path = tmp_path / "reordered-registry.db"
+    shutil.copy2(legacy_path, reordered_path)
+    with sqlite3.connect(reordered_path) as connection:
+        rows = connection.execute(
+            "SELECT version, checksum_sha256, applied_at FROM schema_migrations ORDER BY rowid"
+        ).fetchall()
+        connection.execute("DELETE FROM schema_migrations")
+        connection.executemany(
+            """
+            INSERT INTO schema_migrations(version, checksum_sha256, applied_at)
+            VALUES (?, ?, ?)
+            """,
+            list(reversed(rows)),
+        )
+        connection.commit()
+    with pytest.raises(RuntimeError, match="registry mismatch"):
+        ControlPlaneService(
+            str(reordered_path),
+            PurposeKeyring.generate_root_base64(),
+            preview_mode=True,
+        )
+
+
+def test_concurrent_group_membership_uses_one_winning_etag(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, _, _ = control_plane
+    first_client, first_csrf = login(app, "implementation")
+    second_client, second_csrf = login(app, "implementation")
+    group = first_client.get("/api/v1/control-plane/screen-groups").json()["items"][0]
+    members = group["member_screen_ids"]
+    assert len(members) == 3
+
+    def update(client: TestClient, csrf: str, next_members: list[str]) -> int:
+        return client.patch(
+            f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}",
+            headers=mutation_headers(csrf, **{"If-Match": group["etag"]}),
+            json={"member_screen_ids": next_members},
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(update, first_client, first_csrf, members[:2])
+        second = executor.submit(update, second_client, second_csrf, members[1:])
+        statuses = sorted((first.result(), second.result()))
+    assert statuses == [200, 412]
+    final_members = first_client.get(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}"
+    ).json()["member_screen_ids"]
+    assert final_members in (members[:2], members[1:])

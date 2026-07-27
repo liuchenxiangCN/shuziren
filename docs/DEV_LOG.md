@@ -9,6 +9,29 @@
 
 ## 2026-07-27
 
+### P1.2 Three-Screen Inventory Candidate
+
+#### Completed Facts To Date
+
+- Added checksum-backed migration `002_three_screen_inventory` while preserving the accepted `001_initial_identity_device_trust` source and checksum.
+- Added ownership-aware Site, ScreenGroup, ScreenInstance, DigitalHumanInstance, RuntimeBinding and server-side list-snapshot tables. Production startup still creates no preview inventory.
+- Explicit preview initialization and accepted-P1.1 copied-database upgrade produce the frozen default Site, group and three screens. Screen 1 keeps `screen-trust-fixture`; Screens 2 and 3 use UUIDv7 IDs.
+- Added scoped inventory read/create/update APIs with strong resource ETags, direct `screen.manage` mutations, opaque snapshot cursors, exact idempotent replay, duplicate rejection and cross-Site fail-closed behavior.
+- Added one active DigitalHumanInstance and one RuntimeBinding per screen. FVS remains `UNVERIFIED`; inventory runtime remains `INVENTORY_INCOMPLETE` before the first instance and `NOT_CONFIGURED_P1_3` afterward.
+- Added the `/manage` multi-screen view. Implementation engineers can maintain screen/group inventory; auditors receive a read-only view; screen-scoped readers cannot enumerate Site/group or sibling-screen data.
+- Added explicit P1.2 initializer, local API launcher, accepted-P1.1 copy-upgrade and isolated browser-gate scripts. The upgrade script refuses overwrite and never prints root-key material.
+- Kept publication, release/rollback/recovery, real FVS connectivity, Secret values, providers and production activation outside P1.2.
+
+#### Verification To Date
+
+- Scoped Ruff formatting/check and 13 backend integration cases pass. They cover P1.1 behavior plus empty/repeat/failed/tampered/reordered migration, accepted-P1.1 copy preservation, UUIDv7 inventory, pagination, role/resource scope, sibling non-disclosure, duplicate slugs/instances, idempotency mismatch, stale/concurrent ETags, cross-Site membership, foreign keys, immutable audit and no-delete-cascade behavior.
+- Pinned pnpm 9.15.4 TypeScript/Vite build passes; the Docker API/web images build and an isolated Compose runtime returns HTTP 200 for `/api/health` and `/manage`, reports migration `002_three_screen_inventory`, and shuts down cleanly.
+- A real 1280 by 720 browser workflow passed initial three-screen display, isolated Screen 2 update, Screen 4 creation, first DigitalHumanInstance binding and auditor read-only controls with no horizontal overflow or captured console warning/error.
+- An exact copy of the accepted P1.1 preview database upgraded to three screens while preserving all original device enrollment, credential-family and credential rows and the original 55-event audit prefix. Repeat initialization left the database file hash unchanged.
+- The accepted P1.1 runtime commit still passes all ten original integration tests; rollback exposes migration `001_initial_identity_device_trust`, omits P1.2 Site/Screen list routes and retains the accepted P1.1 device runtime route.
+- P1 target validation passes 2,722 checks and all 191 self-test cases. Candidate, bundle, SQLite, logs, screenshot and evidence Secret scans report zero operational-secret findings.
+- Independent review and the explicit user decision remain Pending. Automated success does not activate P1.3.
+
 ### P1.1 User Acceptance And P1.2 Activation
 
 #### Completed Facts

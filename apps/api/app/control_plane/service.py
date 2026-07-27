@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 from cryptography.exceptions import InvalidTag
 
@@ -20,6 +22,7 @@ from app.control_plane.security import (
     normalize_username,
     opaque_id,
     opaque_secret,
+    uuid7,
 )
 from app.control_plane.store import LOGICAL_SCHEMA_VERSION, ControlPlaneStore
 
@@ -126,6 +129,18 @@ IDEMPOTENCY_OPERATION_ROUTES = {
         "rotateDeviceCredential",
         "/api/v1/device/credentials:rotate",
     ),
+    "createScreenGroup": (
+        "createScreenGroup",
+        "/api/v1/control-plane/sites/{site_id}/screen-groups",
+    ),
+    "createScreenInstance": (
+        "createScreenInstance",
+        "/api/v1/control-plane/sites/{site_id}/screen-instances",
+    ),
+    "createDigitalHumanInstance": (
+        "createDigitalHumanInstance",
+        "/api/v1/control-plane/screen-instances/{screen_id}/digital-human-instances",
+    ),
 }
 
 ONE_TIME_AAD_REQUIRED_FIELDS = {
@@ -169,6 +184,7 @@ class Principal:
     deployment_id: str
     permissions: frozenset[str]
     roles: tuple[str, ...]
+    assignments: tuple[tuple[str, str, str], ...]
     authentication_epoch: int
     authorization_epoch: int
 
@@ -233,7 +249,7 @@ class ControlPlaneService:
             migration = connection.execute(
                 """
                 SELECT version, checksum_sha256, applied_at
-                FROM schema_migrations ORDER BY applied_at DESC LIMIT 1
+                FROM schema_migrations ORDER BY rowid DESC LIMIT 1
                 """
             ).fetchone()
         return {
@@ -244,7 +260,7 @@ class ControlPlaneService:
             "migration_version": migration["version"] if migration else None,
             "migration_checksum_sha256": migration["checksum_sha256"] if migration else None,
             "production_ready": False,
-            "production_readiness_reason": "P1.1 development preview is not production activation evidence",
+            "production_readiness_reason": "P1.2 development preview is not production activation evidence",
         }
 
     def initialize_preview(
@@ -284,6 +300,9 @@ class ControlPlaneService:
                 """,
                 (tenant_id, deployment_id, screen_id, now),
             )
+            inventory = self.store.backfill_preview_inventory(connection, now)
+            if inventory is None:
+                raise RuntimeError("P1.2 preview inventory initialization failed")
             created_users: list[dict[str, Any]] = []
             for identity in identities:
                 user_id = opaque_id("usr")
@@ -335,6 +354,7 @@ class ControlPlaneService:
             "tenant_id": tenant_id,
             "deployment_id": deployment_id,
             "fixture_screen_id": screen_id,
+            "inventory": inventory,
             "users": created_users,
         }
 
@@ -811,6 +831,586 @@ class ControlPlaneService:
             for role_id, permissions in ROLE_PERMISSIONS.items()
         ]
 
+    def list_sites(
+        self,
+        principal: Principal,
+        *,
+        limit: int,
+        cursor: str | None,
+    ) -> dict[str, Any]:
+        self.require_permission(principal, "screen.read")
+        return self._inventory_page(principal, "SITE", limit=limit, cursor=cursor)
+
+    def get_site(self, principal: Principal, site_id: str) -> dict[str, Any]:
+        self.require_permission(principal, "screen.read")
+        with self.store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM sites
+                WHERE tenant_id = ? AND deployment_id = ? AND site_id = ?
+                """,
+                (principal.tenant_id, principal.deployment_id, site_id),
+            ).fetchone()
+            if row is None or not self._can_access_site(principal, row["site_id"], "screen.read"):
+                raise ControlPlaneError(404, "NOT_FOUND", "Site was not found")
+            return self._site_response(connection, row)
+
+    def list_screen_groups(
+        self,
+        principal: Principal,
+        *,
+        limit: int,
+        cursor: str | None,
+    ) -> dict[str, Any]:
+        self.require_permission(principal, "screen.read")
+        return self._inventory_page(principal, "SCREEN_GROUP", limit=limit, cursor=cursor)
+
+    def get_screen_group(self, principal: Principal, screen_group_id: str) -> dict[str, Any]:
+        self.require_permission(principal, "screen.read")
+        with self.store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM screen_groups
+                WHERE tenant_id = ? AND deployment_id = ? AND screen_group_id = ?
+                """,
+                (principal.tenant_id, principal.deployment_id, screen_group_id),
+            ).fetchone()
+            if row is None or not self._can_access_site(principal, row["site_id"], "screen.read"):
+                raise ControlPlaneError(404, "NOT_FOUND", "Screen group was not found")
+            return self._screen_group_response(connection, row)
+
+    def create_screen_group(
+        self,
+        principal: Principal,
+        *,
+        site_id: str,
+        slug: str,
+        display_name: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        self.require_permission(principal, "screen.manage")
+        normalized_slug = self._validate_slug(slug)
+        normalized_name = self._validate_display_name(display_name)
+        request_digest = self._sensitive_request_digest(
+            "createScreenGroup",
+            {"site_id": site_id, "slug": normalized_slug, "display_name": normalized_name},
+        )
+        now = self.clock()
+        with self.store.transaction() as connection:
+            replay = self._idempotency_lookup(
+                connection,
+                phase="createScreenGroup",
+                principal_key=principal.user_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+            )
+            if replay is not None:
+                return json.loads(replay["result_json"])
+            site = self._site_row(connection, principal, site_id, "screen.manage")
+            screen_group_id = uuid7()
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO screen_groups(
+                        screen_group_id, tenant_id, deployment_id, site_id, slug,
+                        display_name, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        screen_group_id,
+                        principal.tenant_id,
+                        principal.deployment_id,
+                        site["site_id"],
+                        normalized_slug,
+                        normalized_name,
+                        now,
+                        now,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ControlPlaneError(
+                    409, "DUPLICATE_RESOURCE", "Screen group slug already exists"
+                ) from exc
+            row = connection.execute(
+                "SELECT * FROM screen_groups WHERE screen_group_id = ?",
+                (screen_group_id,),
+            ).fetchone()
+            result = self._screen_group_response(connection, row)
+            self._idempotency_store(
+                connection,
+                phase="createScreenGroup",
+                principal_key=principal.user_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+                result=result,
+                now=now,
+            )
+            self._append_audit(
+                connection,
+                event_type="SCREEN_GROUP_CREATED",
+                actor_type="USER",
+                actor_id=principal.user_id,
+                target_type="SCREEN_GROUP",
+                target_id=screen_group_id,
+                outcome="SUCCESS",
+                reason=None,
+                details={"site_id": site_id, "slug": normalized_slug},
+                now=now,
+            )
+            return result
+
+    def update_screen_group(
+        self,
+        principal: Principal,
+        screen_group_id: str,
+        *,
+        slug: str | None,
+        display_name: str | None,
+        member_screen_ids: list[str] | None,
+        if_match: str,
+    ) -> dict[str, Any]:
+        self.require_permission(principal, "screen.manage")
+        if slug is None and display_name is None and member_screen_ids is None:
+            raise ControlPlaneError(422, "VALIDATION_ERROR", "At least one field is required")
+        normalized_slug = self._validate_slug(slug) if slug is not None else None
+        normalized_name = self._validate_display_name(display_name) if display_name is not None else None
+        if member_screen_ids is not None and len(member_screen_ids) != len(set(member_screen_ids)):
+            raise ControlPlaneError(
+                422, "VALIDATION_ERROR", "Screen group membership cannot contain duplicates"
+            )
+        requested_members = sorted(member_screen_ids or []) if member_screen_ids is not None else None
+        now = self.clock()
+        with self.store.transaction() as connection:
+            group = connection.execute(
+                """
+                SELECT * FROM screen_groups
+                WHERE tenant_id = ? AND deployment_id = ? AND screen_group_id = ?
+                """,
+                (principal.tenant_id, principal.deployment_id, screen_group_id),
+            ).fetchone()
+            if group is None or not self._can_access_site(principal, group["site_id"], "screen.manage"):
+                raise ControlPlaneError(404, "NOT_FOUND", "Screen group was not found")
+            self._require_resource_etag(if_match, "screen-group", group["screen_group_id"], group["revision"])
+            current_members = {
+                row["screen_id"]
+                for row in connection.execute(
+                    """
+                    SELECT screen_id FROM screen_instances
+                    WHERE tenant_id = ? AND deployment_id = ? AND site_id = ?
+                        AND screen_group_id = ?
+                    """,
+                    (
+                        principal.tenant_id,
+                        principal.deployment_id,
+                        group["site_id"],
+                        screen_group_id,
+                    ),
+                ).fetchall()
+            }
+            next_members = current_members
+            if requested_members is not None:
+                next_members = set(requested_members)
+                member_rows: list[sqlite3.Row] = []
+                if next_members:
+                    placeholders = ",".join("?" for _ in next_members)
+                    member_rows = connection.execute(
+                        f"""
+                        SELECT screen_id, screen_group_id FROM screen_instances
+                        WHERE tenant_id = ? AND deployment_id = ? AND site_id = ?
+                            AND screen_id IN ({placeholders})
+                        """,
+                        (
+                            principal.tenant_id,
+                            principal.deployment_id,
+                            group["site_id"],
+                            *sorted(next_members),
+                        ),
+                    ).fetchall()
+                if len(member_rows) != len(next_members):
+                    raise ControlPlaneError(404, "NOT_FOUND", "A screen group member was not found")
+                if any(row["screen_group_id"] not in (None, screen_group_id) for row in member_rows):
+                    raise ControlPlaneError(
+                        409,
+                        "DUPLICATE_RESOURCE",
+                        "A screen already belongs to another active group",
+                    )
+            try:
+                connection.execute(
+                    """
+                    UPDATE screen_groups
+                    SET slug = ?, display_name = ?, updated_at = ?, revision = revision + 1
+                    WHERE screen_group_id = ? AND revision = ?
+                    """,
+                    (
+                        normalized_slug if normalized_slug is not None else group["slug"],
+                        normalized_name if normalized_name is not None else group["display_name"],
+                        now,
+                        screen_group_id,
+                        group["revision"],
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ControlPlaneError(
+                    409, "DUPLICATE_RESOURCE", "Screen group slug already exists"
+                ) from exc
+            if requested_members is not None:
+                for screen_id in sorted(current_members - next_members):
+                    connection.execute(
+                        """
+                        UPDATE screen_instances
+                        SET screen_group_id = NULL, updated_at = ?, revision = revision + 1
+                        WHERE screen_id = ? AND screen_group_id = ?
+                        """,
+                        (now, screen_id, screen_group_id),
+                    )
+                for screen_id in sorted(next_members - current_members):
+                    connection.execute(
+                        """
+                        UPDATE screen_instances
+                        SET screen_group_id = ?, updated_at = ?, revision = revision + 1
+                        WHERE screen_id = ? AND screen_group_id IS NULL
+                        """,
+                        (screen_group_id, now, screen_id),
+                    )
+            updated = connection.execute(
+                "SELECT * FROM screen_groups WHERE screen_group_id = ?",
+                (screen_group_id,),
+            ).fetchone()
+            self._append_audit(
+                connection,
+                event_type="SCREEN_GROUP_UPDATED",
+                actor_type="USER",
+                actor_id=principal.user_id,
+                target_type="SCREEN_GROUP",
+                target_id=screen_group_id,
+                outcome="SUCCESS",
+                reason=None,
+                details={
+                    "membership_changed_screen_ids": sorted(current_members ^ next_members),
+                    "member_count": len(next_members),
+                },
+                now=now,
+            )
+            return self._screen_group_response(connection, updated)
+
+    def list_screen_instances(
+        self,
+        principal: Principal,
+        *,
+        limit: int,
+        cursor: str | None,
+    ) -> dict[str, Any]:
+        self.require_permission(principal, "screen.read")
+        return self._inventory_page(principal, "SCREEN_INSTANCE", limit=limit, cursor=cursor)
+
+    def get_screen_instance(self, principal: Principal, screen_id: str) -> dict[str, Any]:
+        self.require_permission(principal, "screen.read")
+        with self.store.connect() as connection:
+            row = self._screen_row(connection, principal, screen_id, "screen.read")
+            return self._screen_response(connection, row)
+
+    def create_screen_instance(
+        self,
+        principal: Principal,
+        *,
+        site_id: str,
+        slug: str,
+        display_name: str,
+        fvs_binding_ref: str | None,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        self.require_permission(principal, "screen.manage")
+        normalized_slug = self._validate_slug(slug)
+        normalized_name = self._validate_display_name(display_name)
+        normalized_fvs_ref = self._validate_fvs_binding_ref(fvs_binding_ref)
+        command = {
+            "site_id": site_id,
+            "slug": normalized_slug,
+            "display_name": normalized_name,
+            "fvs_binding_ref": normalized_fvs_ref,
+        }
+        request_digest = self._sensitive_request_digest("createScreenInstance", command)
+        now = self.clock()
+        with self.store.transaction() as connection:
+            replay = self._idempotency_lookup(
+                connection,
+                phase="createScreenInstance",
+                principal_key=principal.user_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+            )
+            if replay is not None:
+                return json.loads(replay["result_json"])
+            site = self._site_row(connection, principal, site_id, "screen.manage")
+            screen_id = uuid7()
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO screen_instances(
+                        screen_id, tenant_id, deployment_id, site_id, screen_group_id,
+                        slug, display_name, fvs_binding_ref, lifecycle_state,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'ACTIVE', ?, ?)
+                    """,
+                    (
+                        screen_id,
+                        principal.tenant_id,
+                        principal.deployment_id,
+                        site["site_id"],
+                        normalized_slug,
+                        normalized_name,
+                        normalized_fvs_ref,
+                        now,
+                        now,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO runtime_bindings(
+                        screen_id, tenant_id, deployment_id, site_id,
+                        digital_human_instance_id, inventory_status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, NULL, 'INVENTORY_INCOMPLETE', ?, ?)
+                    """,
+                    (
+                        screen_id,
+                        principal.tenant_id,
+                        principal.deployment_id,
+                        site["site_id"],
+                        now,
+                        now,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ControlPlaneError(409, "DUPLICATE_RESOURCE", "Screen slug already exists") from exc
+            row = connection.execute(
+                "SELECT * FROM screen_instances WHERE screen_id = ?",
+                (screen_id,),
+            ).fetchone()
+            result = self._screen_response(connection, row)
+            self._idempotency_store(
+                connection,
+                phase="createScreenInstance",
+                principal_key=principal.user_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+                result=result,
+                now=now,
+            )
+            self._append_audit(
+                connection,
+                event_type="SCREEN_INSTANCE_CREATED",
+                actor_type="USER",
+                actor_id=principal.user_id,
+                target_type="SCREEN",
+                target_id=screen_id,
+                outcome="SUCCESS",
+                reason=None,
+                details={"site_id": site_id, "slug": normalized_slug},
+                now=now,
+            )
+            return result
+
+    def update_screen_instance(
+        self,
+        principal: Principal,
+        screen_id: str,
+        *,
+        slug: str | None,
+        display_name: str | None,
+        fvs_binding_ref_set: bool,
+        fvs_binding_ref: str | None,
+        if_match: str,
+    ) -> dict[str, Any]:
+        self.require_permission(principal, "screen.manage")
+        if slug is None and display_name is None and not fvs_binding_ref_set:
+            raise ControlPlaneError(422, "VALIDATION_ERROR", "At least one field is required")
+        normalized_slug = self._validate_slug(slug) if slug is not None else None
+        normalized_name = self._validate_display_name(display_name) if display_name is not None else None
+        normalized_fvs_ref = self._validate_fvs_binding_ref(fvs_binding_ref) if fvs_binding_ref_set else None
+        now = self.clock()
+        with self.store.transaction() as connection:
+            row = self._screen_row(connection, principal, screen_id, "screen.manage")
+            self._require_resource_etag(if_match, "screen", screen_id, row["revision"])
+            try:
+                connection.execute(
+                    """
+                    UPDATE screen_instances
+                    SET slug = ?, display_name = ?, fvs_binding_ref = ?,
+                        updated_at = ?, revision = revision + 1
+                    WHERE screen_id = ? AND revision = ?
+                    """,
+                    (
+                        normalized_slug if normalized_slug is not None else row["slug"],
+                        normalized_name if normalized_name is not None else row["display_name"],
+                        normalized_fvs_ref if fvs_binding_ref_set else row["fvs_binding_ref"],
+                        now,
+                        screen_id,
+                        row["revision"],
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ControlPlaneError(409, "DUPLICATE_RESOURCE", "Screen slug already exists") from exc
+            updated = connection.execute(
+                "SELECT * FROM screen_instances WHERE screen_id = ?",
+                (screen_id,),
+            ).fetchone()
+            self._append_audit(
+                connection,
+                event_type="SCREEN_INSTANCE_UPDATED",
+                actor_type="USER",
+                actor_id=principal.user_id,
+                target_type="SCREEN",
+                target_id=screen_id,
+                outcome="SUCCESS",
+                reason=None,
+                details={
+                    "changed_fields": sorted(
+                        field
+                        for field, changed in (
+                            ("slug", slug is not None),
+                            ("display_name", display_name is not None),
+                            ("fvs_binding_ref", fvs_binding_ref_set),
+                        )
+                        if changed
+                    )
+                },
+                now=now,
+            )
+            return self._screen_response(connection, updated)
+
+    def create_digital_human_instance(
+        self,
+        principal: Principal,
+        screen_id: str,
+        *,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        self.require_permission(principal, "screen.manage")
+        request_digest = self._sensitive_request_digest(
+            "createDigitalHumanInstance", {"screen_id": screen_id}
+        )
+        now = self.clock()
+        with self.store.transaction() as connection:
+            replay = self._idempotency_lookup(
+                connection,
+                phase="createDigitalHumanInstance",
+                principal_key=principal.user_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+            )
+            if replay is not None:
+                return json.loads(replay["result_json"])
+            screen = self._screen_row(connection, principal, screen_id, "screen.manage")
+            existing = connection.execute(
+                """
+                SELECT 1 FROM digital_human_instances
+                WHERE tenant_id = ? AND deployment_id = ? AND screen_id = ?
+                    AND status = 'ACTIVE'
+                """,
+                (principal.tenant_id, principal.deployment_id, screen_id),
+            ).fetchone()
+            if existing is not None:
+                raise ControlPlaneError(
+                    409,
+                    "DUPLICATE_RESOURCE",
+                    "An active digital-human instance already exists for this screen",
+                )
+            digital_human_instance_id = uuid7()
+            connection.execute(
+                """
+                INSERT INTO digital_human_instances(
+                    digital_human_instance_id, tenant_id, deployment_id, site_id,
+                    screen_id, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+                """,
+                (
+                    digital_human_instance_id,
+                    principal.tenant_id,
+                    principal.deployment_id,
+                    screen["site_id"],
+                    screen_id,
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE runtime_bindings
+                SET digital_human_instance_id = ?,
+                    inventory_status = 'NOT_CONFIGURED_P1_3',
+                    updated_at = ?, revision = revision + 1
+                WHERE screen_id = ? AND digital_human_instance_id IS NULL
+                """,
+                (digital_human_instance_id, now, screen_id),
+            )
+            row = connection.execute(
+                """
+                SELECT * FROM digital_human_instances
+                WHERE digital_human_instance_id = ?
+                """,
+                (digital_human_instance_id,),
+            ).fetchone()
+            result = self._digital_human_response(row)
+            self._idempotency_store(
+                connection,
+                phase="createDigitalHumanInstance",
+                principal_key=principal.user_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+                result=result,
+                now=now,
+            )
+            self._append_audit(
+                connection,
+                event_type="DIGITAL_HUMAN_INSTANCE_CREATED",
+                actor_type="USER",
+                actor_id=principal.user_id,
+                target_type="DIGITAL_HUMAN_INSTANCE",
+                target_id=digital_human_instance_id,
+                outcome="SUCCESS",
+                reason=None,
+                details={"screen_id": screen_id},
+                now=now,
+            )
+            return result
+
+    def get_digital_human_instance(
+        self,
+        principal: Principal,
+        digital_human_instance_id: str,
+    ) -> dict[str, Any]:
+        self.require_permission(principal, "screen.read")
+        with self.store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM digital_human_instances
+                WHERE tenant_id = ? AND deployment_id = ?
+                    AND digital_human_instance_id = ?
+                """,
+                (
+                    principal.tenant_id,
+                    principal.deployment_id,
+                    digital_human_instance_id,
+                ),
+            ).fetchone()
+            if row is None or not self._can_access_screen(
+                principal, row["site_id"], row["screen_id"], "screen.read"
+            ):
+                raise ControlPlaneError(404, "NOT_FOUND", "Digital-human instance was not found")
+            return self._digital_human_response(row)
+
+    def get_runtime_binding(self, principal: Principal, screen_id: str) -> dict[str, Any]:
+        self.require_permission(principal, "screen.read")
+        with self.store.connect() as connection:
+            screen = self._screen_row(connection, principal, screen_id, "screen.read")
+            row = connection.execute(
+                "SELECT * FROM runtime_bindings WHERE screen_id = ?",
+                (screen["screen_id"],),
+            ).fetchone()
+            if row is None:
+                raise ControlPlaneError(404, "NOT_FOUND", "Runtime binding was not found")
+            return self._runtime_binding_response(row)
+
     def request_or_execute_user_creation(
         self,
         context: SessionContext,
@@ -876,6 +1476,8 @@ class ControlPlaneService:
         idempotency_key: str,
         high_risk_action_id: str | None,
     ) -> dict[str, Any]:
+        with self.store.connect() as connection:
+            self._screen_row(connection, context.principal, screen_id, "device.revoke")
         return self._request_or_execute_protected(
             context,
             operation_id="revokeDeviceCredential",
@@ -1089,10 +1691,20 @@ class ControlPlaneService:
         self.require_permission(principal, "screen.read")
         with self.store.connect() as connection:
             row = connection.execute(
-                "SELECT * FROM device_enrollments WHERE enrollment_id = ?",
-                (enrollment_id,),
+                """
+                SELECT e.*, s.site_id FROM device_enrollments e
+                JOIN screen_instances s
+                  ON s.tenant_id = e.tenant_id
+                 AND s.deployment_id = e.deployment_id
+                 AND s.screen_id = e.screen_id
+                WHERE e.enrollment_id = ?
+                  AND e.tenant_id = ? AND e.deployment_id = ?
+                """,
+                (enrollment_id, principal.tenant_id, principal.deployment_id),
             ).fetchone()
-        if row is None:
+        if row is None or not self._can_access_screen(
+            principal, row["site_id"], row["screen_id"], "screen.read"
+        ):
             raise ControlPlaneError(404, "NOT_FOUND", "Enrollment was not found")
         return self._enrollment_response(row)
 
@@ -1538,13 +2150,38 @@ class ControlPlaneService:
             return result
 
     def device_trust_status(self, context: DeviceContext) -> dict[str, Any]:
-        return {
-            "screen_id": context.screen_id,
-            "credential_id": context.credential_id,
-            "credential_version": context.credential_version,
-            "trust_state": "ACTIVE",
-            "runtime_binding_status": "NOT_IMPLEMENTED_P1_2",
-        }
+        with self.store.connect() as connection:
+            screen = connection.execute(
+                """
+                SELECT * FROM screen_instances
+                WHERE tenant_id = ? AND deployment_id = ? AND screen_id = ?
+                """,
+                (context.tenant_id, context.deployment_id, context.screen_id),
+            ).fetchone()
+            binding = connection.execute(
+                """
+                SELECT * FROM runtime_bindings
+                WHERE tenant_id = ? AND deployment_id = ? AND screen_id = ?
+                """,
+                (context.tenant_id, context.deployment_id, context.screen_id),
+            ).fetchone()
+            if screen is None or binding is None:
+                raise ControlPlaneError(404, "NOT_FOUND", "Device runtime inventory was not found")
+            return {
+                "api_version": "v1",
+                "screen_id": context.screen_id,
+                "site_id": screen["site_id"],
+                "screen_slug": screen["slug"],
+                "screen_display_name": screen["display_name"],
+                "credential_id": context.credential_id,
+                "credential_version": context.credential_version,
+                "trust_state": "ACTIVE",
+                "fvs_binding_ref": screen["fvs_binding_ref"],
+                "fvs_status": "UNVERIFIED",
+                "digital_human_instance_id": binding["digital_human_instance_id"],
+                "runtime_binding": self._runtime_binding_response(binding),
+                "runtime_binding_status": "NOT_CONFIGURED_P1_3",
+            }
 
     def credential_metadata(
         self,
@@ -1559,14 +2196,26 @@ class ControlPlaneService:
                 SELECT c.credential_id, c.credential_version, c.state, c.issued_at,
                     c.activation_expires_at, c.activated_at, c.revoked_at,
                     f.family_id, f.screen_id, f.state AS family_state,
-                    f.credential_epoch, f.revision AS family_revision
+                    f.credential_epoch, f.revision AS family_revision, s.site_id
                 FROM device_credentials c
                 JOIN device_credential_families f ON f.family_id = c.family_id
+                JOIN screen_instances s
+                  ON s.tenant_id = f.tenant_id
+                 AND s.deployment_id = f.deployment_id
+                 AND s.screen_id = f.screen_id
                 WHERE c.credential_id = ? AND f.screen_id = ?
+                  AND f.tenant_id = ? AND f.deployment_id = ?
                 """,
-                (credential_id, screen_id),
+                (
+                    credential_id,
+                    screen_id,
+                    principal.tenant_id,
+                    principal.deployment_id,
+                ),
             ).fetchone()
-        if row is None:
+        if row is None or not self._can_access_screen(
+            principal, row["site_id"], row["screen_id"], "device.revoke"
+        ):
             raise ControlPlaneError(404, "NOT_FOUND", "Device credential was not found")
         return {
             "credential_id": row["credential_id"],
@@ -1613,6 +2262,467 @@ class ControlPlaneService:
             }
             for row in rows
         ]
+
+    def _inventory_page(
+        self,
+        principal: Principal,
+        resource_kind: str,
+        *,
+        limit: int,
+        cursor: str | None,
+    ) -> dict[str, Any]:
+        now = self.clock()
+        with self.store.transaction() as connection:
+            connection.execute("DELETE FROM list_snapshots WHERE expires_at <= ?", (now,))
+            if cursor is None:
+                if resource_kind == "SITE":
+                    rows = connection.execute(
+                        """
+                        SELECT * FROM sites
+                        WHERE tenant_id = ? AND deployment_id = ?
+                        ORDER BY slug, site_id
+                        """,
+                        (principal.tenant_id, principal.deployment_id),
+                    ).fetchall()
+                    ordered_ids = [
+                        row["site_id"]
+                        for row in rows
+                        if self._can_access_site(principal, row["site_id"], "screen.read")
+                    ]
+                elif resource_kind == "SCREEN_GROUP":
+                    rows = connection.execute(
+                        """
+                        SELECT * FROM screen_groups
+                        WHERE tenant_id = ? AND deployment_id = ?
+                        ORDER BY site_id, slug, screen_group_id
+                        """,
+                        (principal.tenant_id, principal.deployment_id),
+                    ).fetchall()
+                    ordered_ids = [
+                        row["screen_group_id"]
+                        for row in rows
+                        if self._can_access_site(principal, row["site_id"], "screen.read")
+                    ]
+                else:
+                    rows = connection.execute(
+                        """
+                        SELECT * FROM screen_instances
+                        WHERE tenant_id = ? AND deployment_id = ?
+                        ORDER BY site_id, slug, screen_id
+                        """,
+                        (principal.tenant_id, principal.deployment_id),
+                    ).fetchall()
+                    ordered_ids = [
+                        row["screen_id"]
+                        for row in rows
+                        if self._can_access_screen(
+                            principal,
+                            row["site_id"],
+                            row["screen_id"],
+                            "screen.read",
+                        )
+                    ]
+                page_offset = 0
+            else:
+                snapshot = connection.execute(
+                    """
+                    SELECT * FROM list_snapshots
+                    WHERE cursor_id = ? AND tenant_id = ? AND deployment_id = ?
+                        AND principal_user_id = ? AND resource_kind = ? AND expires_at > ?
+                    """,
+                    (
+                        cursor,
+                        principal.tenant_id,
+                        principal.deployment_id,
+                        principal.user_id,
+                        resource_kind,
+                        now,
+                    ),
+                ).fetchone()
+                if snapshot is None:
+                    raise ControlPlaneError(400, "INVALID_CURSOR", "List cursor is invalid or expired")
+                try:
+                    ordered_ids = json.loads(snapshot["ordered_ids_json"])
+                except (TypeError, json.JSONDecodeError) as exc:
+                    raise ControlPlaneError(
+                        409, "CRYPTOGRAPHIC_INTEGRITY_FAILURE", "List snapshot is invalid"
+                    ) from exc
+                if not isinstance(ordered_ids, list) or not all(
+                    isinstance(item, str) for item in ordered_ids
+                ):
+                    raise ControlPlaneError(
+                        409, "CRYPTOGRAPHIC_INTEGRITY_FAILURE", "List snapshot is invalid"
+                    )
+                page_offset = snapshot["page_offset"]
+            page_ids = ordered_ids[page_offset : page_offset + limit]
+            items: list[dict[str, Any]] = []
+            for resource_id in page_ids:
+                if resource_kind == "SITE":
+                    row = connection.execute(
+                        "SELECT * FROM sites WHERE site_id = ?",
+                        (resource_id,),
+                    ).fetchone()
+                    if row is not None:
+                        items.append(self._site_response(connection, row))
+                elif resource_kind == "SCREEN_GROUP":
+                    row = connection.execute(
+                        "SELECT * FROM screen_groups WHERE screen_group_id = ?",
+                        (resource_id,),
+                    ).fetchone()
+                    if row is not None:
+                        items.append(self._screen_group_response(connection, row))
+                else:
+                    row = connection.execute(
+                        "SELECT * FROM screen_instances WHERE screen_id = ?",
+                        (resource_id,),
+                    ).fetchone()
+                    if row is not None:
+                        items.append(self._screen_response(connection, row))
+            next_cursor = None
+            snapshot_expires_at = None
+            next_offset = page_offset + len(page_ids)
+            if next_offset < len(ordered_ids):
+                next_cursor = opaque_secret()
+                snapshot_expires_at = now + 5 * 60
+                connection.execute(
+                    """
+                    INSERT INTO list_snapshots(
+                        cursor_id, tenant_id, deployment_id, principal_user_id,
+                        resource_kind, ordered_ids_json, page_offset, created_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        next_cursor,
+                        principal.tenant_id,
+                        principal.deployment_id,
+                        principal.user_id,
+                        resource_kind,
+                        canonical_json(ordered_ids),
+                        next_offset,
+                        now,
+                        snapshot_expires_at,
+                    ),
+                )
+            return {
+                "api_version": "v1",
+                "items": items,
+                "next_cursor": next_cursor,
+                "snapshot_expires_at": snapshot_expires_at,
+            }
+
+    def _site_row(
+        self,
+        connection: sqlite3.Connection,
+        principal: Principal,
+        site_id: str,
+        permission: str,
+    ) -> sqlite3.Row:
+        row = connection.execute(
+            """
+            SELECT * FROM sites
+            WHERE tenant_id = ? AND deployment_id = ? AND site_id = ?
+            """,
+            (principal.tenant_id, principal.deployment_id, site_id),
+        ).fetchone()
+        if row is None or not self._can_access_site(principal, site_id, permission):
+            raise ControlPlaneError(404, "NOT_FOUND", "Site was not found")
+        return row
+
+    def _screen_row(
+        self,
+        connection: sqlite3.Connection,
+        principal: Principal,
+        screen_id: str,
+        permission: str,
+    ) -> sqlite3.Row:
+        row = connection.execute(
+            """
+            SELECT * FROM screen_instances
+            WHERE tenant_id = ? AND deployment_id = ? AND screen_id = ?
+            """,
+            (principal.tenant_id, principal.deployment_id, screen_id),
+        ).fetchone()
+        if row is None or not self._can_access_screen(
+            principal, row["site_id"], row["screen_id"], permission
+        ):
+            raise ControlPlaneError(404, "NOT_FOUND", "Screen was not found")
+        return row
+
+    def _can_access_site(self, principal: Principal, site_id: str, permission: str) -> bool:
+        for role_id, scope_type, scope_id in principal.assignments:
+            if permission not in ROLE_PERMISSIONS.get(role_id, ()):
+                continue
+            if scope_type == "DEPLOYMENT" and scope_id == principal.deployment_id:
+                return True
+            if scope_type == "SITE" and scope_id == site_id:
+                return True
+        return False
+
+    def _can_access_screen(
+        self,
+        principal: Principal,
+        site_id: str,
+        screen_id: str,
+        permission: str,
+    ) -> bool:
+        for role_id, scope_type, scope_id in principal.assignments:
+            if permission not in ROLE_PERMISSIONS.get(role_id, ()):
+                continue
+            if scope_type == "DEPLOYMENT" and scope_id == principal.deployment_id:
+                return True
+            if scope_type == "SITE" and scope_id == site_id:
+                return True
+            if scope_type == "SCREEN" and scope_id == screen_id:
+                return True
+        return False
+
+    def _site_response(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
+        counts = connection.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM screen_groups
+                    WHERE tenant_id = ? AND deployment_id = ? AND site_id = ?) AS group_count,
+                (SELECT COUNT(*) FROM screen_instances
+                    WHERE tenant_id = ? AND deployment_id = ? AND site_id = ?) AS screen_count
+            """,
+            (
+                row["tenant_id"],
+                row["deployment_id"],
+                row["site_id"],
+                row["tenant_id"],
+                row["deployment_id"],
+                row["site_id"],
+            ),
+        ).fetchone()
+        return {
+            "api_version": "v1",
+            "site_id": row["site_id"],
+            "tenant_id": row["tenant_id"],
+            "deployment_id": row["deployment_id"],
+            "slug": row["slug"],
+            "display_name": row["display_name"],
+            "timezone": row["timezone"],
+            "status": row["status"],
+            "screen_group_count": counts["group_count"],
+            "screen_count": counts["screen_count"],
+            "resource_revision": row["revision"],
+            "etag": self._resource_etag("site", row["site_id"], row["revision"]),
+        }
+
+    def _screen_group_response(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
+        members = connection.execute(
+            """
+            SELECT screen_id FROM screen_instances
+            WHERE tenant_id = ? AND deployment_id = ? AND site_id = ?
+                AND screen_group_id = ?
+            ORDER BY screen_id
+            """,
+            (
+                row["tenant_id"],
+                row["deployment_id"],
+                row["site_id"],
+                row["screen_group_id"],
+            ),
+        ).fetchall()
+        return {
+            "api_version": "v1",
+            "screen_group_id": row["screen_group_id"],
+            "tenant_id": row["tenant_id"],
+            "deployment_id": row["deployment_id"],
+            "site_id": row["site_id"],
+            "slug": row["slug"],
+            "display_name": row["display_name"],
+            "member_screen_ids": [member["screen_id"] for member in members],
+            "resource_revision": row["revision"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "etag": self._resource_etag("screen-group", row["screen_group_id"], row["revision"]),
+        }
+
+    def _screen_response(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
+        digital_human = connection.execute(
+            """
+            SELECT * FROM digital_human_instances
+            WHERE tenant_id = ? AND deployment_id = ? AND screen_id = ?
+                AND status = 'ACTIVE'
+            """,
+            (row["tenant_id"], row["deployment_id"], row["screen_id"]),
+        ).fetchone()
+        runtime_binding = connection.execute(
+            "SELECT * FROM runtime_bindings WHERE screen_id = ?",
+            (row["screen_id"],),
+        ).fetchone()
+        return {
+            "api_version": "v1",
+            "screen_id": row["screen_id"],
+            "tenant_id": row["tenant_id"],
+            "deployment_id": row["deployment_id"],
+            "site_id": row["site_id"],
+            "screen_group_id": row["screen_group_id"],
+            "slug": row["slug"],
+            "display_name": row["display_name"],
+            "fvs_binding_ref": row["fvs_binding_ref"],
+            "lifecycle_state": row["lifecycle_state"],
+            "fvs_status": "UNVERIFIED",
+            "device_trust": self._device_trust_summary(connection, row),
+            "digital_human_instance": (
+                self._digital_human_response(digital_human) if digital_human else None
+            ),
+            "runtime_binding": (self._runtime_binding_response(runtime_binding) if runtime_binding else None),
+            "resource_revision": row["revision"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "etag": self._resource_etag("screen", row["screen_id"], row["revision"]),
+        }
+
+    def _device_trust_summary(
+        self,
+        connection: sqlite3.Connection,
+        screen: sqlite3.Row,
+    ) -> dict[str, Any]:
+        family = self._current_screen_family(
+            connection,
+            screen["tenant_id"],
+            screen["deployment_id"],
+            screen["screen_id"],
+        )
+        if family is None:
+            return {
+                "state": "UNENROLLED",
+                "family_id": None,
+                "credential_epoch": None,
+                "family_etag": None,
+            }
+        return {
+            "state": family["state"],
+            "family_id": family["family_id"],
+            "credential_epoch": family["credential_epoch"],
+            "family_etag": self._etag("device-family", family["revision"]),
+        }
+
+    def _digital_human_response(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "api_version": "v1",
+            "digital_human_instance_id": row["digital_human_instance_id"],
+            "tenant_id": row["tenant_id"],
+            "deployment_id": row["deployment_id"],
+            "site_id": row["site_id"],
+            "screen_id": row["screen_id"],
+            "status": row["status"],
+            "resource_revision": row["revision"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "etag": self._resource_etag(
+                "digital-human-instance",
+                row["digital_human_instance_id"],
+                row["revision"],
+            ),
+        }
+
+    def _runtime_binding_response(self, row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "api_version": "v1",
+            "screen_id": row["screen_id"],
+            "tenant_id": row["tenant_id"],
+            "deployment_id": row["deployment_id"],
+            "site_id": row["site_id"],
+            "digital_human_instance_id": row["digital_human_instance_id"],
+            "desired_release_target_id": row["desired_release_target_id"],
+            "applied_release_target_id": row["applied_release_target_id"],
+            "binding_generation": row["binding_generation"],
+            "last_acknowledged_marker": row["last_acknowledged_marker"],
+            "last_acknowledged_at": row["last_acknowledged_at"],
+            "inventory_status": row["inventory_status"],
+            "resource_revision": row["revision"],
+            "etag": self._resource_etag("runtime-binding", row["screen_id"], row["revision"]),
+        }
+
+    @staticmethod
+    def _validate_slug(value: str) -> str:
+        normalized = value.strip().casefold()
+        if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,62})", normalized):
+            raise ControlPlaneError(
+                422,
+                "VALIDATION_ERROR",
+                "Slug must contain 1 to 63 lowercase letters, numbers, or hyphens",
+            )
+        return normalized
+
+    @staticmethod
+    def _validate_display_name(value: str) -> str:
+        normalized = value.strip()
+        if not normalized or len(normalized) > 128 or not normalized.isprintable():
+            raise ControlPlaneError(
+                422,
+                "VALIDATION_ERROR",
+                "Display name must contain 1 to 128 printing characters",
+            )
+        return normalized
+
+    @staticmethod
+    def _validate_fvs_binding_ref(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if len(normalized) > 512 or not normalized.isprintable():
+            raise ControlPlaneError(
+                422,
+                "VALIDATION_ERROR",
+                "FVS inventory reference must contain at most 512 printing characters",
+            )
+        parsed = urlsplit(normalized)
+        sensitive_assignment = re.search(
+            r"(?i)(password|passwd|token|cookie|authorization|secret)\s*[:=]",
+            normalized,
+        )
+        if (
+            parsed.username is not None
+            or parsed.password is not None
+            or parsed.scheme.casefold() in {"mysql", "postgres", "postgresql", "oracle", "sqlserver"}
+            or normalized.casefold().startswith("jdbc:")
+            or sensitive_assignment is not None
+            or re.search(r"(?i)\b(bearer|basic)\s+[a-z0-9._~+/=-]+", normalized)
+        ):
+            raise ControlPlaneError(
+                422,
+                "SECRET_MATERIAL_FORBIDDEN",
+                "FVS inventory reference cannot contain credentials or Secret material",
+            )
+        return normalized
+
+    @staticmethod
+    def _resource_etag(kind: str, resource_id: str, revision: int) -> str:
+        return f'"{kind}:{resource_id}:{revision}"'
+
+    @staticmethod
+    def _require_resource_etag(
+        actual: str,
+        kind: str,
+        resource_id: str,
+        revision: int,
+    ) -> None:
+        expected = ControlPlaneService._resource_etag(kind, resource_id, revision)
+        if actual != expected:
+            raise ControlPlaneError(
+                412,
+                "RESOURCE_VERSION_CONFLICT",
+                "Resource version changed",
+                details={"expected_etag": expected},
+            )
 
     def record_denial(
         self,
@@ -1854,9 +2964,7 @@ class ControlPlaneService:
             row = connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
             return {"kind": "USER_CREATED", "user": self._user_response(connection, row)}
         if operation_id == "issueDeviceEnrollment":
-            metadata = self._metadata(connection)
-            if command["screen_id"] != metadata["fixture_screen_id"]:
-                raise ControlPlaneError(404, "NOT_FOUND", "Screen trust target was not found")
+            self._screen_row(connection, principal, command["screen_id"], "device.enroll")
             family = self._current_screen_family(
                 connection,
                 principal.tenant_id,
@@ -1921,13 +3029,25 @@ class ControlPlaneService:
         if operation_id == "revokeDeviceCredential":
             row = connection.execute(
                 """
-                SELECT c.credential_id, f.* FROM device_credentials c
+                SELECT c.credential_id, f.*, s.site_id FROM device_credentials c
                 JOIN device_credential_families f ON f.family_id = c.family_id
+                JOIN screen_instances s
+                  ON s.tenant_id = f.tenant_id
+                 AND s.deployment_id = f.deployment_id
+                 AND s.screen_id = f.screen_id
                 WHERE c.credential_id = ? AND f.screen_id = ?
+                  AND f.tenant_id = ? AND f.deployment_id = ?
                 """,
-                (command["credential_id"], command["screen_id"]),
+                (
+                    command["credential_id"],
+                    command["screen_id"],
+                    principal.tenant_id,
+                    principal.deployment_id,
+                ),
             ).fetchone()
-            if row is None:
+            if row is None or not self._can_access_screen(
+                principal, row["site_id"], row["screen_id"], "device.revoke"
+            ):
                 raise ControlPlaneError(404, "NOT_FOUND", "Device credential was not found")
             self._require_etag(command["family_etag"], "device-family", row["revision"])
             if row["credential_epoch"] != command["expected_credential_epoch"]:
@@ -2047,7 +3167,10 @@ class ControlPlaneService:
 
     def _principal(self, connection: sqlite3.Connection, user: sqlite3.Row) -> Principal:
         assignments = connection.execute(
-            "SELECT role_id FROM role_assignments WHERE user_id = ? ORDER BY role_id",
+            """
+            SELECT role_id, scope_type, scope_id FROM role_assignments
+            WHERE user_id = ? ORDER BY role_id, scope_type, scope_id
+            """,
             (user["user_id"],),
         ).fetchall()
         roles = tuple(row["role_id"] for row in assignments)
@@ -2060,6 +3183,7 @@ class ControlPlaneService:
             deployment_id=user["deployment_id"],
             permissions=permissions,
             roles=roles,
+            assignments=tuple((row["role_id"], row["scope_type"], row["scope_id"]) for row in assignments),
             authentication_epoch=user["authentication_epoch"],
             authorization_epoch=user["authorization_epoch"],
         )
@@ -2251,6 +3375,7 @@ class ControlPlaneService:
         high_risk_action_id: str | None,
     ) -> dict[str, Any]:
         with self.store.connect() as connection:
+            self._screen_row(connection, principal, screen_id, "device.enroll")
             action = None
             replayed_request = False
             if high_risk_action_id is not None:

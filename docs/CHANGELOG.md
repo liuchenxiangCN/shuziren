@@ -11,6 +11,9 @@
 
 ### Added
 
+- A P1.2 candidate with one default Site, screen group and three isolated ScreenInstances, each with non-secret FVS inventory, one active DigitalHumanInstance, device-trust summary and a same-screen RuntimeBinding.
+- Checksum-backed `002_three_screen_inventory` copied-database upgrade, opaque snapshot pagination, scope-aware inventory APIs, strong ETags, idempotent creates and the `/manage` multi-screen inventory workflow.
+- P1.2 local initialization, accepted-P1.1 copied-upgrade, API launcher and isolated browser-gate scripts.
 - P1.1 accepted local IAM, server-side browser sessions, fixed RBAC, typed different-user approval, append-only audit and screen-device trust APIs under separate `/api/v1/control-plane` and `/api/v1/device` namespaces.
 - A `/manage` development-preview console and an explicit local initializer that never auto-creates production identities or keys.
 - A PowerShell local API launcher and documented two-terminal preview path that do not require Docker.
@@ -32,7 +35,7 @@
 
 ### Changed
 
-- G0, P1.0 and P1.1 are explicitly accepted. P1.2 Three-Screen Inventory is active only for result-card and non-scope freezing.
+- G0, P1.0 and P1.1 are explicitly accepted. P1.2 Three-Screen Inventory is implemented as a local candidate with passing automated evidence, but remains unaccepted pending independent review and an explicit user decision.
 - P1.1 local implementation is accepted at candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets were remediated, and the third independent review passed with zero findings.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
 - P1.0 validation now binds target membership and inheritance through ResolutionFingerprint, creates immutable ReleaseTargets only with ConfigRelease and separates control-plane ETag checks from device acknowledgement CAS.
@@ -56,6 +59,9 @@
 
 ### Security
 
+- P1.2 inventory requests derive tenant/deployment/Site/screen lineage from the authenticated session and path; screen-scoped readers cannot enumerate sibling Site/group membership, and auditors cannot use any inventory mutation.
+- P1.2 rejects Secret-like FVS references, cross-Site members, stale ETags, changed-command idempotency replay, duplicate slugs and second active digital-human instances without partial effects.
+- P1.2 preserves the accepted P1.1 migration checksum, fixture screen ID, device/credential history and original immutable audit chain while appending only a sanitized migration event.
 - P1.1 accepted device credentials derive screen scope server-side; rotation atomically activates a successor and revokes its predecessor, while hard revocation invalidates the complete family.
 - P1.1 accepted browser mutations require exact Origin and bound CSRF; login and reauthentication rotate opaque host-only Secure / HttpOnly cookies, and validation errors do not echo submitted inputs.
 - P1.1 accepted protected user/device mutations use different-user approval evidence that cannot execute the effect; altered-command replay and self-approval fail closed.
@@ -68,7 +74,8 @@
 
 ### Not Implemented
 
+- P1.2 does not connect to FineReport/FVS, publish configuration, configure a renderer/avatar/provider, implement backup/restore or claim production readiness; FVS remains `UNVERIFIED` and runtime inventory remains `NOT_CONFIGURED_P1_3`.
 - P1.1 is an accepted development-preview result, not a production-readiness claim. Production custodian/person binding, external monotonic anchors, production activation, complete user onboarding and recovery are not implemented.
 - G0 changes documentation and development governance only.
 - P1.0 is target contract design only. Its RBAC, device trust, multi-screen storage, API, migration, backup and restore behaviors are not implemented.
-- Multi-screen runtime, the remaining target control-plane APIs beyond the P1.1 subset, database querying, FineReport plugin calling and real 2D / 3D rendering remain unimplemented product targets.
+- P1.3 publication/recovery, the remaining target control-plane APIs beyond the P1.2 subset, database querying, FineReport plugin calling and real 2D / 3D rendering remain unimplemented product targets.

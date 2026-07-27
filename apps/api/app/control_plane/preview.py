@@ -18,7 +18,7 @@ IDENTITIES = (
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Explicitly initialize the P1.1 development preview. Never use for production."
+        description="Explicitly initialize the P1.2 development preview. Never use for production."
     )
     parser.add_argument("--database", required=True)
     parser.add_argument("--env-file", required=True)
@@ -61,7 +61,7 @@ def main() -> int:
     env_path.write_text(
         "\n".join(
             (
-                "# Generated P1.1 development preview settings. Never commit this file.",
+                "# Generated P1.2 development preview settings. Never commit this file.",
                 "CONTROL_PLANE_PREVIEW_MODE=true",
                 f"CONTROL_PLANE_ROOT_KEY_B64={root_key_b64}",
                 'CONTROL_PLANE_ALLOWED_ORIGINS=["http://localhost:18000","http://127.0.0.1:18000"]',
@@ -74,12 +74,13 @@ def main() -> int:
         os.chmod(env_path, 0o600)
     except OSError:
         pass
-    print("P1.1 development preview initialized.")
+    print("P1.2 development preview initialized.")
     print(f"Database: {database_path}")
     print(f"Environment file: {env_path}")
-    print(f"Trust-only screen fixture: {result['fixture_screen_id']}")
+    print(f"Preserved Screen 1 ID: {result['fixture_screen_id']}")
+    print(f"Inventory screen count: {len(result['inventory']['screen_ids'])}")
     print("Passwords and root key were not written to stdout.")
-    print("Local API: scripts\\start-p1-1-local-api.ps1")
+    print("Local API: scripts\\start-p1-2-local-api.ps1")
     print("Local web: cd apps\\web; pnpm dev")
     print(f"Docker alternative: docker compose --env-file {env_path.name} up --build")
     return 0

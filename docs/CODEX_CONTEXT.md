@@ -17,7 +17,7 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 Current phase: `Productization P1.2 Three-Screen Inventory`. G0, P1.0 and P1.1 were explicitly accepted on 2026-07-27.
 
-P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implemented and proved the local identity, browser-session, RBAC, security-audit and screen-device trust slice. The P1.2 three-screen inventory result card and non-scope are frozen; implementation has not started. Release publication and backup / restore remain P1.3.
+P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implemented and proved the local identity, browser-session, RBAC, security-audit and screen-device trust slice. The P1.2 candidate now implements the frozen three-screen inventory slice and has passed its local automated, browser, migration, Docker and rollback gates. It remains unaccepted until independent review passes and the user records an explicit result decision. Release publication and backup / restore remain P1.3.
 
 ## Frozen Product Boundaries
 
@@ -33,11 +33,17 @@ P1.0 froze the accepted target domain model, data model, identity and permission
 
 ## Current As-Built Baseline
 
-The accepted runtime baseline contains the original single-instance POC plus the
+The accepted runtime baseline remains the original single-instance POC plus the
 separate P1.1 development-preview control plane. P1.1 adds local IAM, server-side
 browser sessions, RBAC, append-only security audit and screen-device trust
-without changing the existing POC route meanings. It does not add multi-screen
-inventory.
+without changing the existing POC route meanings.
+
+The unaccepted P1.2 candidate adds the checksum-backed
+`002_three_screen_inventory` migration, default Site/group/three-screen
+inventory, scoped inventory APIs and the `/manage` multi-screen view. FVS is
+still `UNVERIFIED`; runtime configuration is still `NOT_CONFIGURED_P1_3`.
+Nothing in the candidate claims publication, real FVS connectivity or
+production readiness.
 
 Implemented POC contracts remain authoritative for the original POC namespaces:
 
@@ -45,10 +51,11 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 - [07_DATA_CONTRACT.md](07_DATA_CONTRACT.md)
 
 Accepted P1.1 behavior is recorded separately in
-[acceptance/productization/P1.1](acceptance/productization/P1.1). Target
-multi-screen contracts exist under [product/contracts](product/contracts), but
-their P1.2 and later behavior remains unimplemented until its result batch
-passes.
+[acceptance/productization/P1.1](acceptance/productization/P1.1). The current
+P1.2 candidate and its pending acceptance state are recorded in
+[acceptance/productization/P1.2](acceptance/productization/P1.2). P1.3 and later
+target behavior under [product/contracts](product/contracts) remains
+unimplemented.
 
 ## Non-Negotiable Rules
 

@@ -57,6 +57,33 @@ class DeviceRevokeRequest(StrictModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+class ScreenGroupCreateRequest(StrictModel):
+    slug: str = Field(min_length=1, max_length=63)
+    display_name: str = Field(min_length=1, max_length=128)
+
+
+class ScreenGroupUpdateRequest(StrictModel):
+    slug: str | None = Field(default=None, min_length=1, max_length=63)
+    display_name: str | None = Field(default=None, min_length=1, max_length=128)
+    member_screen_ids: list[str] | None = Field(default=None, max_length=200)
+
+
+class ScreenInstanceCreateRequest(StrictModel):
+    slug: str = Field(min_length=1, max_length=63)
+    display_name: str = Field(min_length=1, max_length=128)
+    fvs_binding_ref: str | None = Field(default=None, max_length=512)
+
+
+class ScreenInstanceUpdateRequest(StrictModel):
+    slug: str | None = Field(default=None, min_length=1, max_length=63)
+    display_name: str | None = Field(default=None, min_length=1, max_length=128)
+    fvs_binding_ref: str | None = Field(default=None, max_length=512)
+
+
+class DigitalHumanInstanceCreateRequest(StrictModel):
+    pass
+
+
 IdempotencyKeyHeader = Annotated[
     str,
     Header(alias="Idempotency-Key", min_length=8, max_length=200),
@@ -85,6 +112,7 @@ def require_origin(request: Request) -> None:
 
 
 def session_from_request(request: Request) -> SessionContext:
+    reject_ownership_selectors(request)
     service = service_from_request(request)
     cookie_header = request.headers.get("cookie", "")
     matches = [
@@ -111,11 +139,25 @@ def mutating_session(request: Request) -> SessionContext:
 
 
 def device_from_request(request: Request) -> DeviceContext:
+    reject_ownership_selectors(request)
     authorization = request.headers.get("authorization", "")
     context = service_from_request(request).authenticate_device(authorization)
     request.state.control_plane_actor_type = "DEVICE"
     request.state.control_plane_actor_id = context.credential_id
     return context
+
+
+def reject_ownership_selectors(request: Request) -> None:
+    forbidden_headers = ("x-tenant-id", "x-deployment-id", "x-site-id", "x-screen-id")
+    forbidden_query = {"tenant_id", "deployment_id", "site_id", "screen_id"}
+    if any(request.headers.get(name) is not None for name in forbidden_headers) or any(
+        name in request.query_params for name in forbidden_query
+    ):
+        raise ControlPlaneError(
+            400,
+            "INVALID_REQUEST",
+            "Ownership is derived from the authenticated credential",
+        )
 
 
 @router.post(f"{CONTROL_PREFIX}/auth/sessions")
@@ -195,6 +237,232 @@ def list_users(request: Request) -> dict[str, Any]:
 def list_role_definitions(request: Request) -> dict[str, Any]:
     context = session_from_request(request)
     return {"items": service_from_request(request).role_definitions(context.principal)}
+
+
+@router.get(f"{CONTROL_PREFIX}/sites")
+def list_sites(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = Query(default=None, min_length=20, max_length=200),
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).list_sites(
+        context.principal,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+@router.get(f"{CONTROL_PREFIX}/sites/{{site_id}}")
+def get_site(site_id: str, request: Request, response: Response) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).get_site(context.principal, site_id)
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/screen-groups")
+def list_screen_groups(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = Query(default=None, min_length=20, max_length=200),
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).list_screen_groups(
+        context.principal,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+@router.get(f"{CONTROL_PREFIX}/screen-groups/{{screen_group_id}}")
+def get_screen_group(
+    screen_group_id: str,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).get_screen_group(
+        context.principal,
+        screen_group_id,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/sites/{{site_id}}/screen-groups", status_code=201)
+def create_screen_group(
+    site_id: str,
+    payload: ScreenGroupCreateRequest,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).create_screen_group(
+        context.principal,
+        site_id=site_id,
+        slug=payload.slug,
+        display_name=payload.display_name,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.patch(f"{CONTROL_PREFIX}/screen-groups/{{screen_group_id}}")
+def update_screen_group(
+    screen_group_id: str,
+    payload: ScreenGroupUpdateRequest,
+    request: Request,
+    response: Response,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    if if_match is None:
+        raise ControlPlaneError(428, "PRECONDITION_REQUIRED", "If-Match is required")
+    if (
+        ("slug" in payload.model_fields_set and payload.slug is None)
+        or ("display_name" in payload.model_fields_set and payload.display_name is None)
+        or ("member_screen_ids" in payload.model_fields_set and payload.member_screen_ids is None)
+    ):
+        raise ControlPlaneError(422, "VALIDATION_ERROR", "Explicit null is not allowed")
+    result = service_from_request(request).update_screen_group(
+        context.principal,
+        screen_group_id,
+        slug=payload.slug if "slug" in payload.model_fields_set else None,
+        display_name=(payload.display_name if "display_name" in payload.model_fields_set else None),
+        member_screen_ids=(
+            payload.member_screen_ids if "member_screen_ids" in payload.model_fields_set else None
+        ),
+        if_match=if_match,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/screen-instances")
+def list_screen_instances(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = Query(default=None, min_length=20, max_length=200),
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).list_screen_instances(
+        context.principal,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+@router.get(f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}")
+def get_screen_instance(
+    screen_id: str,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).get_screen_instance(context.principal, screen_id)
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/sites/{{site_id}}/screen-instances", status_code=201)
+def create_screen_instance(
+    site_id: str,
+    payload: ScreenInstanceCreateRequest,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).create_screen_instance(
+        context.principal,
+        site_id=site_id,
+        slug=payload.slug,
+        display_name=payload.display_name,
+        fvs_binding_ref=payload.fvs_binding_ref,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.patch(f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}")
+def update_screen_instance(
+    screen_id: str,
+    payload: ScreenInstanceUpdateRequest,
+    request: Request,
+    response: Response,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    if if_match is None:
+        raise ControlPlaneError(428, "PRECONDITION_REQUIRED", "If-Match is required")
+    if ("slug" in payload.model_fields_set and payload.slug is None) or (
+        "display_name" in payload.model_fields_set and payload.display_name is None
+    ):
+        raise ControlPlaneError(422, "VALIDATION_ERROR", "Explicit null is not allowed")
+    result = service_from_request(request).update_screen_instance(
+        context.principal,
+        screen_id,
+        slug=payload.slug if "slug" in payload.model_fields_set else None,
+        display_name=(payload.display_name if "display_name" in payload.model_fields_set else None),
+        fvs_binding_ref_set="fvs_binding_ref" in payload.model_fields_set,
+        fvs_binding_ref=payload.fvs_binding_ref,
+        if_match=if_match,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/digital-human-instances",
+    status_code=201,
+)
+def create_digital_human_instance(
+    screen_id: str,
+    payload: DigitalHumanInstanceCreateRequest,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    del payload
+    context = mutating_session(request)
+    result = service_from_request(request).create_digital_human_instance(
+        context.principal,
+        screen_id,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/digital-human-instances/{{digital_human_instance_id}}")
+def get_digital_human_instance(
+    digital_human_instance_id: str,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).get_digital_human_instance(
+        context.principal,
+        digital_human_instance_id,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/runtime-binding")
+def get_control_plane_runtime_binding(
+    screen_id: str,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).get_runtime_binding(context.principal, screen_id)
+    response.headers["ETag"] = result["etag"]
+    return result
 
 
 @router.post(f"{CONTROL_PREFIX}/users", status_code=202)

@@ -5,6 +5,8 @@ import hashlib
 import hmac
 import json
 import secrets
+import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 from unicodedata import normalize
@@ -153,3 +155,17 @@ def opaque_secret() -> str:
 
 def opaque_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(16)}"
+
+
+def uuid7() -> str:
+    """Return a lowercase canonical UUIDv7 without relying on Python 3.14."""
+    unix_milliseconds = int(time.time() * 1000)
+    random_bits = secrets.randbits(74)
+    value = (
+        ((unix_milliseconds & ((1 << 48) - 1)) << 80)
+        | (0x7 << 76)
+        | (((random_bits >> 62) & 0xFFF) << 64)
+        | (0b10 << 62)
+        | (random_bits & ((1 << 62) - 1))
+    )
+    return str(uuid.UUID(int=value))

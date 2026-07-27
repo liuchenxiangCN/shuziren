@@ -5,12 +5,18 @@ import {
   approveAction,
   claimEnrollment,
   ControlPlaneApiError,
+  createDigitalHumanInstance,
+  createScreenGroup,
+  createScreenInstance,
   createUser,
   getCredentialMetadata,
   issueEnrollment,
   listAuditEvents,
   listPendingActions,
   listRoleDefinitions,
+  listScreenGroups,
+  listScreenInstances,
+  listSites,
   listUsers,
   loadSession,
   randomIdempotencyKey,
@@ -24,12 +30,17 @@ import {
   type ControlPlaneSession,
   type ControlPlaneUser,
   type HighRiskAction,
+  type ScreenGroupInventory,
+  type ScreenInventory,
+  type SiteInventory,
+  updateScreenGroup,
+  updateScreenInstance,
 } from './controlPlaneApi';
 
-type View = 'users' | 'approvals' | 'devices' | 'audit';
+type View = 'inventory' | 'users' | 'approvals' | 'devices' | 'audit';
 
 const session = ref<ControlPlaneSession | null>(null);
-const activeView = ref<View>('users');
+const activeView = ref<View>('inventory');
 const busy = ref(false);
 const message = ref('');
 const error = ref('');
@@ -40,6 +51,16 @@ const users = ref<ControlPlaneUser[]>([]);
 const roles = ref<Array<{ role_id: string; permissions: string[] }>>([]);
 const actions = ref<HighRiskAction[]>([]);
 const auditEvents = ref<AuditEvent[]>([]);
+const sites = ref<SiteInventory[]>([]);
+const screenGroups = ref<ScreenGroupInventory[]>([]);
+const screens = ref<ScreenInventory[]>([]);
+const groupMemberDrafts = ref<Record<string, string[]>>({});
+
+const newGroupSlug = ref('');
+const newGroupDisplayName = ref('');
+const newScreenSlug = ref('');
+const newScreenDisplayName = ref('');
+const newScreenFvsRef = ref('');
 
 const newUsername = ref('');
 const newDisplayName = ref('');
@@ -67,6 +88,8 @@ const canApprove = computed(() => permissions.value.has('risk.approve'));
 const canAudit = computed(() => permissions.value.has('audit.read'));
 const canEnroll = computed(() => permissions.value.has('device.enroll'));
 const canRevoke = computed(() => permissions.value.has('device.revoke'));
+const canReadScreens = computed(() => permissions.value.has('screen.read'));
+const canManageScreens = computed(() => permissions.value.has('screen.manage'));
 
 onMounted(async () => {
   try {
@@ -111,6 +134,10 @@ async function logout() {
     users.value = [];
     actions.value = [];
     auditEvents.value = [];
+    sites.value = [];
+    screenGroups.value = [];
+    screens.value = [];
+    groupMemberDrafts.value = {};
     clearSensitiveState();
     message.value = '已退出并撤销当前会话。';
   });
@@ -142,7 +169,19 @@ async function switchView(view: View) {
 
 async function loadActiveView() {
   if (!session.value) return;
-  if (activeView.value === 'users' && canManageUsers.value) {
+  if (activeView.value === 'inventory' && canReadScreens.value) {
+    const [siteResult, groupResult, screenResult] = await Promise.all([
+      listSites(),
+      listScreenGroups(),
+      listScreenInstances(),
+    ]);
+    sites.value = siteResult.items;
+    screenGroups.value = groupResult.items;
+    screens.value = screenResult.items;
+    groupMemberDrafts.value = Object.fromEntries(
+      groupResult.items.map((group) => [group.screen_group_id, [...group.member_screen_ids]]),
+    );
+  } else if (activeView.value === 'users' && canManageUsers.value) {
     const [userResult, roleResult] = await Promise.all([listUsers(), listRoleDefinitions()]);
     users.value = userResult.items;
     roles.value = roleResult.items;
@@ -151,6 +190,69 @@ async function loadActiveView() {
   } else if (activeView.value === 'audit' && canAudit.value) {
     auditEvents.value = (await listAuditEvents()).items;
   }
+}
+
+async function submitGroup() {
+  const site = sites.value[0];
+  if (!site) return;
+  await run(async () => {
+    await createScreenGroup(site.site_id, {
+      slug: newGroupSlug.value,
+      display_name: newGroupDisplayName.value,
+    });
+    newGroupSlug.value = '';
+    newGroupDisplayName.value = '';
+    message.value = '大屏组已创建；组本身不是授权边界。';
+    await loadActiveView();
+  });
+}
+
+async function saveGroup(group: ScreenGroupInventory) {
+  await run(async () => {
+    await updateScreenGroup(group, {
+      display_name: group.display_name,
+      member_screen_ids: [...(groupMemberDrafts.value[group.screen_group_id] || [])].sort(),
+    });
+    message.value = '大屏组与完整成员集合已按 ETag 原子更新。';
+    await loadActiveView();
+  });
+}
+
+async function submitScreen() {
+  const site = sites.value[0];
+  if (!site) return;
+  await run(async () => {
+    await createScreenInstance(site.site_id, {
+      slug: newScreenSlug.value,
+      display_name: newScreenDisplayName.value,
+      fvs_binding_ref: newScreenFvsRef.value || null,
+    });
+    newScreenSlug.value = '';
+    newScreenDisplayName.value = '';
+    newScreenFvsRef.value = '';
+    message.value = '新大屏已创建；运行绑定保持 INVENTORY_INCOMPLETE，需创建数字人实例。';
+    await loadActiveView();
+  });
+}
+
+async function saveScreen(screen: ScreenInventory) {
+  await run(async () => {
+    await updateScreenInstance(screen, {
+      slug: screen.slug,
+      display_name: screen.display_name,
+      fvs_binding_ref: screen.fvs_binding_ref || null,
+    });
+    message.value = `${screen.display_name} 已按 ETag 更新；其他大屏未改变。`;
+    await loadActiveView();
+  });
+}
+
+async function addDigitalHuman(screen: ScreenInventory) {
+  await run(async () => {
+    await createDigitalHumanInstance(screen.screen_id);
+    message.value = `${screen.display_name} 已创建唯一活动数字人实例。`;
+    await loadActiveView();
+  });
 }
 
 async function submitUser() {
@@ -281,9 +383,9 @@ function formatTime(value?: number | null) {
     <section class="cp-frame">
       <header class="cp-header">
         <div>
-          <p class="cp-eyebrow">P1.1 · Identity & Device Trust</p>
-          <h1>身份与设备信任控制台</h1>
-          <p>开发预览，不构成生产激活、三屏资产或发布恢复证据。</p>
+          <p class="cp-eyebrow">P1.2 · Three-Screen Inventory</p>
+          <h1>多屏资产与设备信任控制台</h1>
+          <p>开发预览；FVS 始终为 UNVERIFIED，运行配置始终为 NOT_CONFIGURED_P1_3。</p>
         </div>
         <div v-if="session" class="cp-session">
           <strong>{{ session.user.display_name }}</strong>
@@ -324,6 +426,9 @@ function formatTime(value?: number | null) {
 
       <template v-else>
         <nav class="cp-nav" aria-label="控制面功能">
+          <button :class="{ active: activeView === 'inventory' }" @click="switchView('inventory')">
+            多屏清单
+          </button>
           <button :class="{ active: activeView === 'users' }" @click="switchView('users')">
             用户与角色
           </button>
@@ -338,7 +443,132 @@ function formatTime(value?: number | null) {
           </button>
         </nav>
 
-        <section v-if="activeView === 'users'" class="cp-grid">
+        <section v-if="activeView === 'inventory'" class="cp-grid">
+          <article v-if="!canReadScreens" class="cp-card wide">
+            <div class="cp-denied">当前角色没有 `screen.read`，API 已拒绝读取多屏清单。</div>
+          </article>
+
+          <article v-for="site in sites" :key="site.site_id" class="cp-card wide cp-site-card">
+            <div>
+              <p class="cp-eyebrow">Read-only Site</p>
+              <h2>{{ site.display_name }}</h2>
+              <p>{{ site.slug }} · {{ site.timezone }} · {{ site.status }}</p>
+            </div>
+            <div class="cp-stat-strip">
+              <span><strong>{{ site.screen_count }}</strong>大屏</span>
+              <span><strong>{{ site.screen_group_count }}</strong>大屏组</span>
+              <span><strong>1</strong>物理站点</span>
+            </div>
+          </article>
+
+          <article class="cp-card wide">
+            <div class="cp-card-title">
+              <div>
+                <p class="cp-eyebrow">ScreenInstance isolation</p>
+                <h2>三屏及扩展清单</h2>
+              </div>
+              <button @click="run(loadActiveView)">刷新</button>
+            </div>
+            <div class="cp-screen-grid">
+              <article v-for="screen in screens" :key="screen.screen_id" class="cp-screen">
+                <div class="cp-card-title">
+                  <div>
+                    <span class="cp-pill">{{ screen.slug }}</span>
+                    <h3>{{ screen.display_name }}</h3>
+                  </div>
+                  <span class="cp-health">{{ screen.lifecycle_state }}</span>
+                </div>
+                <dl>
+                  <div><dt>Screen ID</dt><dd>{{ screen.screen_id }}</dd></div>
+                  <div><dt>设备信任</dt><dd>{{ screen.device_trust.state }}</dd></div>
+                  <div><dt>FVS</dt><dd>{{ screen.fvs_status }}</dd></div>
+                  <div>
+                    <dt>运行配置</dt>
+                    <dd>{{ screen.runtime_binding.inventory_status }}</dd>
+                  </div>
+                  <div>
+                    <dt>数字人实例</dt>
+                    <dd>
+                      {{
+                        screen.digital_human_instance?.digital_human_instance_id ||
+                        '尚未创建'
+                      }}
+                    </dd>
+                  </div>
+                </dl>
+                <template v-if="canManageScreens">
+                  <label>Slug<input v-model="screen.slug" /></label>
+                  <label>显示名<input v-model="screen.display_name" /></label>
+                  <label>
+                    非敏感 FVS 引用
+                    <input
+                      v-model="screen.fvs_binding_ref"
+                      placeholder="仅标签或不含凭据的 URL"
+                    />
+                  </label>
+                  <div class="cp-actions">
+                    <button @click="saveScreen(screen)">保存屏幕</button>
+                    <button
+                      v-if="!screen.digital_human_instance"
+                      class="secondary"
+                      @click="addDigitalHuman(screen)"
+                    >
+                      创建数字人实例
+                    </button>
+                  </div>
+                </template>
+              </article>
+            </div>
+          </article>
+
+          <article v-for="group in screenGroups" :key="group.screen_group_id" class="cp-card">
+            <p class="cp-eyebrow">Convenience metadata · not authorization</p>
+            <h2>{{ group.display_name }}</h2>
+            <p>{{ group.slug }} · {{ group.member_screen_ids.length }} 块大屏</p>
+            <template v-if="canManageScreens">
+              <label>显示名<input v-model="group.display_name" /></label>
+              <fieldset>
+                <legend>完整成员集合</legend>
+                <label v-for="screen in screens" :key="screen.screen_id" class="cp-check">
+                  <input
+                    v-model="groupMemberDrafts[group.screen_group_id]"
+                    type="checkbox"
+                    :value="screen.screen_id"
+                  />
+                  <span>{{ screen.display_name }} <small>{{ screen.slug }}</small></span>
+                </label>
+              </fieldset>
+              <button @click="saveGroup(group)">按 ETag 更新组</button>
+            </template>
+            <div v-else class="cp-readonly-note">只读角色可以核对成员，但不能改变组。</div>
+          </article>
+
+          <article v-if="canManageScreens" class="cp-card">
+            <p class="cp-eyebrow">screen.manage</p>
+            <h2>新建大屏</h2>
+            <label>Slug<input v-model="newScreenSlug" placeholder="screen-4" /></label>
+            <label>显示名<input v-model="newScreenDisplayName" placeholder="大屏 4" /></label>
+            <label>
+              非敏感 FVS 引用
+              <input v-model="newScreenFvsRef" placeholder="fvs-inventory-screen-4" />
+            </label>
+            <button :disabled="!newScreenSlug || !newScreenDisplayName" @click="submitScreen">
+              创建独立屏幕
+            </button>
+          </article>
+
+          <article v-if="canManageScreens" class="cp-card">
+            <p class="cp-eyebrow">screen.manage</p>
+            <h2>新建大屏组</h2>
+            <label>Slug<input v-model="newGroupSlug" placeholder="group-secondary" /></label>
+            <label>显示名<input v-model="newGroupDisplayName" placeholder="辅助大屏组" /></label>
+            <button :disabled="!newGroupSlug || !newGroupDisplayName" @click="submitGroup">
+              创建空组
+            </button>
+          </article>
+        </section>
+
+        <section v-else-if="activeView === 'users'" class="cp-grid">
           <article class="cp-card wide">
             <div class="cp-card-title">
               <div>
@@ -517,6 +747,24 @@ textarea { min-height: 72px; resize: vertical; }
 .cp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .cp-card { display: grid; align-content: start; gap: 15px; padding: 22px; border: 1px solid #d2dcd6; border-radius: 15px; background: #fff; box-shadow: 0 10px 30px rgba(28, 56, 47, .05); }
 .cp-card.wide { grid-column: 1 / -1; }
+.cp-site-card { display: flex; align-items: center; justify-content: space-between; }
+.cp-stat-strip { display: flex; gap: 10px; }
+.cp-stat-strip span { min-width: 94px; padding: 12px; border-radius: 12px; background: #edf5f0; color: #456057; text-align: center; }
+.cp-stat-strip strong { display: block; color: #173d31; font-size: 24px; }
+.cp-screen-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cp-screen { display: grid; align-content: start; gap: 13px; min-width: 0; padding: 17px; border: 1px solid #dbe4df; border-radius: 13px; background: #fbfcfb; }
+.cp-screen h3 { margin: 9px 0 0; }
+.cp-health { color: #176247; font-size: 12px; font-weight: 800; }
+dl { display: grid; gap: 8px; margin: 0; }
+dl div { min-width: 0; }
+dt { color: #72827b; font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+dd { margin: 3px 0 0; color: #28483e; font-size: 12px; overflow-wrap: anywhere; }
+fieldset { display: grid; gap: 9px; margin: 0; padding: 14px; border: 1px solid #dbe4df; border-radius: 10px; }
+legend { padding: 0 6px; color: #53675f; font-size: 12px; font-weight: 800; }
+.cp-check { display: flex; grid-template-columns: none; align-items: flex-start; gap: 9px; font-weight: 650; }
+.cp-check input { width: auto; margin-top: 3px; }
+.cp-check small { display: block; color: #72827b; font-weight: 500; }
+.cp-readonly-note { padding: 12px; border-radius: 9px; background: #f3f6f4; color: #60716a; }
 .cp-card-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .cp-denied { padding: 15px; border-radius: 9px; font-weight: 700; }
 .cp-table-wrap { overflow: auto; }
@@ -537,8 +785,11 @@ pre { overflow: auto; margin: 0; padding: 15px; border-radius: 10px; background:
 @media (max-width: 760px) {
   .cp-shell { padding: 14px; }
   .cp-header, .cp-row { flex-direction: column; }
+  .cp-site-card { align-items: stretch; }
+  .cp-stat-strip { overflow-x: auto; }
   .cp-session { border-left: 0; padding-left: 0; }
   .cp-grid { grid-template-columns: 1fr; }
+  .cp-screen-grid { grid-template-columns: 1fr; }
   .cp-nav { overflow-x: auto; }
 }
 </style>
