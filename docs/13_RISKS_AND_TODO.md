@@ -15,7 +15,7 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 | --- | --- | --- | --- |
 | R-041 | Multi-screen configuration, session, identity or permission leakage | P1 uses separate ScreenInstance / DigitalHumanInstance / DeviceEnrollment contexts and proves three-screen isolation | Open |
 | R-043 | FineReport plugin external API, authentication, session, permission inheritance and upgrade stability are unknown | Keep the provider `Unverified` and unpublished until official documentation and isolated real-environment probes pass | Blocked |
-| R-044 | Reusing the POC admin token or local-only boundary would make production roles insecure | P1 implements built-in users, secure sessions, lockout / reset, RBAC, separate device credentials and immutable audit | Open |
+| R-044 | Reusing the POC admin token or local-only boundary would make production roles insecure | The P1 target requires built-in users, secure sessions, lockout / reset, RBAC, separate device credentials and immutable audit; later P1 batches must implement and prove them | Open |
 | R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | P1 freezes storage / recovery; P2 introduces instance-bound providers, pools, timeouts, cancellation and backpressure | Open |
 | R-046 | Plugin failure could fall back to a database or Excel source with broader permission | Permit fallback only for technical unavailability and equivalent ScreenInstance-bound permission scope; never for permission denial | Open |
 | R-047 | “FineReport / FVS 11.0+ target” may be interpreted as automatic compatibility | Publish only exact certified FineReport + FVS + plugin + browser + product combinations | Open |
@@ -36,8 +36,12 @@ The P1.0 candidate proposes:
 - an embedded-store target of `RPO <= 1 hour` and reference single-site `RTO <= 2 hours`, remaining unverified until P1.3;
 - a 15-to-128-code-point local password policy, Argon2id floor, progressive lockout, 30-minute idle / 8-hour absolute sessions and single-use 15-minute reset tokens;
 - three separate credential planes for users, screen devices and FineReport data identities;
-- ResolutionFingerprint-bound release creation, default-deny changed-field authorization and typed different-user approval for production high-risk effects;
-- an authenticated RecoverySecurityLedger with a monotonic anchor outside the live store, backups and ledger so restore cannot revive disabled users, older password generations or predecessor/revoked device credentials.
+- mutually exclusive `NORMAL` / `ROLLBACK` release provenance, ResolutionFingerprint/epoch-bound normal release creation, default-deny exact-path authorization and typed different-user approval whose evidence step cannot execute the effect;
+- DeviceCredentialFamily ETag/epoch/ledger concurrency for whole-family revocation and 86 closed control-plane/device operations, including explicit draft revise/abandon paths;
+- an externally anchored OperationalFence that keeps every production restore in `RECOVERY_REQUIRED` until a separate typed local readiness recovery succeeds, plus distinct emergency authority-reduction and cryptographic-root recovery paths;
+- 18 non-reused key-purpose domains, different-user and different-attested-person production approval, exact two-admin/two-person production floors and three branch-bound RecoveryPasswordSetupGrant authorization kinds;
+- an authenticated RecoverySecurityLedger with a monotonic anchor outside the live store, backups and ledger so restore cannot revive disabled users, removed role/scope assignments, older password/device generations or revoked Secret/FineReport versions;
+- staged external-credential rotation plus an authenticated restore-continuity envelope so normal rotation preserves only exact already-applied targets for at most 24 hours and restore retains its own authorization/idempotency/audit evidence without reviving old approvals.
 
 These choices are target design only and remain open until the P1.0 user decision. Runtime, migration and recovery risks remain open until later P1 evidence.
 

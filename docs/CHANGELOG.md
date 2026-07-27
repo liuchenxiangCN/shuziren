@@ -30,7 +30,12 @@
 - G0 is explicitly accepted, and P1.0 is the sole active result batch.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
 - P1.0 validation now binds target membership and inheritance through ResolutionFingerprint, creates immutable ReleaseTargets only with ConfigRelease and separates control-plane ETag checks from device acknowledgement CAS.
-- Recovery anti-rollback now uses an authenticated RecoverySecurityLedger and a separate monotonic anchor rather than a journal that could roll back with the backup.
+- P1.0 release provenance now separates `NORMAL` approved-draft creation from exact-map `ROLLBACK` creation, with no cross-screen or credential-version substitution.
+- Production high-risk approval now records evidence only; the original initiator's exact protected-command resubmission atomically consumes approval with the domain effect or durable async enqueue.
+- Production four-eyes now covers an exact 20-operation set and requires different active users backed by different active custodian-attested people; provisioning and reset cannot grant authority.
+- Device hard revocation now uses a readable DeviceCredentialFamily ETag plus credential epoch and ledger-head checks for atomic whole-family revocation.
+- Recovery anti-rollback now uses an authenticated RecoverySecurityLedger, separate monotonic anchor, authoritative role/scope and external-credential state, staged credential rotation and a restore-continuity envelope rather than a journal that could roll back with the backup.
+- Production restore now always leaves or enters `RECOVERY_REQUIRED`; only a separate typed local readiness recovery may append an authenticated `READY` fence successor. Emergency authority reduction and cryptographic-root recovery cannot reopen serving or increase authority.
 - Current context now contains only the product snapshot, current phase, as-built boundary and non-negotiable rules.
 - Next Actions contains exactly one active result batch and queues its successor only after explicit user acceptance.
 - P1-P5 now use vertical user-visible result batches, automated gates, independent review, evidence and rollback instead of traditional component phases.
@@ -45,7 +50,7 @@
 
 ### Security
 
-- P1.0 separates user, device and FineReport data credentials; freezes local password/session/lockout/reset targets; prohibits Secret reveal; requires default-deny changed-field authorization and typed different-user production approval; and fails recovery closed against account/password/device generation rollback.
+- P1.0 separates user, device and FineReport data credentials; freezes local password/session/lockout/reset targets; prohibits Secret reveal; requires default-deny changed-field authorization, 18 non-reused cryptographic purpose domains and typed different-user/different-person production approval; and fails recovery closed against account/password/device generation rollback.
 - FineReport official plugin archives are excluded from Git and remain outside product distribution.
 - Result acceptance treats cross-screen leakage, authorization bypass, Secret exposure, data corruption and unrecoverable changes as immediate failures.
 

@@ -133,7 +133,7 @@
 | Site | 一个展厅、办公区、工厂或业务地点 |
 | ScreenGroup | 共享默认配置或批量发布策略的一组大屏 |
 | ScreenInstance | 一块实际运行的大屏，包含设备状态与 FVS 绑定 |
-| DeviceEnrollment | 大屏首次注册、设备凭据和吊销状态 |
+| DeviceEnrollment / DeviceCredentialFamily | 大屏首次注册、设备凭据族、强 ETag、代际和整族吊销状态 |
 | DigitalHumanInstance | 部署在一块大屏上的数字人运行单元，也是配置、会话和监控的最小隔离单元 |
 | RuntimeBinding | 某块大屏当前绑定的数字人、能力、动作和发布版本 |
 
@@ -191,6 +191,7 @@ Draft
 - 支持按单屏、大屏组、站点进行灰度。
 - 发布前执行 schema、依赖、连接、权限、资源和控屏白名单校验。
 - 大屏离线时保留最近一个已验证版本；重新上线后按策略拉取新版本。
+- 创建 ConfigDraft 只提交目标 envelope 和 `schema_version`，服务端生成 empty spec；初始 spec 被拒绝，首次内容必须通过字段级授权的替换操作。
 
 ### 6.3 配置分层体验
 
@@ -242,7 +243,15 @@ flowchart LR
 
 V1 默认提供内置轻量数据库，优先满足单站点、多屏、低到中等并发的开箱部署；同时预留 ExternalControlPlaneStore / 迁移能力。P1.0 候选契约选择发布版本固定的 SQLite 3 作为内置引擎、PostgreSQL 16 作为唯一外置控制面存储；在 P1.0 用户验收和后续真实迁移证据前，这些仍是未实现、未认证的目标设计。
 
-P1.0 候选契约将默认备份冻结为与活动数据目录分离的加密文件系统包，每小时执行并保留 24 个小时、7 个日、4 个周恢复点；生产恢复还要求独立于活动库、备份和账本本身的单调安全锚点，用认证追加 RecoverySecurityLedger 防止旧备份复活已禁用用户、旧密码代际或旧设备凭据。内置标准生产配置的目标为 RPO 不超过 1 小时、参考单站点 RTO 不超过 2 小时。RPO / RTO 必须在 P1.3 实测后才可标记通过。采用外置控制面数据库时，数据库原生备份由客户 DBA 策略负责，产品仍提供可移植逻辑导出和恢复预检。详细候选见 [product/contracts/STORAGE_AND_RECOVERY.md](product/contracts/STORAGE_AND_RECOVERY.md)。
+P1.0 候选契约将默认备份冻结为与活动数据目录分离的加密文件系统包，每小时执行并保留 24 个小时、7 个日、4 个周恢复点；生产恢复还要求独立于活动库、备份和账本本身的单调安全锚点，用认证追加 RecoverySecurityLedger 防止旧备份复活 bootstrap/production mode、已禁用用户、已移除角色/资源范围、旧密码/设备代际、已撤销 Secret/FineReport 或旧 key registry。闭合的 operation→ledger 映射覆盖 bootstrap；production activation/readiness/emergency authority reduction/crypto-root recovery；human operator identity/user binding；用户/密码/角色；设备；Secret；FineReport；key rotation/revoke。每个 DeviceCredentialFamily 最多一个 `ACTIVE` DeviceCredential。账本 `user_identity_snapshot` 不含 credential material；身份冲突时 ONLINE 保留旧库，FULL_LOSS 保持 staged UNSERVED。Secret/FineReport `RETIRING` 前任必须保存 canonical sorted exact target set 与 hash，否则 deny-all。
+
+密钥管理固定十八个不可复用的 purpose domain；除请求、continuity、ledger、session/token/device、Secret、backup、offline recovery 等域外，CSRF verifier、human-operator attestation signature、disaster nonce、operational fence、production-readiness nonce、emergency-reduction nonce 都使用独立域。权威 key registry 位于外部 keystore/单调锚点；所有 keyed verifier 使用至少 256-bit key 的 HMAC-SHA-256 并保存 key ID，AES-256-GCM 记录保证每 key nonce 唯一并保存 nonce/tag/key ID/严格 AAD。不可变证据按 purpose 轮换而不重写；临时 KMS 故障返回 503 且状态不变，只有确认 revoke/loss 才不可逆失效。
+
+恢复同时冻结 recovery-source 与 authorization 两个受约束维度：NORMAL 四眼必为 ONLINE；FULL_LOSS 必为 LOCAL 灾难 quorum；LOCAL+ONLINE 仅用于无可认证管理员。ONLINE 才捕获 live audit head、启用 barrier、携带完整 SecurityAuditSuffix 并保留旧 pointer；FULL_LOSS 的 previous pointer 为 null，suffix 严格为空且 backup head 等于 barrier head，恢复期采用从 backup-manifest audit head 起链、每条维持相同 2-of-3 Ed25519 quorum 的 ExternalRecoveryAudit，首条 staged audit 同时绑定 backup head 与该外部链 terminal hash。ContinuityEnvelope 以独立 HMAC key、nonce 和 prepared sequence 认证并与 CutoverRecord 一起绑定 source/authorization/admin-readiness 分支及严格 nullability；恢复删除所有 one-time response replay ciphertext。三屏与适用分支检查均在 pointer 前完成；生产外部服务还必须等待 ledger/nonce anchors、finalization、complete readiness 与匹配 READY fence。缺失 Secret/FineReport 材料的 exact set 由 NORMAL HighRiskAction 或 LOCAL envelope 二选一授权 degraded completion。
+
+首次 BootstrapGrant 由本地 setup ceremony 预先绑定 server-reserved user、2-of-3 custodian-attested person/user binding、target channel/possession proof 与 registry generations，客户端不能替换这些身份。deployment 仍为 `SETUP`，可暂时只有一名管理员；仅 platform-admin 的 `deployment.manage`、`production_four_eyes_v1`、两名绑定不同有效 person 的可用管理员和完整灾备 readiness 才能单向激活 `PRODUCTION_ACTIVE`。生产 posture 由外部单调 OperationalFenceRecord 决定；临时依赖故障只形成 ephemeral fail-closed 503 gate，确认丢失/持久 breach 才追加 `RECOVERY_REQUIRED`。readiness recovery、emergency authority reduction、crypto-root recovery 都仅本地可用并有独立 authorization/terminal nonce/external audit；只有 readiness 分支可追加 READY successor。
+
+RecoveryPasswordSetupGrant 是 NORMAL restore、LOCAL disaster、production-readiness replacement 共享的 authority-transition primitive：NORMAL 按缺失/陈旧 selected-admin credential 精确发 1..2 张，LOCAL disaster 在 SETUP 发 1 张、production 发 2 张，readiness replacement 发 1 张。状态为 `ISSUED -> PROVISIONALLY_CONSUMED -> COMMITTED_CONSUMED`，终态 `EXPIRED | ABORTED_REVOKED`；整组必须随匹配分支 anchor 原子提交或销毁全部 provisional verifier 并终结 nonce。
 
 ### 7.2 运行面
 
@@ -443,6 +452,8 @@ FineReportAiPluginAskProvider
 
 V1 使用产品自带的用户与权限管理，不接 AD、LDAP 或 OIDC。内置身份系统至少包含本地账号、密码安全存储、登录失败锁定、会话过期、管理员重置、角色授权和操作审计；未来如增加企业身份源，只能作为可选 IdentityProvider Adapter，不改变本地 RBAC 权限模型。
 
+浏览器会话使用 host-only `__Host-shuziren_session`（Secure/HttpOnly/SameSite=Strict/Path=/、无 Domain）；重复或歧义 cookie 拒绝认证。所有浏览器状态变更（含未登录 login）检查 exact Origin allowlist；cookie mutation 要求 session-bound CSRF header，唯一例外是仍要求 exact Origin/no-store 的 `refreshCsrfToken`。服务端仅存独立 `CSRF_TOKEN_VERIFIER_PEPPER` 下的 HMAC verifier/key ID；`getCurrentAuthSession` 只读且绝不轮换 CSRF。认证、重认证和权限变化会轮换 session identifier，并在新 cookie 可用前原子吊销旧 verifier。
+
 后台用户用于配置、发布和运维，大屏设备通过 DeviceEnrollment 认证，FineReport 数据访问使用 ScreenInstance 绑定的展示 / 服务身份，三者不能混用。
 
 产品至少提供:
@@ -453,7 +464,7 @@ V1 使用产品自带的用户与权限管理，不接 AD、LDAP 或 OIDC。内�
 - 运维人员: 监控、告警、日志和受控重试。
 - 审计只读: 查看配置版本、权限、操作和数据访问记录。
 
-高风险操作需要原因、二次确认和审计；生产发布、Secret 变更、设备吊销和回滚可配置审批。
+高风险操作需要原因、二次确认和审计；production activation、发布、设备 enrollment、Secret/FineReport、设备整族吊销、回滚和恢复采用四眼。HighRiskAction 使用独立 `request_hmac_key_id`，一般敏感 idempotency 使用 `sensitive_digest_key_id`。重提 reauth 过期返回 HTTP 403 `RECENT_REAUTHENTICATION_REQUIRED`，action 在 TTL 内仍 `APPROVED`。异步网络执行的 ImmutableTypedCommand、Idempotency、Operation、Outbox 与 audit 统一绑定 `authorization_kind` 和 exactly one DirectOperationAuthorization / HighRiskAction / disaster-envelope ID；DIRECT_PERMISSION 仅限 `createBackup`、`verifyBackup`，本地 readiness/emergency/root 操作另绑其 typed authorization、terminal nonce 与外部证据。scope 为 phase+kind+evidence+exact command；待审批列表逐项检查 `risk.approve` 及目标 permission/scope。STAGED credential action 继续绑定 exact retiring set/generations。
 
 ## 12. 监控与可支持性
 
@@ -523,7 +534,7 @@ V1 使用产品自带的用户与权限管理，不接 AD、LDAP 或 OIDC。内�
 
 验收以“大屏 × 能力 × Provider × 异常场景”为单位，至少验证:
 
-- 三块配置不同的大屏同时在线，配置、会话和权限不串屏。
+- 三块配置不同的大屏同时在线，配置、会话和权限不串屏；单屏发布前后还要逐字段比较完整 RuntimeBinding，非目标屏的 DigitalHumanInstance、desired/applied、generation 和 ack marker 均不得漂移。
 - 多路并发不会因某一实例发布、Provider 故障或回滚而影响其他实例。
 - AvatarRendererProvider 和 AvatarPackage 接口可注册测试 Renderer、切换版本和安全回滚；实际 2D / 3D 格式在对应 Adapter 交付后单独验收。
 - Dora、知识库、LLM、ASR、TTS 独立启停后行为符合预期。

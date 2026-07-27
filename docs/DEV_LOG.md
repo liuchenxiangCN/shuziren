@@ -16,18 +16,23 @@
 - The user explicitly accepted G0 and authorized P1 work.
 - Activated P1.0 as the sole result batch and froze its result card and non-scope before contract work.
 - Added target domain, identity / RBAC, device trust, configuration-release, relational data, storage / recovery and control-plane API contracts under `docs/product/contracts/`.
-- Added a machine-readable registry for 31 entities, five exact roles, 22 permissions, nine exact state machines, IAM parameters, storage decisions, 70 API operations and the three-screen isolation fixture.
+- Added a machine-readable registry for 32 entities, five exact roles, 23 permissions, 16 exact state machines, 31 internal security-record schemas, IAM/scope parameters, storage decisions, 86 API operations and complete pre-publish/post-publish/post-ack three-screen isolation snapshots.
 - Proposed ADR-0028 for the P1 control-plane foundation; it remains Proposed until explicit P1.0 acceptance.
 - Added ResolutionFingerprint binding from validation through release creation, immutable ConfigLayer/FineReport/Secret versions, composite PublicationTarget ownership keys and exact control-plane ETag versus device CAS rules.
-- Added bootstrap/reset/session API closure, default-deny draft-field authorization, administrator-only FineReport identity management and typed different-user approval for production high-risk actions.
-- Replaced the same-backup-domain recovery journal idea with an authenticated RecoverySecurityLedger and an independently held monotonic anchor that fail closed against user/password/device credential rollback.
-- Expanded independent contract validation to 69 reject fixtures covering exact state/role/API drift, field authorization, high-risk approval, security-ledger recovery, immutable deletion and three-screen isolation.
+- Added bootstrap/reset/session API closure, explicit draft revise/abandon operations, exact-path default-deny field authorization, administrator-only FineReport identity management and typed different-user approval whose evidence step cannot execute the protected action.
+- Added mutually exclusive `NORMAL` / `ROLLBACK` release provenance, exact historical rollback source maps and no-substitution constraints.
+- Added DeviceCredentialFamily metadata/ETag and exact epoch/ledger concurrency for atomic whole-family revocation.
+- Replaced the same-backup-domain recovery journal idea with an authenticated RecoverySecurityLedger and independently held monotonic anchor that authoritatively reconcile complete role/scope snapshots, devices, Secrets and FineReport binding versions.
+- Added staged external-credential rotation, fail-closed recovery states, approval epoch invalidation and an authenticated continuity envelope that carries the current restore's own authorization/idempotency/audit evidence into the staged store.
+- Closed production bootstrap, provisioning, password-reset, browser-session and human-identity bindings; production four-eyes now protects an exact 20-operation set and requires different users backed by different active custodian-attested people.
+- Froze 18 independent key-purpose domains, an externally anchored OperationalFence, three typed local recovery authorities and three RecoveryPasswordSetupGrant authorization kinds. Every production restore remains `RECOVERY_REQUIRED` until a separate local readiness recovery records an authenticated `READY` successor.
+- Expanded independent contract validation to 190 rejection executions: 166 semantic mutation fixtures plus 12 raw JSON fixtures under both PowerShell hosts, covering duplicate/non-finite/invalid-number/trailing-data rejection, exact state/role/API/error drift, field authorization, high-risk approval/atomicity, release provenance, security-ledger recovery, immutable deletion and complete three-screen state isolation.
 - Kept implemented POC API, data and runtime code unchanged.
 
 #### Verification To Date
 
-- `scripts/validate-p1-target-contracts.ps1` passed 1439 contract, state, RBAC, storage, API and Markdown consistency checks.
-- `scripts/test-p1-target-contracts.ps1` passed the baseline plus 69 reject fixtures.
+- `scripts/validate-p1-target-contracts.ps1` passed 2,722 contract, state, RBAC, storage, API and Markdown consistency checks under both PowerShell 7 and Windows PowerShell 5.1.
+- `scripts/test-p1-target-contracts.ps1` passed 191 cases: one baseline, 166 semantic reject fixtures under Windows PowerShell 5.1 and 12 raw JSON reject fixtures under both Windows PowerShell 5.1 and PowerShell 7.
 - Final lifecycle, evidence, fingerprint, rollback and independent-review conclusions are recorded only after the candidate is complete.
 
 ### G0 Documentation Governance And Result-Driven Planning

@@ -31,6 +31,7 @@
     "ScreenGroup",
     "ScreenInstance",
     "DeviceEnrollment",
+    "DeviceCredentialFamily",
     "DeviceCredential",
     "DigitalHumanInstance",
     "FineReportIdentityBinding",
@@ -57,9 +58,43 @@
     "RecoverySecurityLedger",
     "SecurityAuditEvent"
   ],
+  "internal_security_records": [
+    "PasswordCredential",
+    "UserRole",
+    "OneTimeSecretResponseReplay",
+    "IdempotencyRecord",
+    "DirectOperationAuthorization",
+    "AsyncOperation",
+    "ImmutableTypedCommand",
+    "FrozenPlan",
+    "OutboxRecord",
+    "RestoreCutoverRecord",
+    "SecurityAuditSuffixSummary",
+    "KeyMetadataRecord",
+    "HumanOperatorIdentityAttestation",
+    "HumanOperatorUserBinding",
+    "DisasterRecoveryAuthorizationEnvelope",
+    "DisasterEnvelopeNonceRecord",
+    "ExternalOperationalFenceRecord",
+    "ProductionReadinessRecoveryAuthorization",
+    "ProductionReadinessNonceRecord",
+    "EmergencyAuthorityReductionAuthorization",
+    "EmergencyAuthorityReductionNonceRecord",
+    "ExternalAuthorityRevocationTombstone",
+    "CryptographicRootRecoveryAuthorization",
+    "CryptographicRootRecoveryNonceRecord",
+    "RecoveryPasswordSetupGrant",
+    "StagedAdministratorAuthenticationProof",
+    "ExternalRecoveryAudit",
+    "ExternalProductionReadinessRecoveryAudit",
+    "ExternalCryptographicRootRecoveryAudit",
+    "RestoreContinuityEnvelope",
+    "RecoverySecurityLedgerRecord"
+  ],
   "permissions": [
     "user.manage",
     "role.assign",
+    "deployment.manage",
     "screen.read",
     "screen.manage",
     "device.enroll",
@@ -85,6 +120,7 @@
     "platform_admin": [
       "user.manage",
       "role.assign",
+      "deployment.manage",
       "screen.read",
       "screen.manage",
       "device.enroll",
@@ -174,6 +210,44 @@
         }
       ]
     },
+    "deployment_mode": {
+      "states": [
+        "SETUP",
+        "PRODUCTION_ACTIVE"
+      ],
+      "initial": "SETUP",
+      "terminal": [
+        "PRODUCTION_ACTIVE"
+      ],
+      "transitions": [
+        {
+          "from": "SETUP",
+          "to": "PRODUCTION_ACTIVE",
+          "operation": "activate_after_admin_and_disaster_recovery_readiness"
+        }
+      ]
+    },
+    "deployment_operational_posture": {
+      "applies_when_deployment_mode": "PRODUCTION_ACTIVE",
+      "states": [
+        "READY",
+        "RECOVERY_REQUIRED"
+      ],
+      "initial": "READY",
+      "terminal": [],
+      "transitions": [
+        {
+          "from": "READY",
+          "to": "RECOVERY_REQUIRED",
+          "operation": "effective_external_fence_after_admin_person_key_nonce_backup_or_disaster_readiness_loss"
+        },
+        {
+          "from": "RECOVERY_REQUIRED",
+          "to": "READY",
+          "operation": "local_offline_recovery_and_complete_readiness_reproof"
+        }
+      ]
+    },
     "password_reset_token": {
       "states": [
         "ISSUED",
@@ -204,6 +278,136 @@
           "operation": "revoke"
         }
       ]
+    },
+    "recovery_password_setup_grant": {
+      "states": [
+        "ISSUED",
+        "PROVISIONALLY_CONSUMED",
+        "COMMITTED_CONSUMED",
+        "EXPIRED",
+        "ABORTED_REVOKED"
+      ],
+      "initial": "ISSUED",
+      "terminal": [
+        "COMMITTED_CONSUMED",
+        "EXPIRED",
+        "ABORTED_REVOKED"
+      ],
+      "transitions": [
+        {
+          "from": "ISSUED",
+          "to": "PROVISIONALLY_CONSUMED",
+          "operation": "consume_into_staged_store_and_authenticate_selected_admin"
+        },
+        {
+          "from": "ISSUED",
+          "to": "EXPIRED",
+          "operation": "expire"
+        },
+        {
+          "from": "ISSUED",
+          "to": "ABORTED_REVOKED",
+          "operation": "abort_or_revoke"
+        },
+        {
+          "from": "PROVISIONALLY_CONSUMED",
+          "to": "COMMITTED_CONSUMED",
+          "operation": "commit_with_matching_authority_anchor"
+        },
+        {
+          "from": "PROVISIONALLY_CONSUMED",
+          "to": "EXPIRED",
+          "operation": "expire_before_authority_commit_destroy_provisional_verifiers_and_abort_entire_authority_transition_grant_set"
+        },
+        {
+          "from": "PROVISIONALLY_CONSUMED",
+          "to": "ABORTED_REVOKED",
+          "operation": "destroy_provisional_verifiers_and_abort_entire_authority_transition_grant_set_before_authority_commit"
+        }
+      ]
+    },
+    "disaster_envelope_nonce_record": {
+      "states": [
+        "RESERVED",
+        "COMMITTED_CONSUMED",
+        "ABORTED_CONSUMED"
+      ],
+      "initial": "RESERVED",
+      "terminal": [
+        "COMMITTED_CONSUMED",
+        "ABORTED_CONSUMED"
+      ],
+      "transitions": [
+        {
+          "from": "RESERVED",
+          "to": "COMMITTED_CONSUMED",
+          "operation": "commit_with_matching_restore_cutover_anchor"
+        },
+        {
+          "from": "RESERVED",
+          "to": "ABORTED_CONSUMED",
+          "operation": "abort_before_pointer_after_atomic_grant_set_cleanup"
+        }
+      ]
+    },
+    "local_authorization_nonce_record": {
+      "applies_to": [
+        "ProductionReadinessNonceRecord",
+        "EmergencyAuthorityReductionNonceRecord"
+      ],
+      "states": [
+        "RESERVED",
+        "COMMITTED_CONSUMED",
+        "ABORTED_CONSUMED"
+      ],
+      "initial": "RESERVED",
+      "terminal": [
+        "COMMITTED_CONSUMED",
+        "ABORTED_CONSUMED"
+      ],
+      "transitions": [
+        {
+          "from": "RESERVED",
+          "to": "COMMITTED_CONSUMED",
+          "operation": "commit_with_matching_local_maintenance_effect_and_anchor"
+        },
+        {
+          "from": "RESERVED",
+          "to": "ABORTED_CONSUMED",
+          "operation": "abort_and_cleanup_without_authority_increase"
+        }
+      ],
+      "same_deployment_and_nonce_hmac_exact_retry_requires_same_authorization_and_exact_plan_or_effect_hash": true,
+      "payload_mismatch_or_cross_authorization_reuse_result": "INVALID_STATE_TRANSITION",
+      "aborted_consumed_never_reopens": true,
+      "committed_consumed_returns_only_exact_anchored_result": true,
+      "reserved_startup_reconciles_forward_from_authenticated_prepared_or_tombstone_evidence": true
+    },
+    "cryptographic_root_recovery_nonce_record": {
+      "states": [
+        "RESERVED",
+        "COMMITTED_CONSUMED",
+        "ABORTED_CONSUMED"
+      ],
+      "initial": "RESERVED",
+      "terminal": [
+        "COMMITTED_CONSUMED",
+        "ABORTED_CONSUMED"
+      ],
+      "transitions": [
+        {
+          "from": "RESERVED",
+          "to": "COMMITTED_CONSUMED",
+          "operation": "commit_exact_replacement_key_registry_and_recovery_required_checkpoint"
+        },
+        {
+          "from": "RESERVED",
+          "to": "ABORTED_CONSUMED",
+          "operation": "revoke_staged_replacement_key_and_abort_without_ready_authority"
+        }
+      ],
+      "exact_retry_requires_same_authorization_replacement_key_plan_and_anchor_generation": true,
+      "terminal_record_never_reopens": true
     },
     "auth_session": {
       "states": [
@@ -264,6 +468,40 @@
           "from": "ISSUED",
           "to": "REVOKED",
           "operation": "revoke"
+        }
+      ]
+    },
+    "device_credential_family": {
+      "states": [
+        "ACTIVE",
+        "REVOKED",
+        "REENROLL_REQUIRED"
+      ],
+      "initial": "ACTIVE",
+      "terminal": [
+        "REVOKED",
+        "REENROLL_REQUIRED"
+      ],
+      "transitions": [
+        {
+          "from": "ACTIVE",
+          "to": "REVOKED",
+          "operation": "hard_revoke_family"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "REENROLL_REQUIRED",
+          "operation": "recovery_version_mismatch"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "REENROLL_REQUIRED",
+          "operation": "verifier_key_revoked_or_permanently_lost"
+        },
+        {
+          "from": "ACTIVE",
+          "to": "REENROLL_REQUIRED",
+          "operation": "active_credential_expired"
         }
       ]
     },
@@ -380,7 +618,7 @@
         {
           "from": "APPROVED",
           "to": "DRAFT",
-          "operation": "create_revision_after_stale_fingerprint"
+          "operation": "create_revision_after_stale_fingerprint_or_control_plane_epoch"
         },
         {
           "from": "DRAFT",
@@ -469,13 +707,18 @@
         "READY",
         "EXECUTING",
         "RECONCILING_SECURITY",
+        "CUTOVER_PREPARED",
+        "POINTER_SWITCHED_PENDING_ANCHOR",
+        "ANCHOR_COMMITTED_PENDING_FINALIZATION",
         "COMPLETED",
+        "COMPLETED_DEGRADED",
         "FAILED",
         "ABORTED"
       ],
       "initial": "VALIDATING",
       "terminal": [
         "COMPLETED",
+        "COMPLETED_DEGRADED",
         "FAILED",
         "ABORTED"
       ],
@@ -503,7 +746,7 @@
         {
           "from": "EXECUTING",
           "to": "RECONCILING_SECURITY",
-          "operation": "verified_data_cutover"
+          "operation": "verified_staged_data_ready_for_security_reconciliation"
         },
         {
           "from": "EXECUTING",
@@ -512,8 +755,38 @@
         },
         {
           "from": "RECONCILING_SECURITY",
+          "to": "CUTOVER_PREPARED",
+          "operation": "continuity_insert_verified_and_cutover_prepared"
+        },
+        {
+          "from": "CUTOVER_PREPARED",
+          "to": "POINTER_SWITCHED_PENDING_ANCHOR",
+          "operation": "commit_staged_store_and_atomic_replace_active_pointer"
+        },
+        {
+          "from": "CUTOVER_PREPARED",
+          "to": "FAILED",
+          "operation": "abort_before_pointer"
+        },
+        {
+          "from": "POINTER_SWITCHED_PENDING_ANCHOR",
+          "to": "ANCHOR_COMMITTED_PENDING_FINALIZATION",
+          "operation": "append_cutover_committed_and_advance_anchor"
+        },
+        {
+          "from": "POINTER_SWITCHED_PENDING_ANCHOR",
+          "to": "FAILED",
+          "operation": "startup_verify_and_atomically_revert_pointer"
+        },
+        {
+          "from": "ANCHOR_COMMITTED_PENDING_FINALIZATION",
           "to": "COMPLETED",
-          "operation": "security_ledger_reconciled_and_epochs_advanced"
+          "operation": "idempotently_finalize_normal_execution_result_from_committed_anchor"
+        },
+        {
+          "from": "ANCHOR_COMMITTED_PENDING_FINALIZATION",
+          "to": "COMPLETED_DEGRADED",
+          "operation": "idempotently_finalize_degraded_execution_result_from_committed_anchor"
         },
         {
           "from": "RECONCILING_SECURITY",
@@ -555,6 +828,16 @@
           "operation": "expire"
         },
         {
+          "from": "PENDING",
+          "to": "FAILED",
+          "operation": "restore_epoch_changed"
+        },
+        {
+          "from": "PENDING",
+          "to": "FAILED",
+          "operation": "request_hmac_key_revoked_or_permanently_lost"
+        },
+        {
           "from": "APPROVED",
           "to": "CONSUMED",
           "operation": "atomically_execute_exact_request_hash"
@@ -568,12 +851,25 @@
           "from": "APPROVED",
           "to": "FAILED",
           "operation": "precondition_or_authorization_changed"
+        },
+        {
+          "from": "APPROVED",
+          "to": "FAILED",
+          "operation": "restore_epoch_changed"
+        },
+        {
+          "from": "APPROVED",
+          "to": "FAILED",
+          "operation": "request_hmac_key_revoked_or_permanently_lost"
         }
       ]
     }
   },
   "invariants": {
     "max_active_digital_humans_per_screen": 1,
+    "max_active_device_credential_families_per_screen": 1,
+    "max_active_device_credentials_per_family": 1,
+    "max_pending_device_successors_per_family": 1,
     "separate_identity_credentials": true,
     "device_scope_from_credential": true,
     "permission_checked_every_request": true,
@@ -593,8 +889,689 @@
     "password_reset_never_enables_user": true,
     "password_reset_revokes_sessions_and_advances_authentication_epoch": true,
     "bootstrap_completion_invalidates_other_grants": true,
+    "network_product_mutation_may_remove_last_enabled_deployment_platform_admin": false,
+    "product_mutations_may_not_reduce_credential_usable_enabled_deployment_platform_admins_below": 2,
+    "product_mutations_may_not_reduce_distinct_attested_platform_admin_person_ids_below": 2,
+    "unexpected_admin_person_key_or_disaster_readiness_loss_fences_production": true,
+    "production_activation_requires_disaster_recovery_readiness": true,
     "user_and_device_security_mutations_require_ledger_commit": true,
+    "release_creation_kind_xor": true,
+    "high_risk_approval_does_not_execute": true,
+    "high_risk_consume_and_effect_atomic": true,
+    "restored_authorization_snapshot_authoritative": true,
+    "restore_never_increases_secret_version_usability": true,
+    "restore_never_increases_finereport_binding_usability": true,
     "permission_denial_fallback_allowed": false
+  },
+  "deployment_mode_policy": {
+    "setup_external_serving_allowed": false,
+    "device_surface_policy_by_mode_and_posture": {
+      "SETUP": "DENY_ALL_DEVICE_SURFACE_REQUESTS",
+      "PRODUCTION_ACTIVE_READY": "ALLOW_AUTHORIZED_DEVICE_OPERATIONS",
+      "PRODUCTION_ACTIVE_RECOVERY_REQUIRED": "ALLOW_ONLY_GET_RUNTIME_BINDING_AND_CURRENT_RELEASE_CLAMPED_TO_LAST_ACKNOWLEDGED_APPLIED_TARGET_DENY_CLAIM_ROTATE_ACK_AND_HEARTBEAT_WRITES"
+    },
+    "setup_denied_operation_result": "PRODUCTION_READINESS_REQUIRED",
+    "setup_allowed_operations": [
+      "completeBootstrap",
+      "getDeploymentStatus",
+      "activateDeploymentProduction",
+      "createAuthSession",
+      "getCurrentAuthSession",
+      "refreshCsrfToken",
+      "reauthenticateAuthSession",
+      "listOwnAuthSessions",
+      "revokeOwnAuthSession",
+      "deleteCurrentAuthSession",
+      "changeOwnPassword",
+      "listUsers",
+      "getUser",
+      "getUserRoleAssignments",
+      "listRoleDefinitions",
+      "createUser",
+      "updateUser",
+      "disableUser",
+      "enableUser",
+      "unlockUser",
+      "issuePasswordReset",
+      "consumePasswordReset",
+      "listUserAuthSessions",
+      "revokeUserAuthSession",
+      "replaceUserRoles",
+      "listSites",
+      "getSite",
+      "listScreenGroups",
+      "getScreenGroup",
+      "createScreenGroup",
+      "updateScreenGroup",
+      "listScreenInstances",
+      "getScreenInstance",
+      "createScreenInstance",
+      "updateScreenInstance",
+      "getDigitalHumanInstance",
+      "createDigitalHumanInstance",
+      "getRuntimeBinding",
+      "getFineReportIdentityBinding",
+      "getHighRiskAction",
+      "listPendingHighRiskActions",
+      "approveHighRiskAction",
+      "rejectHighRiskAction",
+      "createConfigDraft",
+      "getConfigDraft",
+      "replaceConfigDraftSpec",
+      "reviseConfigDraft",
+      "abandonConfigDraft",
+      "validateConfigDraft",
+      "previewConfigDraft",
+      "getConfigRelease",
+      "diffConfigReleases",
+      "getStorageProfile",
+      "createBackup",
+      "getBackup",
+      "verifyBackup",
+      "getOperation",
+      "listAuditEvents"
+    ],
+    "setup_prohibited_effects": [
+      "device_credential_issue_claim_rotate_or_runtime_authentication",
+      "publication_or_rollback",
+      "runtime_release_delivery_or_acknowledgement",
+      "secret_or_finereport_credential_activation",
+      "restore_cutover",
+      "external_device_or_runtime_traffic"
+    ],
+    "setup_config_work_is_limited_to_draft_validation_and_preview": true,
+    "setup_cannot_submit_approve_or_create_production_release": true,
+    "activation_invalidates_all_setup_validation_preview_or_approval_evidence_for_production_use": true,
+    "setup_human_account_administration_policy": {
+      "policy_id": "setup_human_account_administration_v1",
+      "applicable_operations": [
+        "createUser",
+        "updateUser",
+        "disableUser",
+        "enableUser",
+        "unlockUser",
+        "issuePasswordReset",
+        "revokeUserAuthSession",
+        "replaceUserRoles"
+      ],
+      "initiator_requires_current_bootstrap_admin_recent_reauthentication_and_current_ledger_head": true,
+      "new_user_flow": [
+        "server_creates_unprivileged_user_with_empty_role_set_and_server_assigned_user_id",
+        "target_only_channel_sets_credential_and_target_authenticates_server_challenge",
+        "custodians_sign_person_attestation_and_user_binding_to_authenticated_target",
+        "setup_policy_atomically_grants_exact_second_platform_admin_role_with_current_binding_generations"
+      ],
+      "existing_target_human_requires_current_custodian_attestation_user_binding_and_possession_proof": true,
+      "privileged_role_assignment_allowed_only_to_establish_the_second_distinct_attested_platform_admin": true,
+      "target_credential_or_reset_secret_delivered_only_to_target_person": true,
+      "user_identity_enabled_role_and_credential_authority_effects_are_ledger_backed": true,
+      "unlock_reset_token_issue_and_session_revoke_are_transient_audited_and_invalidated_by_restore": true,
+      "external_serving_or_production_artifact_effect_allowed": false,
+      "permanently_unavailable_after_production_activation": true
+    },
+    "setup_activation_policy": {
+      "applicable_operation": "activateDeploymentProduction",
+      "requires_two_enabled_credential_usable_deployment_platform_admin_users": true,
+      "requires_two_distinct_current_attested_person_ids_and_user_bindings": true,
+      "initiator_and_approver_require_deployment_manage_risk_approve_and_recent_reauthentication": true,
+      "initiator_and_approver_user_person_role_credential_binding_and_eligibility_generations_frozen_and_rechecked": true,
+      "requires_current_ledger_head_initial_ready_fence_generation_and_complete_atomic_readiness_snapshot": true,
+      "mode_transition_readiness_evidence_high_risk_consumption_domain_row_audit_and_ledger_anchor_atomic_or_reconciled": true,
+      "failure_keeps_mode_setup_and_external_serving_forbidden": true
+    },
+    "production_four_eyes_marker_interpretation_by_mode": {
+      "SETUP": "ACTIVATION_USES_SETUP_ACTIVATION_POLICY_HUMAN_ACCOUNT_OPERATIONS_USE_SETUP_HUMAN_ACCOUNT_POLICY_OTHERWISE_REQUIRE_PRODUCTION_READINESS",
+      "PRODUCTION_ACTIVE_READY": "USE_PRODUCTION_FOUR_EYES_V1",
+      "PRODUCTION_ACTIVE_RECOVERY_REQUIRED": "BLOCK_NETWORK_MUTATION_USE_ONLY_EXPLICIT_LOCAL_MAINTENANCE_OPERATION"
+    },
+    "setup_backup_is_pre_activation_checkpoint_not_a_production_recovery_commitment": true,
+    "setup_active_store_loss_recovery": {
+      "network_api_exposed": false,
+      "local_maintenance_only": true,
+      "when_current_custodian_person_key_and_backup_anchors_are_ready": "LOCAL_DISASTER_QUORUM_SETUP_RECOVERY_WITH_ALL_NORMAL_RESTORE_INTEGRITY_GATES",
+      "setup_only_one_existing_attested_admin_branch": "TWO_OF_THREE_CUSTODIANS_PLUS_ONE_SETUP_GRANT_AND_STAGED_AUTH_PROOF_RESTORE_REMAINS_SETUP",
+      "setup_zero_existing_attested_admin_branch": "EXPLICIT_REINITIALIZATION_WITH_NEW_DEPLOYMENT_IDENTITY_REQUIRED",
+      "setup_recovery_never_creates_or_attests_a_new_human_identity_inside_restore": true,
+      "second_distinct_attested_admin_must_be_provisioned_after_recovery_before_activation": true,
+      "when_required_external_anchors_are_not_ready": "EXPLICIT_HOST_AND_CUSTODIAN_REINITIALIZATION_CEREMONY_REVOKES_OLD_DEPLOYMENT_BOOTSTRAP_KEYS_AND_ANCHORS",
+      "in_place_authority_resurrection_without_anchor_proof_allowed": false,
+      "external_serving_remains_forbidden_until_new_production_activation": true
+    },
+    "production_activation_operation": "activateDeploymentProduction",
+    "deployment_state_schema": [
+      "deployment_id",
+      "deployment_mode",
+      "mode_generation",
+      "effective_operational_posture",
+      "effective_access_gate",
+      "operational_fence_generation",
+      "operational_fence_evidence_hash",
+      "readiness_snapshot_hash",
+      "last_ledger_sequence",
+      "safe_reason_code",
+      "resource_revision",
+      "updated_at"
+    ],
+    "deployment_mode_transitions_are_ledger_backed_and_compare_and_swap_on_mode_generation": true,
+    "operational_fence_policy": {
+      "authoritative_location": "EXTERNAL_MONOTONIC_OPERATIONAL_FENCE_ANCHOR",
+      "effective_posture_is_recovery_required_when_highest_verified_fence_or_confirmed_persistent_readiness_breach_says_so": true,
+      "temporary_required_registry_anchor_key_or_dependency_unavailability_sets_ephemeral_fail_closed_gate_only": true,
+      "temporary_unavailability_keeps_persisted_posture_and_domain_state_unchanged_and_returns_retryable_503": true,
+      "dependency_recovery_automatically_clears_ephemeral_gate_without_offline_ceremony": true,
+      "confirmed_loss_revocation_invalid_evidence_or_persistent_readiness_breach_appends_recovery_required_fence": true,
+      "fail_closed_gate_applies_before_a_persistent_fence_or_ledger_evidence_can_be_written": true,
+      "database_and_ledger_posture_evidence_reconciled_when_ledger_returns": true,
+      "fence_hmac_algorithm": "HMAC-SHA-256",
+      "fence_hmac_purpose_domain": "OPERATIONAL_FENCE_HMAC",
+      "fence_hmac_domain_separator": "shuziren:p1:deployment-operational-fence:v1",
+      "fence_hmac_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "fence_hmac_input": "COMPLETE_FENCE_RECORD_EXCLUDING_FENCE_HMAC",
+      "fence_record_schema": [
+        "fence_record_id",
+        "deployment_id",
+        "operational_posture",
+        "fence_generation",
+        "supersedes_fence_generation",
+        "reason_code",
+        "observed_readiness_facts_hash",
+        "transition_authorization_kind",
+        "transition_authorization_id",
+        "transition_authorization_hash",
+        "custodian_signature_evidence_hash",
+        "ledger_committed_sequence",
+        "ledger_committed_head_hash",
+        "authorization_nonce_registry_kind",
+        "authorization_nonce_terminal_generation",
+        "authorization_nonce_terminal_record_hash",
+        "readiness_snapshot_hash",
+        "external_recovery_audit_hash",
+        "recovery_finalized_result_hash",
+        "fence_hmac_key_id",
+        "fence_hmac",
+        "created_at"
+      ],
+      "records_append_only_and_generation_compare_and_swap": true,
+      "fence_record_branch_rules": {
+        "RECOVERY_REQUIRED": "FAIL_CLOSED_REASON_AND_OBSERVED_FACTS_REQUIRED_CLEAR_AUTHORIZATION_NONCE_AND_FINALIZED_RESULT_FIELDS_NULL",
+        "READY_INITIAL_ACTIVATION": "CONSUMED_ACTIVATION_HIGH_RISK_ACTION_LEDGER_COMMIT_AND_COMPLETE_READINESS_SNAPSHOT_REQUIRED",
+        "READY_RECOVERY_SUCCESSOR": "OFFLINE_RECOVERY_AUTHORIZATION_TERMINAL_NONCE_LEDGER_COMMIT_COMPLETE_READINESS_EXTERNAL_RECOVERY_AUDIT_AND_FINALIZED_RESULT_REQUIRED"
+      },
+      "hmac_only_ready_successor_without_verified_offline_or_activation_evidence_result": "CRYPTOGRAPHIC_INTEGRITY_FAILURE",
+      "external_anchor_verifies_transition_evidence_not_only_fence_hmac": true,
+      "startup_uses_highest_verified_monotonic_generation": true,
+      "clear_writes_new_authenticated_ready_successor_and_never_mutates_or_deletes_prior_fence": true,
+      "clear_fence_requires_local_offline_authorization_complete_readiness_and_ledger_anchor": true
+    },
+    "deployment_status_operation": "getDeploymentStatus",
+    "production_activation_is_irreversible": true,
+    "production_activation_requires_four_eyes_current_ledger_head_and_atomic_readiness_snapshot": true,
+    "production_recovery_required_policy": {
+      "effective_posture_entered_fail_closed_when_admin_person_key_nonce_registry_backup_or_disaster_readiness_is_lost": true,
+      "new_high_risk_actions_publications_enrollments_secret_changes_and_runtime_target_changes_blocked": true,
+      "device_local_cache_may_serve_only_last_acknowledged_applied_target_while_its_credentials_remain_valid": true,
+      "allowed_device_gets_return_only_last_acknowledged_applied_target_and_never_new_desired_state": true,
+      "allowed_control_actions": [
+        "read_safe_metadata_and_audit",
+        "revoke_compromised_credentials_or_keys",
+        "local_offline_custodian_recovery",
+        "verify_backup_and_readiness",
+        "restore_complete_readiness"
+      ],
+      "allowed_network_operations": [
+        "getDeploymentStatus",
+        "createAuthSession",
+        "getCurrentAuthSession",
+        "refreshCsrfToken",
+        "reauthenticateAuthSession",
+        "listOwnAuthSessions",
+        "revokeOwnAuthSession",
+        "deleteCurrentAuthSession",
+        "changeOwnPassword",
+        "listUsers",
+        "getUser",
+        "getUserRoleAssignments",
+        "listRoleDefinitions",
+        "listUserAuthSessions",
+        "listSites",
+        "getSite",
+        "listScreenGroups",
+        "getScreenGroup",
+        "listScreenInstances",
+        "getScreenInstance",
+        "getDigitalHumanInstance",
+        "getRuntimeBinding",
+        "getFineReportIdentityBinding",
+        "getDeviceEnrollment",
+        "getDeviceCredentialMetadata",
+        "getSecretMetadata",
+        "getHighRiskAction",
+        "listPendingHighRiskActions",
+        "getConfigDraft",
+        "getConfigRelease",
+        "diffConfigReleases",
+        "getPublication",
+        "getStorageProfile",
+        "getBackup",
+        "verifyBackup",
+        "getOperation",
+        "listAuditEvents",
+        "getDeviceRuntimeBinding",
+        "getDeviceCurrentRelease"
+      ],
+      "all_other_network_operations_denied_by_default": true,
+      "temporary_dependency_gate_may_further_deny_an_allowed_operation_with_retryable_503": true,
+      "return_to_ready_posture_requires_local_offline_authorization_and_atomic_complete_readiness_recheck": true,
+      "never_returns_to_setup": true
+    },
+    "local_maintenance_operations": [
+      {
+        "operation_id": "recoverProductionReadiness",
+        "surface": "LOCAL_MAINTENANCE_ONLY_NO_NETWORK_API",
+        "authorization": "ProductionReadinessRecoveryAuthorization",
+        "idempotency_scope": "authorization_id_exact_recovery_plan_and_current_fence_generation",
+        "ledger_mutation": "deployment_production_readiness_recovery",
+        "audit_record": "ExternalProductionReadinessRecoveryAuditThenSecurityAuditEvent",
+        "success_postcondition": "COMPLETE_READINESS_LEDGER_AND_FENCE_ANCHORS_COMMITTED_EFFECTIVE_POSTURE_READY"
+      },
+      {
+        "operation_id": "emergencyReduceAuthority",
+        "surface": "LOCAL_MAINTENANCE_ONLY_NO_NETWORK_API",
+        "authorization": "EmergencyAuthorityReductionAuthorization",
+        "idempotency_scope": "authorization_id_exact_subject_generation_and_revocation_kind",
+        "ledger_mutation": "emergency_authority_reduction_reconciliation",
+        "audit_record": "ExternalAuthorityRevocationTombstoneThenSecurityAuditEvent",
+        "success_postcondition": "SUBJECT_DENIED_BY_EXTERNAL_TOMBSTONE_EFFECTIVE_POSTURE_REMAINS_RECOVERY_REQUIRED"
+      },
+      {
+        "operation_id": "recoverCryptographicReadinessRoot",
+        "surface": "LOCAL_MAINTENANCE_ONLY_NO_NETWORK_API",
+        "authorization": "CryptographicRootRecoveryAuthorization",
+        "idempotency_scope": "authorization_hash_worm_root_nonce_and_exact_key_purpose_recovery_plan",
+        "ledger_mutation": "cryptographic_readiness_root_recovery_reconciliation",
+        "audit_record": "ExternalCryptographicRootRecoveryAuditThenSecurityAuditEvent",
+        "success_postcondition": "REPLACEMENT_ROOT_KEY_OR_VERIFICATION_CHECKPOINT_INSTALLED_EFFECTIVE_POSTURE_REMAINS_RECOVERY_REQUIRED"
+      }
+    ],
+    "local_maintenance_security_audit_policy": {
+      "network_execution_authorization_ids_are_null": true,
+      "sanitized_local_actor_and_custodian_evidence_only": true,
+      "security_audit_event_appended_only_after_matching_terminal_nonce_external_evidence_and_ledger_anchor": true,
+      "common_record_schema": [
+        "event_id",
+        "operation_id",
+        "actor_kind",
+        "authorization_kind",
+        "authorization_id",
+        "authorization_hash",
+        "terminal_nonce_record_id",
+        "terminal_nonce_hash",
+        "external_evidence_kind",
+        "external_evidence_id",
+        "external_evidence_hash",
+        "custodian_evidence_hash",
+        "ledger_committed_sequence",
+        "ledger_committed_head",
+        "result",
+        "reason",
+        "request_id",
+        "previous_hash",
+        "event_hash"
+      ],
+      "by_operation": {
+        "recoverProductionReadiness": {
+          "authorization_kind": "PRODUCTION_READINESS_CUSTODIAN",
+          "authorization_record": "ProductionReadinessRecoveryAuthorization",
+          "terminal_nonce_record": "ProductionReadinessNonceRecord",
+          "external_evidence_kind": "EXTERNAL_PRODUCTION_READINESS_RECOVERY_AUDIT",
+          "external_evidence_record": "ExternalProductionReadinessRecoveryAudit"
+        },
+        "emergencyReduceAuthority": {
+          "authorization_kind": "EMERGENCY_AUTHORITY_REDUCTION_CUSTODIAN",
+          "authorization_record": "EmergencyAuthorityReductionAuthorization",
+          "terminal_nonce_record": "EmergencyAuthorityReductionNonceRecord",
+          "external_evidence_kind": "EXTERNAL_AUTHORITY_REVOCATION_TOMBSTONE",
+          "external_evidence_record": "ExternalAuthorityRevocationTombstone"
+        },
+        "recoverCryptographicReadinessRoot": {
+          "authorization_kind": "CRYPTOGRAPHIC_ROOT_RECOVERY_CUSTODIAN",
+          "authorization_record": "CryptographicRootRecoveryAuthorization",
+          "terminal_nonce_record": "CryptographicRootRecoveryNonceRecord",
+          "external_evidence_kind": "EXTERNAL_CRYPTOGRAPHIC_ROOT_RECOVERY_AUDIT",
+          "external_evidence_record": "ExternalCryptographicRootRecoveryAudit"
+        }
+      }
+    },
+    "production_readiness_recovery": {
+      "allowed_only_when_mode_production_active_and_effective_posture_recovery_required": true,
+      "authorization_modes": [
+        "READINESS_ONLY",
+        "ADMIN_REPLACEMENT"
+      ],
+      "authorization_branch_rules": {
+        "READINESS_ONLY": "EXACT_REMEDIATION_PLAN_NO_USER_PERSON_ROLE_OR_CREDENTIAL_CHANGE_REPLACEMENT_FIELDS_AND_HUMAN_SIGNATURES_NULL",
+        "ADMIN_REPLACEMENT": "EXACTLY_ONE_USABLE_ACTIVE_ATTESTED_ADMIN_AND_EXACT_MISSING_SECOND_PERSON_REPLACEMENT_FIELDS_AND_DUAL_PURPOSE_SIGNATURES_REQUIRED"
+      },
+      "zero_usable_admins_route_by_current_active_attested_admin_count": {
+        "TWO_OR_MORE": "LOCAL_DISASTER_QUORUM_RESTORE_WITH_TWO_SELECTED_EXISTING_ADMINS",
+        "EXACTLY_ONE": "LOCAL_DISASTER_QUORUM_RESTORE_WITH_LOCAL_DISASTER_REPLACE_ONE",
+        "ZERO": "EXPLICIT_NEW_DEPLOYMENT_REINITIALIZATION_AND_INCIDENT_PATH"
+      },
+      "two_or_more_usable_distinct_attested_admins_may_use_readiness_only_mode": true,
+      "network_api_exposed": false,
+      "canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "offline_recovery_signature_algorithm": "Ed25519",
+      "offline_recovery_signature_purpose_domain": "OFFLINE_RECOVERY_AUTHENTICATION",
+      "offline_recovery_signature_domain_separator": "shuziren:p1:production-readiness-recovery:offline:v1",
+      "human_attestation_signature_algorithm": "Ed25519",
+      "human_attestation_signature_purpose_domain": "HUMAN_OPERATOR_ATTESTATION_SIGNATURE",
+      "human_attestation_signature_domain_separator": "shuziren:p1:production-readiness-recovery:human:v1",
+      "signed_payload": "COMPLETE_AUTHORIZATION_EXCLUDING_BOTH_SIGNATURE_TUPLE_SETS",
+      "authorization_schema": [
+        "authorization_id",
+        "authorization_mode",
+        "remediation_class",
+        "deployment_id",
+        "current_operational_fence_generation",
+        "current_readiness_facts_hash",
+        "exact_remediation_plan_hash",
+        "exact_missing_admin_person_readiness_subjects",
+        "existing_admin_user_person_tuple",
+        "replacement_user_person_tuple",
+        "replacement_person_attestation_hash",
+        "replacement_user_binding_hash",
+        "exact_platform_admin_role_scope_assignment",
+        "recovery_security_ledger_head",
+        "key_registry_generation",
+        "person_registry_generation",
+        "offline_recovery_custodian_registry_generation",
+        "human_attestation_custodian_registry_generation",
+        "offline_recovery_signature_key_ids_sorted_distinct",
+        "offline_recovery_custodian_signature_tuples_sorted_distinct",
+        "human_attestation_signature_key_ids_sorted_distinct",
+        "human_attestation_custodian_signature_tuples_sorted_distinct",
+        "nonce",
+        "issued_at",
+        "expires_at"
+      ],
+      "signature_requirement_by_mode": {
+        "READINESS_ONLY": "SIGNATURE_REQUIREMENT_FURTHER_DISCRIMINATED_BY_REMEDIATION_CLASS",
+        "ADMIN_REPLACEMENT": "TWO_DISTINCT_OFFLINE_RECOVERY_AND_TWO_DISTINCT_HUMAN_ATTESTATION_SIGNATURES_UNDER_SEPARATE_PURPOSE_KEYS"
+      },
+      "signature_requirement_by_remediation_class": {
+        "INFRASTRUCTURE_ONLY": "TWO_DISTINCT_OFFLINE_RECOVERY_CUSTODIAN_SIGNATURES",
+        "PERSON_OR_HUMAN_AUTHORITY_ROOT": "TWO_DISTINCT_OFFLINE_RECOVERY_AND_TWO_DISTINCT_HUMAN_ATTESTATION_SIGNATURES_UNDER_SEPARATE_PURPOSE_KEYS"
+      },
+      "person_or_human_authority_root_remediation_cannot_expand_person_eligibility_or_bind_an_unsigned_user": true,
+      "human_attestation_quorum_unavailable_for_human_authority_remediation_result": "EXPLICIT_REINITIALIZATION_REQUIRED",
+      "authorization_ttl_minutes_max": 30,
+      "authorization_time_source": "EXTERNAL_TRUSTED_MONOTONIC_TIME",
+      "trusted_time_unavailable_keeps_nonce_unreserved_and_effect_unchanged": true,
+      "nonce_hmac_algorithm": "HMAC-SHA-256",
+      "nonce_hmac_purpose_domain": "PRODUCTION_READINESS_NONCE_HMAC",
+      "nonce_hmac_domain_separator": "shuziren:p1:production-readiness-nonce:v1",
+      "nonce_registry": "EXTERNAL_PRODUCTION_READINESS_NONCE_REGISTRY_AND_MONOTONIC_ANCHOR",
+      "nonce_reserved_before_any_recovery_effect_or_optional_grant_issue_and_terminally_consumed_on_commit_or_abort": true,
+      "nonce_record_schema": [
+        "deployment_id",
+        "authorization_hash",
+        "nonce_hmac",
+        "nonce_hmac_key_id",
+        "exact_recovery_plan_hash",
+        "state",
+        "registry_generation",
+        "reserved_at",
+        "terminal_at"
+      ],
+      "nonce_hmac_input": [
+        "deployment_id",
+        "authorization_hash",
+        "exact_recovery_plan_hash",
+        "nonce"
+      ],
+      "nonce_unique_compare_and_swap_key": [
+        "deployment_id",
+        "nonce_hmac"
+      ],
+      "admin_replacement_mode_may_create_bind_enable_or_grant_exactly_one_replacement_admin_only_until_floor_two": true,
+      "replacement_person_id_must_differ_from_existing_admin_person_id": true,
+      "replacement_user_id_must_be_new_and_not_alias_an_existing_or_revoked_user": true,
+      "replacement_attestation_binding_and_eligibility_generations_must_be_current_and_rechecked_immediately_before_commit": true,
+      "cannot_change_any_other_user_role_permission_or_credential": true,
+      "replacement_credential_delivered_only_to_target_person_local_one_time_no_store": true,
+      "replacement_credential_uses_one_recovery_password_setup_grant_with_keyed_verifier_and_target_person_proof": true,
+      "replacement_user_binding_role_password_and_readiness_mutations_remain_provisional_until_same_ledger_commit_and_anchor": true,
+      "failure_or_plaintext_delivery_loss_aborts_grant_and_leaves_no_enabled_privileged_or_unreachable_account": true,
+      "ledger_chain_and_record_integrity_must_be_restored_before_authority_mutation": true,
+      "if_ledger_integrity_cannot_be_restored_result": "EXPLICIT_REINITIALIZATION_OR_INCIDENT_RECOVERY_REQUIRED",
+      "effective_posture_stays_recovery_required_until_every_activation_readiness_check_passes": true,
+      "commit_protocol": [
+        "reserve_production_readiness_nonce_and_issue_digest_only_grant_when_admin_replacement_is_required",
+        "when_admin_replacement_target_person_consumes_grant_and_proves_staged_credential",
+        "append_and_fsync_production_readiness_ledger_prepared",
+        "atomically_commit_exact_readiness_remediation_and_optional_user_binding_role_password_generations_with_prepared_sequence",
+        "append_ledger_committed_and_advance_ledger_anchor",
+        "compare_and_swap_production_readiness_nonce_to_committed_consumed",
+        "finalize_external_and_security_audit_operation_and_exact_idempotent_result_from_authenticated_prepared_evidence",
+        "append_authenticated_ready_operational_fence_successor_bound_to_external_audit_and_finalized_result_hash"
+      ],
+      "external_audit_policy": {
+        "record_type": "ExternalProductionReadinessRecoveryAudit",
+        "canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+        "record_hash_algorithm": "SHA-256",
+        "ordered_hash_chain_and_external_worm_append_required": true,
+        "record_schema": [
+          "sequence",
+          "previous_record_hash",
+          "authorization_hash",
+          "authorization_mode",
+          "remediation_class",
+          "exact_remediation_plan_hash",
+          "current_operational_fence_generation",
+          "pre_recovery_readiness_facts_hash",
+          "offline_recovery_signature_key_ids_sorted_distinct",
+          "human_attestation_signature_key_ids_sorted_distinct",
+          "nonce_terminal_record_hash",
+          "ledger_committed_sequence",
+          "ledger_committed_head_hash",
+          "post_recovery_readiness_snapshot_hash",
+          "finalized_result_hash",
+          "result",
+          "created_at"
+        ],
+        "record_binds_verified_authorization_signature_evidence_and_terminal_nonce_not_new_unsigned_authority": true,
+        "ready_fence_successor_must_bind_record_hash_and_finalized_result_hash": true
+      },
+      "external_serving_requires_ready_fence_successor_and_matching_finalized_recovery_result": true,
+      "crash_or_partial_anchor_result": "KEEP_EFFECTIVE_POSTURE_RECOVERY_REQUIRED_AND_RECONCILE_FORWARD_ONLY_FROM_AUTHENTICATED_PREPARED_EVIDENCE"
+    },
+    "emergency_authority_reduction": {
+      "allowed_only_when_effective_posture_recovery_required": true,
+      "canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "signature_algorithm": "Ed25519",
+      "signature_purpose_domain": "OFFLINE_RECOVERY_AUTHENTICATION",
+      "signature_domain_separator": "shuziren:p1:emergency-authority-reduction:v1",
+      "signed_payload": "COMPLETE_AUTHORIZATION_EXCLUDING_SIGNATURE_TUPLES",
+      "authorization_requires_two_distinct_offline_recovery_custodian_signatures": true,
+      "authorization_schema": [
+        "authorization_id",
+        "deployment_id",
+        "current_operational_fence_generation",
+        "subject_type",
+        "subject_id",
+        "expected_generation",
+        "revocation_kind",
+        "custodian_registry_generation",
+        "custodian_ids_sorted_distinct",
+        "signature_key_ids_sorted_distinct",
+        "signature_tuples_sorted_by_custodian_id",
+        "nonce",
+        "issued_at",
+        "expires_at"
+      ],
+      "authorization_ttl_minutes_max": 30,
+      "authorization_time_source": "EXTERNAL_TRUSTED_MONOTONIC_TIME",
+      "trusted_time_unavailable_keeps_nonce_unreserved_and_effect_unchanged": true,
+      "nonce_hmac_algorithm": "HMAC-SHA-256",
+      "nonce_hmac_purpose_domain": "EMERGENCY_AUTHORITY_REDUCTION_NONCE_HMAC",
+      "nonce_hmac_domain_separator": "shuziren:p1:emergency-authority-reduction-nonce:v1",
+      "nonce_registry": "EXTERNAL_EMERGENCY_AUTHORITY_REDUCTION_NONCE_REGISTRY_AND_MONOTONIC_ANCHOR",
+      "nonce_reserved_before_tombstone_and_terminally_consumed_on_commit_or_abort": true,
+      "nonce_record_schema": [
+        "deployment_id",
+        "authorization_hash",
+        "subject_generation_revocation_hash",
+        "nonce_hmac",
+        "nonce_hmac_key_id",
+        "state",
+        "registry_generation",
+        "reserved_at",
+        "terminal_at"
+      ],
+      "nonce_hmac_input": [
+        "deployment_id",
+        "authorization_id",
+        "subject_type",
+        "subject_id",
+        "expected_generation",
+        "revocation_kind",
+        "nonce"
+      ],
+      "nonce_unique_compare_and_swap_key": [
+        "deployment_id",
+        "nonce_hmac"
+      ],
+      "allowed_effects": [
+        "revoke_key",
+        "revoke_person_attestation_or_user_binding",
+        "disable_user",
+        "revoke_device_credential_family",
+        "revoke_secret_or_finereport_credential_version"
+      ],
+      "safety_revocation_not_blocked_by_admin_floor_and_keeps_recovery_fence": true,
+      "authority_increase_enable_role_grant_or_new_credential_forbidden": true,
+      "external_tombstone_schema": [
+        "tombstone_id",
+        "deployment_id",
+        "subject_type",
+        "subject_id",
+        "expected_generation",
+        "revocation_kind",
+        "authorization_hash",
+        "fence_generation",
+        "tombstone_generation",
+        "supersedes_tombstone_generation",
+        "fence_hmac_key_id",
+        "fence_hmac",
+        "created_at"
+      ],
+      "external_tombstone_hmac_algorithm": "HMAC-SHA-256",
+      "external_tombstone_hmac_purpose_domain": "OPERATIONAL_FENCE_HMAC",
+      "external_tombstone_hmac_domain_separator": "shuziren:p1:external-authority-revocation-tombstone:v1",
+      "external_tombstone_hmac_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "external_tombstone_hmac_input": "COMPLETE_TOMBSTONE_RECORD_EXCLUDING_FENCE_HMAC",
+      "external_tombstones_append_only_and_compare_and_swap_by_subject_generation": true,
+      "external_tombstone_denies_subject_before_database_or_ledger_is_available": true,
+      "database_and_ledger_reconcile_exact_tombstone_before_fence_can_clear": true,
+      "proof_key_revocation_order": "APPEND_AND_ANCHOR_TOMBSTONE_WITH_RETAINED_VERIFY_KEY_THEN_REVOKE_TARGET_KEY_NEVER_DROP_LAST_TOMBSTONE_VERIFY_PATH"
+    },
+    "cryptographic_root_recovery": {
+      "allowed_only_when_effective_posture_recovery_required_and_normal_nonce_or_fence_key_path_is_confirmed_lost": true,
+      "network_api_exposed": false,
+      "recoverable_roots": [
+        "PRODUCTION_READINESS_NONCE_HMAC",
+        "EMERGENCY_AUTHORITY_REDUCTION_NONCE_HMAC",
+        "DISASTER_ENVELOPE_NONCE_HMAC",
+        "OPERATIONAL_FENCE_HMAC"
+      ],
+      "unrecoverable_root_conditions": [
+        "EXTERNAL_WORM_OR_MONOTONIC_ANCHOR_INTEGRITY_LOST",
+        "OFFLINE_RECOVERY_CUSTODIAN_QUORUM_UNAVAILABLE",
+        "AUTHORITATIVE_KEY_REGISTRY_GENERATION_CANNOT_BE_PROVEN"
+      ],
+      "unrecoverable_result": "EXPLICIT_NEW_DEPLOYMENT_REINITIALIZATION_AND_INCIDENT_REQUIRED",
+      "signature_algorithm": "Ed25519",
+      "signature_purpose_domain": "OFFLINE_RECOVERY_AUTHENTICATION",
+      "canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "signature_domain_separator": "shuziren:p1:cryptographic-root-recovery:v1",
+      "signed_payload": "COMPLETE_AUTHORIZATION_EXCLUDING_SIGNATURE_TUPLES",
+      "authorization_schema": [
+        "authorization_id",
+        "deployment_id",
+        "confirmed_lost_purpose_domain",
+        "expected_key_registry_generation",
+        "expected_operational_fence_generation",
+        "highest_worm_checkpoint_hash",
+        "exact_replacement_key_plan_hash",
+        "custodian_registry_generation",
+        "custodian_ids_sorted_distinct",
+        "signature_key_ids_sorted_distinct",
+        "signature_tuples_sorted_by_custodian_id",
+        "root_recovery_nonce",
+        "maximum_anchor_generation",
+        "issued_at",
+        "expires_at"
+      ],
+      "authorization_requires_two_distinct_offline_recovery_custodian_signatures": true,
+      "authorization_ttl_minutes_max": 30,
+      "authorization_time_source": "EXTERNAL_TRUSTED_MONOTONIC_TIME",
+      "root_nonce_registry": "ANCHOR_NATIVE_WORM_COMPARE_AND_SWAP_NO_SERVICE_HMAC_DEPENDENCY",
+      "root_nonce_record_schema": [
+        "deployment_id",
+        "authorization_hash",
+        "sha256_root_recovery_nonce",
+        "exact_replacement_key_plan_hash",
+        "expected_anchor_generation",
+        "state",
+        "registry_generation",
+        "reserved_at",
+        "terminal_at"
+      ],
+      "root_nonce_unique_key": [
+        "deployment_id",
+        "sha256_root_recovery_nonce"
+      ],
+      "root_nonce_reserved_before_key_install_and_terminally_consumed_on_commit_or_abort": true,
+      "root_nonce_valid_for_exact_next_anchor_generation_only": true,
+      "may_install_only_one_replacement_key_for_exact_lost_purpose_and_append_recovery_required_checkpoint": true,
+      "cannot_write_ready_fence_modify_users_roles_credentials_or_business_state": true,
+      "old_fence_chain_checkpoint_is_preserved_by_anchor_hash_and_new_recovery_required_successor": true,
+      "after_root_recovery_normal_production_readiness_recovery_with_fresh_authorization_and_nonce_is_required": true,
+      "commit_protocol": [
+        "verify_offline_authorization_trusted_time_and_exact_current_anchor_generation",
+        "compare_and_swap_root_nonce_to_reserved_in_worm_anchor",
+        "install_exact_replacement_key_as_staged_for_signed_purpose_only",
+        "append_recovery_required_checkpoint_with_predecessor_anchor_hash_using_replacement_key",
+        "commit_key_registry_generation_external_cryptographic_root_recovery_audit_and_checkpoint_in_worm_anchor",
+        "compare_and_swap_root_nonce_to_committed_consumed",
+        "reconcile_ledger_and_database_evidence_when_available"
+      ],
+      "external_audit_policy": {
+        "record_type": "ExternalCryptographicRootRecoveryAudit",
+        "canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+        "record_hash_algorithm": "SHA-256",
+        "ordered_hash_chain_and_anchor_native_worm_append_required": true,
+        "record_schema": [
+          "sequence",
+          "previous_record_hash",
+          "authorization_hash",
+          "confirmed_lost_purpose_domain",
+          "highest_previous_worm_checkpoint_hash",
+          "exact_replacement_key_plan_hash",
+          "replacement_key_id",
+          "custodian_registry_generation",
+          "custodian_signature_key_ids_sorted_distinct",
+          "root_nonce_terminal_record_hash",
+          "new_key_registry_generation",
+          "recovery_required_checkpoint_hash",
+          "result",
+          "created_at"
+        ],
+        "record_binds_verified_offline_authorization_signature_evidence_and_terminal_root_nonce": true,
+        "audit_record_key_registry_generation_and_recovery_required_checkpoint_commit_atomically_in_same_worm_generation": true
+      },
+      "crash_reconciliation": "RESERVED_RECORD_AND_EXACT_KEY_PLAN_RECONCILE_FORWARD_TO_RECOVERY_REQUIRED_CHECKPOINT_OR_REVOKE_STAGED_KEY_AND_MARK_ABORTED_CONSUMED_NEVER_READY"
+    }
   },
   "configuration_authorization": {
     "policy_id": "config_draft_spec_fields",
@@ -631,6 +1608,16 @@
         "config.edit_technical"
       ]
     },
+    "field_match_modes": {
+      "/welcome_text": "exact",
+      "/persona": "exact",
+      "/business_policy": "exact",
+      "/fvs_binding_ref": "exact",
+      "/fine_report_identity_ref": "exact",
+      "/digital_human_instance_id": "exact",
+      "/capability_profile_ref": "exact",
+      "/technical_policy": "exact"
+    },
     "fine_report_binding_permissions_all": [
       "screen.manage",
       "secret.write",
@@ -650,6 +1637,7 @@
       "screen_instance"
     ],
     "approval_binds": [
+      "approval_kind",
       "draft_revision_id",
       "draft_content_hash",
       "resolution_fingerprint_hash",
@@ -658,9 +1646,126 @@
       "inheritance_layer_revisions",
       "per_screen_effective_content_hashes",
       "fine_report_binding_versions",
+      "secret_versions",
+      "control_plane_epoch",
+      "last_editor_user_id",
+      "last_editor_person_id",
+      "last_editor_person_registry_generation",
+      "last_editor_person_binding_generation",
+      "last_editor_user_account_state_generation",
+      "last_editor_authentication_epoch",
+      "last_editor_authorization_epoch",
+      "last_editor_role_scope_assignment_generation",
+      "last_editor_credential_generation",
+      "last_editor_person_eligibility_generation",
+      "approver_user_id",
+      "approver_person_id",
+      "approver_person_registry_generation",
+      "approver_person_binding_generation",
+      "approver_user_account_state_generation",
+      "approver_authentication_epoch",
+      "approver_authorization_epoch",
+      "approver_role_scope_assignment_generation",
+      "approver_credential_generation",
+      "approver_person_eligibility_generation",
+      "policy_actor_id",
+      "policy_version",
+      "policy_environment",
+      "policy_immutable_input_hash",
+      "policy_decision",
+      "policy_reason",
+      "policy_audit_event_id"
+    ],
+    "approval_kinds": [
+      "HUMAN",
+      "TYPED_POLICY_ACTOR"
+    ],
+    "approval_kind_xor_required": true,
+    "approval_mode_by_environment": {
+      "PRODUCTION": "DISTINCT_ACTIVE_ATTESTED_EDITOR_AND_APPROVER_PERSON_IDS",
+      "DEVELOPMENT_OR_TEST": "EXPLICIT_AUDITED_TYPED_POLICY_ACTOR_AUTO_APPROVAL_OR_HUMAN_DISTINCT_PERSON"
+    },
+    "production_approval_requires_distinct_active_attested_editor_and_approver_person_ids": true,
+    "development_test_policy_actor_schema": [
+      "policy_actor_id",
+      "policy_version",
+      "policy_environment",
+      "policy_immutable_input_hash",
+      "policy_decision",
+      "policy_reason",
+      "policy_audit_event_id"
+    ],
+    "development_test_policy_actor_never_fabricates_human_user_or_person_id": true,
+    "approval_branch_field_rules": {
+      "HUMAN": "EDITOR_AND_APPROVER_USER_PERSON_GENERATION_FIELDS_REQUIRED_POLICY_ACTOR_FIELDS_NULL",
+      "TYPED_POLICY_ACTOR": "POLICY_ACTOR_FIELDS_REQUIRED_APPROVER_USER_PERSON_FIELDS_NULL_EDITOR_FIELDS_AND_IMMUTABLE_INPUT_RETAINED"
+    },
+    "production_allows_approval_kind": "HUMAN",
+    "approval_rechecks_complete_editor_and_approver_identity_role_credential_person_and_eligibility_generations": true,
+    "release_creation_recheck_by_approval_kind": {
+      "HUMAN": "RECHECK_APPROVER_CURRENT_USER_ENABLED_AUTHORIZATION_EPOCH_ROLE_SCOPE_PERSON_BINDING_ELIGIBILITY_AND_CONFIG_APPROVE_PERMISSION",
+      "TYPED_POLICY_ACTOR": "RECHECK_DEVELOPMENT_OR_TEST_ENVIRONMENT_POLICY_VERSION_IMMUTABLE_INPUT_HASH_AND_AUDIT_EVIDENCE"
+    },
+    "editor_or_approver_person_role_credential_or_eligibility_change_invalidates_approval": true,
+    "release_creation": "kind_discriminated_atomic_release_and_targets",
+    "release_creation_kinds": [
+      "NORMAL",
+      "ROLLBACK"
+    ],
+    "normal_release_requires": [
+      "approved_draft_revision",
+      "revalidated_resolution_fingerprint",
+      "approval_record",
+      "atomic_release_targets"
+    ],
+    "rollback_release_requires": [
+      "immutable_source_release_target_map",
+      "target_set_hash",
+      "exact_asset_binding_and_secret_versions",
+      "approved_high_risk_action",
+      "atomic_release_targets"
+    ],
+    "rollback_source_target_map_key": [
+      "tenant_id",
+      "deployment_id",
+      "source_release_id",
+      "source_screen_id",
+      "source_release_target_id",
+      "destination_screen_id"
+    ],
+    "rollback_source_screen_must_equal_destination_screen": true,
+    "rollback_source_map_destination_set_equals_release_target_set": true,
+    "rollback_source_map_destination_unique": true,
+    "rollback_substitution_allowed": false,
+    "rollback_copied_fields_must_match_source": [
+      "canonical_effective_content",
+      "content_hash",
+      "asset_versions",
+      "fine_report_binding_version",
       "secret_versions"
     ],
-    "release_creation": "atomically_revalidate_fingerprint_and_create_release_targets",
+    "release_creation_branch_xor": true,
+    "revise_copy_only": true,
+    "revise_allowed_from": [
+      "VALIDATED",
+      "PREVIEWED",
+      "APPROVAL_PENDING",
+      "REJECTED",
+      "APPROVED_WHEN_RESOLUTION_FINGERPRINT_OR_CONTROL_PLANE_EPOCH_STALE"
+    ],
+    "pending_revise_atomically_withdraws_approval": true,
+    "revise_invalidates_evidence": [
+      "validation",
+      "preview",
+      "approval"
+    ],
+    "abandon_allowed_from": [
+      "DRAFT",
+      "VALIDATED",
+      "PREVIEWED",
+      "REJECTED"
+    ],
+    "abandon_preserves_history": true,
     "source_change_result": "RESOLUTION_FINGERPRINT_STALE",
     "publication_creates_release_targets": false
   },
@@ -698,7 +1803,25 @@
   "high_risk_policy": {
     "standard_production_policy_id": "production_four_eyes_v1",
     "approval_ttl_minutes": 15,
-    "request_hash_algorithm": "SHA-256",
+    "request_hash_algorithm": "HMAC-SHA-256",
+    "request_hash_purpose_domain": "HIGH_RISK_REQUEST_HMAC",
+    "request_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+    "request_hash_domain_separator": "shuziren:p1:high-risk-action:v1",
+    "duplicate_json_members_or_non_finite_numbers_result": "INVALID_REQUEST",
+    "request_hash_key_outside_live_store_logs_and_backups": true,
+    "request_hash_key_id_stored_with_action": true,
+    "execution_uses_action_bound_request_hash_key_id": true,
+    "request_hash_key_retention_policy": "UNTIL_LAST_REFERENCING_ACTION_TERMINAL_AND_EVIDENCE_RETENTION_EXPIRES",
+    "request_hash_key_temporarily_unavailable_result": {
+      "error_code": "KEY_SERVICE_UNAVAILABLE",
+      "state_effect": "ACTION_UNCHANGED",
+      "retryable": true
+    },
+    "request_hash_key_revoked_or_permanently_lost_result": {
+      "error_code": "REQUEST_DIGEST_KEY_EPOCH_CHANGED",
+      "state_effect": "ACTION_FAILED",
+      "retryable": false
+    },
     "recent_reauthentication_minutes": 10,
     "reason_required": true,
     "initiator_must_differ_from_approver": true,
@@ -709,28 +1832,326 @@
     "request_accepts_only_allowlisted_typed_operation_schemas": true,
     "request_requires_target_operation_authorization": true,
     "approver_requires_risk_approve_and_target_operation_authorization": true,
-    "execution_rechecks_requester_and_executor_target_authorization": true,
+    "execution_rechecks_initiator_and_approver_target_authorization": true,
+    "approval_only_records_evidence": true,
+    "execution_requires_protected_endpoint_resubmission": true,
+    "execution_header": "High-Risk-Action-ID",
+    "execution_caller_must_be_initiator": true,
+    "execution_requires_recent_reauthentication": true,
+    "execution_reauthentication_minutes": 10,
+    "execution_stale_reauthentication_result": {
+      "error_code": "RECENT_REAUTHENTICATION_REQUIRED",
+      "state_effect": "ACTION_REMAINS_APPROVED_UNTIL_TTL",
+      "retryable": false
+    },
+    "approver_reauthentication_checked_at_approval": true,
+    "approval_queues_execution": false,
+    "direct_permission_async_policy": {
+      "authorization_kind": "DIRECT_PERMISSION",
+      "allowed_operation_ids": [
+        "createBackup",
+        "verifyBackup"
+      ],
+      "record_schema": [
+        "direct_operation_authorization_id",
+        "operation_id",
+        "tenant_id",
+        "deployment_id",
+        "initiator_user_id",
+        "initiator_person_id",
+        "initiator_person_registry_generation",
+        "initiator_person_binding_generation",
+        "initiator_user_account_state_generation",
+        "initiator_authentication_epoch",
+        "initiator_authorization_epoch",
+        "initiator_role_scope_assignment_generation",
+        "initiator_credential_generation",
+        "initiator_eligibility_generation",
+        "auth_session_id",
+        "required_permission",
+        "resource_scope",
+        "storage_epoch",
+        "backup_id",
+        "backup_hash",
+        "http_method",
+        "canonical_path",
+        "request_hmac",
+        "request_hmac_key_id",
+        "idempotency_key_digest",
+        "exact_command_hash",
+        "created_at"
+      ],
+      "precondition_fields_by_operation": {
+        "createBackup": {
+          "required": [
+            "storage_epoch"
+          ],
+          "must_be_null": [
+            "backup_id",
+            "backup_hash"
+          ]
+        },
+        "verifyBackup": {
+          "required": [
+            "backup_id",
+            "backup_hash"
+          ],
+          "must_be_null": [
+            "storage_epoch"
+          ]
+        }
+      },
+      "request_hash_algorithm": "HMAC-SHA-256",
+      "request_hash_purpose_domain": "SENSITIVE_REQUEST_DIGEST_HMAC",
+      "request_hash_domain_separator": "shuziren:p1:direct-operation-authorization:v1",
+      "authorization_and_scope_rechecked_immediately_before_atomic_enqueue": true,
+      "initiator_user_person_session_role_scope_credential_and_eligibility_generations_frozen_and_rechecked": true,
+      "created_atomically_with_typed_command_frozen_intent_operation_outbox_idempotency_and_audit": true,
+      "direct_authorization_id_single_use_for_exact_command": true,
+      "approver_fields_must_be_null": true,
+      "cannot_authorize_high_risk_restore_or_local_maintenance_operation": true,
+      "worker_uses_only_frozen_intent_and_never_reauthorizes_from_mutable_state": true,
+      "crash_before_atomic_enqueue_has_no_operation_or_effect": true,
+      "crash_after_atomic_enqueue_reuses_stored_operation_and_never_repeats_enqueue": true
+    },
+    "authorization_commit_semantics_by_kind": {
+      "STANDARD_HIGH_RISK": "CONSUME_ACTION_WITH_SYNC_EFFECT_OR_ASYNC_ENQUEUE_IN_ONE_DATABASE_TRANSACTION",
+      "DISASTER_CUSTODIAN": "RESERVE_EXTERNAL_NONCE_AND_PROVISIONAL_GRANTS_BEFORE_STAGED_ENQUEUE_FINAL_CONSUMPTION_COMMITS_ONLY_WITH_CUTOVER_ANCHOR",
+      "DIRECT_PERMISSION": "AUTHORIZE_EXACT_TYPED_REQUEST_AND_CREATE_IMMUTABLE_AUTHORIZATION_WITH_ASYNC_ENQUEUE_IN_ONE_DATABASE_TRANSACTION"
+    },
+    "synchronous_commit_unit": "action_consumption_domain_effect_audit_and_idempotent_result",
+    "asynchronous_commit_unit": "authorization_evidence_creation_or_consumption_typed_command_frozen_plan_domain_intent_operation_and_outbox_enqueue",
+    "asynchronous_frozen_intent_required": true,
+    "async_worker_reparses_mutable_request_state": false,
+    "async_common_commit_records": [
+      "ImmutableTypedCommand",
+      "FrozenPlanOrDomainIntent",
+      "AsyncOperation",
+      "OutboxRecord",
+      "SecurityAuditEvent",
+      "IdempotencyRecord"
+    ],
+    "async_operation_schema": [
+      "operation_id",
+      "kind",
+      "authorization_kind",
+      "direct_operation_authorization_id",
+      "high_risk_action_id",
+      "disaster_recovery_authorization_envelope_id",
+      "immutable_typed_command_id",
+      "initiator_user_id",
+      "initiator_person_id",
+      "approver_user_id",
+      "approver_person_id",
+      "state",
+      "progress",
+      "safe_failure_code",
+      "created_at",
+      "updated_at"
+    ],
+    "idempotency_record_schema": [
+      "principal_id",
+      "phase",
+      "scope",
+      "method",
+      "canonical_route",
+      "idempotency_key_digest",
+      "sensitive_request_digest",
+      "sensitive_digest_key_id",
+      "authorization_kind",
+      "direct_operation_authorization_id",
+      "high_risk_action_id",
+      "disaster_recovery_authorization_envelope_id",
+      "exact_command_hash",
+      "result_reference",
+      "expires_at"
+    ],
+    "network_execution_security_audit_authorization_schema": [
+      "event_id",
+      "actor_kind",
+      "actor_user_id",
+      "actor_person_id",
+      "authorization_kind",
+      "direct_operation_authorization_id",
+      "high_risk_action_id",
+      "disaster_recovery_authorization_envelope_id",
+      "action",
+      "resource",
+      "result",
+      "reason",
+      "request_id",
+      "previous_hash",
+      "event_hash"
+    ],
+    "async_authorization_commit_records_by_kind": {
+      "STANDARD_HIGH_RISK": [
+        "HighRiskActionConsumption"
+      ],
+      "DISASTER_CUSTODIAN": [
+        "ExternalDisasterEnvelopeNonceReservation",
+        "RecoveryPasswordSetupGrantProvisionalReservation"
+      ],
+      "DIRECT_PERMISSION": [
+        "DirectOperationAuthorizationCreation"
+      ]
+    },
+    "disaster_authorization_final_consumption_at_cutover_anchor": true,
+    "disaster_pre_pointer_abort_keeps_external_nonce_terminally_consumed": true,
+    "execution_authorization_reference_schema": [
+      "authorization_kind",
+      "direct_operation_authorization_id",
+      "high_risk_action_id",
+      "disaster_recovery_authorization_envelope_id"
+    ],
+    "execution_authorization_reference_by_kind": {
+      "DIRECT_PERMISSION": "direct_operation_authorization_id_required_high_risk_action_id_and_disaster_recovery_authorization_envelope_id_null",
+      "STANDARD_HIGH_RISK": "high_risk_action_id_required_direct_operation_authorization_id_and_disaster_recovery_authorization_envelope_id_null",
+      "DISASTER_CUSTODIAN": "disaster_recovery_authorization_envelope_id_required_direct_operation_authorization_id_and_high_risk_action_id_null"
+    },
+    "execution_actor_nullability_by_kind": {
+      "DIRECT_PERMISSION": "initiator_user_person_and_all_identity_generation_fields_required_approver_user_person_and_all_identity_generation_fields_null",
+      "STANDARD_HIGH_RISK": "initiator_and_approver_user_person_and_all_identity_generation_fields_required",
+      "DISASTER_CUSTODIAN": "initiator_and_approver_user_person_and_all_identity_generation_fields_null_local_custodian_actor_evidence_only"
+    },
+    "execution_authorization_reference_exactly_one_id": true,
+    "execution_evidence_records_bind_same_authorization_reference": true,
+    "high_risk_action_identity_schema": [
+      "initiator_user_id",
+      "initiator_person_id",
+      "initiator_person_registry_generation",
+      "initiator_person_binding_generation",
+      "initiator_user_account_state_generation",
+      "initiator_authentication_epoch",
+      "initiator_authorization_epoch",
+      "initiator_role_scope_assignment_generation",
+      "initiator_credential_generation",
+      "initiator_eligibility_generation"
+    ],
+    "high_risk_approval_identity_schema": [
+      "approver_user_id",
+      "approver_person_id",
+      "approver_person_registry_generation",
+      "approver_person_binding_generation",
+      "approver_user_account_state_generation",
+      "approver_authentication_epoch",
+      "approver_authorization_epoch",
+      "approver_role_scope_assignment_generation",
+      "approver_credential_generation",
+      "approver_eligibility_generation",
+      "expected_request_hmac",
+      "expected_request_hmac_key_id"
+    ],
+    "execution_requires_different_active_attested_person_ids": true,
+    "execution_rechecks_both_identity_role_credential_and_eligibility_generations": true,
+    "immutable_typed_command_schema": [
+      "command_id",
+      "authorization_kind",
+      "direct_operation_authorization_id",
+      "high_risk_action_id",
+      "disaster_recovery_authorization_envelope_id",
+      "initiator_user_id",
+      "initiator_person_id",
+      "initiator_person_registry_generation",
+      "initiator_person_binding_generation",
+      "initiator_user_account_state_generation",
+      "initiator_authentication_epoch",
+      "initiator_authorization_epoch",
+      "initiator_role_scope_assignment_generation",
+      "initiator_credential_generation",
+      "initiator_eligibility_generation",
+      "approver_user_id",
+      "approver_person_id",
+      "approver_person_registry_generation",
+      "approver_person_binding_generation",
+      "approver_user_account_state_generation",
+      "approver_authentication_epoch",
+      "approver_authorization_epoch",
+      "approver_role_scope_assignment_generation",
+      "approver_credential_generation",
+      "approver_eligibility_generation",
+      "operational_fence_generation",
+      "readiness_snapshot_hash",
+      "operation_id",
+      "request_hmac",
+      "request_hmac_key_id",
+      "canonical_non_secret_parameters",
+      "secret_parameter_references_only",
+      "target_revisions_and_generations",
+      "frozen_plan_or_domain_intent_id",
+      "created_at"
+    ],
+    "immutable_typed_command_append_only": true,
+    "outbox_record_schema": [
+      "outbox_id",
+      "operation_id",
+      "command_id",
+      "authorization_kind",
+      "direct_operation_authorization_id",
+      "high_risk_action_id",
+      "disaster_recovery_authorization_envelope_id",
+      "event_type",
+      "payload_hash",
+      "state",
+      "attempt_count",
+      "not_before",
+      "created_at"
+    ],
+    "execution_idempotency_scope": "phase_and_authorization_kind_and_evidence_id_and_exact_command",
+    "execution_idempotency_phase_distinct_from_request": true,
+    "crash_before_atomic_commit_result": "NO_DOMAIN_EFFECT_ACTION_REMAINS_APPROVED",
+    "non_ledger_crash_after_atomic_commit_result": "IDEMPOTENT_PRIOR_RESULT_ACTION_CONSUMED",
+    "ledger_backed_execution_success_requires_committed_anchor": true,
+    "ledger_prepared_retry_result": "RECONCILE_DOMAIN_COMMIT_AND_ANCHOR_BEFORE_RETURNING_SUCCESS",
+    "ledger_reconciliation_unavailable_result": "SECURITY_LEDGER_RECONCILIATION_REQUIRED",
+    "stored_request_body_policy": "KEYED_HMAC_ONLY_NO_SECRET_BODY",
     "request_hash_binds": [
       "http_method",
       "canonical_path",
       "tenant_id",
       "deployment_id",
       "requester_user_id",
+      "initiator_person_id",
+      "initiator_person_registry_generation",
+      "initiator_person_binding_generation",
+      "initiator_user_account_state_generation",
+      "initiator_authentication_epoch",
+      "initiator_authorization_epoch",
+      "initiator_role_scope_assignment_generation",
+      "initiator_credential_generation",
+      "initiator_eligibility_generation",
       "resource_ids",
       "canonical_body",
       "if_match",
       "expected_generations",
       "reason",
       "policy_version",
+      "control_plane_epoch",
+      "operational_fence_generation",
+      "readiness_snapshot_hash",
       "recovery_security_ledger_head"
     ],
-    "development_test_auto_approval_requires_explicit_audit_policy": true,
+    "request_hash_binds_initiator_user_person_registry_role_credential_and_eligibility_generations": true,
+    "affected_privileged_identity_role_or_credential_change_fails_pending_or_approved_action": true,
+    "operational_fence_or_readiness_snapshot_change_fails_pending_or_approved_action": true,
+    "development_test_auto_approval_allowed": false,
     "protected_operations": [
+      "activateDeploymentProduction",
+      "createUser",
+      "updateUser",
+      "disableUser",
+      "enableUser",
+      "unlockUser",
+      "issuePasswordReset",
+      "revokeUserAuthSession",
+      "replaceUserRoles",
       "publishToScreen",
       "publishToScreenGroup",
       "rollbackScreen",
       "rollbackScreenGroup",
+      "issueDeviceEnrollment",
+      "revokeDeviceEnrollment",
       "revokeDeviceCredential",
+      "createSecret",
       "rotateSecret",
       "putFineReportIdentityBinding",
       "executeRestorePlan"
@@ -745,7 +2166,34 @@
       "entropy_bits_min": 256,
       "ttl_minutes": 30,
       "single_use": true,
-      "stored_as_digest": true
+      "stored_as_digest": true,
+      "verifier_algorithm": "HMAC-SHA-256",
+      "verifier_key_id_stored": true,
+      "grant_issued_only_by_local_setup_ceremony": true,
+      "grant_binding_schema": [
+        "grant_id",
+        "deployment_id",
+        "server_reserved_first_user_id",
+        "first_person_id",
+        "first_person_attestation_hash",
+        "first_user_binding_hash",
+        "target_channel_event_id",
+        "target_possession_challenge_hash",
+        "expected_first_credential_generation",
+        "person_registry_generation",
+        "custodian_registry_generation",
+        "verifier_hmac",
+        "verifier_key_id",
+        "issued_at",
+        "expires_at",
+        "state"
+      ],
+      "first_person_attestation_and_user_binding_require_two_distinct_current_custodian_signatures": true,
+      "first_user_id_is_server_reserved_before_attestation_and_not_client_selected": true,
+      "target_possession_proof_is_bound_before_first_password_commit": true,
+      "complete_bootstrap_rechecks_current_person_binding_eligibility_key_and_registry_generations": true,
+      "complete_bootstrap_atomically_creates_exact_bound_first_platform_admin_and_invalidates_other_grants": true,
+      "complete_bootstrap_cannot_substitute_person_user_role_or_target_channel": true
     },
     "password_hash": {
       "algorithm": "Argon2id",
@@ -766,20 +2214,888 @@
       "idle_minutes": 30,
       "absolute_hours": 8,
       "high_risk_reauthentication_minutes": 10,
-      "entropy_bits_min": 256
+      "entropy_bits_min": 256,
+      "verifier_algorithm": "HMAC-SHA-256",
+      "verifier_key_id_stored": true
+    },
+    "browser_session_security": {
+      "cookie_secure": true,
+      "cookie_http_only": true,
+      "cookie_same_site": "Strict",
+      "session_cookie_name": "__Host-shuziren_session",
+      "session_cookie_host_only": true,
+      "session_cookie_domain_attribute_present": false,
+      "session_cookie_path": "/",
+      "duplicate_or_ambiguous_session_cookie_result": "AUTHENTICATION_REQUIRED",
+      "session_id_in_url_or_local_storage": false,
+      "csrf_token_entropy_bits_min": 256,
+      "csrf_token_bound_to_auth_session": true,
+      "csrf_token_rotated_after_authentication_reauthentication_and_privilege_change": true,
+      "session_identifier_rotated_after_authentication_reauthentication_and_privilege_change": true,
+      "old_session_verifier_revoked_atomically_before_new_cookie_becomes_usable": true,
+      "privilege_change_advances_authorization_epoch_and_invalidates_prior_epoch_sessions": true,
+      "new_session_cookie_delivery": "SET_COOKIE_RESPONSE_HEADER_NO_STORE",
+      "csrf_delivery": "LOGIN_AND_AUTHENTICATED_SESSION_BOOTSTRAP_RESPONSE_HEADERS_NO_STORE",
+      "csrf_header_name": "X-CSRF-Token",
+      "authenticated_session_bootstrap_operation": "refreshCsrfToken",
+      "authenticated_session_bootstrap_rotates_and_delivers_csrf_token": true,
+      "authenticated_session_bootstrap_response_cache_control": "no-store",
+      "authenticated_session_bootstrap_requires_exact_origin": true,
+      "authenticated_session_bootstrap_is_the_only_cookie_mutation_exempt_from_existing_csrf_header": true,
+      "get_current_auth_session_is_read_only_and_never_rotates_csrf": true,
+      "csrf_response_header_readable_only_to_exact_allowed_origin": true,
+      "cors_allow_credentials_only_for_exact_allowed_origin": true,
+      "wildcard_cors_origin_allowed": false,
+      "server_stores_csrf_keyed_verifier_only": true,
+      "csrf_verifier_algorithm": "HMAC-SHA-256",
+      "csrf_verifier_key_id_stored": true,
+      "all_browser_state_changing_requests_including_unauthenticated_login_require_exact_origin": true,
+      "cookie_authenticated_mutations_except_authenticated_session_bootstrap_require_session_bound_csrf_header": true,
+      "allowed_origins_source": "SERVER_CONFIGURED_EXACT_ALLOWLIST",
+      "safe_methods_exempt": [
+        "GET",
+        "HEAD",
+        "OPTIONS"
+      ],
+      "origin_missing_or_mismatch_result": "FORBIDDEN",
+      "csrf_missing_or_mismatch_result": "FORBIDDEN",
+      "csrf_token_in_url_local_storage_or_logs": false
     },
     "reset_token": {
       "ttl_minutes": 15,
       "entropy_bits_min": 256,
       "single_use": true,
-      "stored_as_digest": true
+      "stored_as_digest": true,
+      "verifier_algorithm": "HMAC-SHA-256",
+      "verifier_key_id_stored": true,
+      "issuance_kinds": [
+        "NORMAL_PASSWORD_RESET",
+        "PROVISIONING_CREDENTIAL_SETUP"
+      ],
+      "issuance_binding_schema": [
+        "issuance_kind",
+        "target_user_id",
+        "target_account_state_generation",
+        "target_authentication_epoch",
+        "target_authorization_epoch",
+        "target_role_scope_assignment_generation",
+        "target_privilege_snapshot_hash",
+        "target_person_id",
+        "target_person_binding_generation",
+        "target_person_eligibility_generation",
+        "target_channel_event_id",
+        "target_possession_challenge_hash",
+        "issuance_policy_id"
+      ],
+      "issuance_branch_rules": {
+        "NORMAL_PASSWORD_RESET": "TARGET_MUST_HAVE_CURRENT_ACTIVE_PERSON_BINDING_AND_ALL_PERSON_FIELDS_REQUIRED_TARGET_CHANNEL_AND_CHALLENGE_FIELDS_BIND_EXACT_TARGET",
+        "PROVISIONING_CREDENTIAL_SETUP": "TARGET_MUST_BE_DISABLED_EMPTY_ROLE_PROVISIONING_USER_PERSON_FIELDS_NULL_TARGET_CHANNEL_AND_CHALLENGE_FIELDS_REQUIRED"
+      },
+      "target_enabled_role_privilege_person_binding_or_security_generation_change_revokes_outstanding_tokens": true,
+      "consume_rechecks_current_target_matches_issuance_binding_and_policy": true,
+      "normal_user_token_cannot_be_consumed_after_target_becomes_privileged": true,
+      "provisioning_setup_consumption_sets_only_credential_and_possession_evidence_and_never_enables_or_grants_role": true,
+      "provisioning_setup_requires_custodian_signed_user_binding_before_later_enable_or_role_grant": true,
+      "consume_mismatch_result": "INVALID_STATE_TRANSITION"
+    },
+    "recovery_password_setup_grant_policy": {
+      "authorization_kinds": [
+        "STANDARD_HIGH_RISK",
+        "DISASTER_CUSTODIAN",
+        "PRODUCTION_READINESS_CUSTODIAN"
+      ],
+      "authorization_reference_exactly_one_id": true,
+      "record_schema": [
+        "grant_id",
+        "authorization_kind",
+        "high_risk_action_id",
+        "disaster_recovery_authorization_envelope_id",
+        "production_readiness_recovery_authorization_id",
+        "authorization_evidence_hash",
+        "deployment_id",
+        "credential_stage_id",
+        "production_readiness_recovery_plan_id",
+        "operational_fence_generation",
+        "selected_user_id",
+        "selected_person_id",
+        "selected_person_binding_generation",
+        "selected_person_eligibility_generation",
+        "expected_old_credential_generation",
+        "expected_new_credential_generation",
+        "expected_authentication_epoch",
+        "authority_prepared_sequence",
+        "authority_commit_anchor_kind",
+        "verifier_hmac",
+        "verifier_key_id",
+        "nonce",
+        "expires_at",
+        "state"
+      ],
+      "normal_mode_grant_count": "EXACTLY_NUMBER_OF_STALE_OR_MISSING_SELECTED_ADMIN_CREDENTIALS_MINIMUM_1_MAXIMUM_2",
+      "disaster_mode_grant_count_by_deployment_mode": {
+        "SETUP": 1,
+        "PRODUCTION_ACTIVE_ANY_POSTURE": 2
+      },
+      "production_readiness_admin_replacement_grant_count": 1,
+      "grant_set_is_authority_transition_scoped_and_terminalized_atomically": true,
+      "any_required_grant_expiry_revocation_or_authentication_failure_aborts_entire_set": true,
+      "abort_effect_by_authorization_kind": {
+        "STANDARD_HIGH_RISK": "DESTROY_ALL_PROVISIONAL_VERIFIERS_HIGH_RISK_ACTION_REMAINS_CONSUMED",
+        "DISASTER_CUSTODIAN": "DESTROY_ALL_PROVISIONAL_VERIFIERS_AND_COMPARE_AND_SWAP_DISASTER_NONCE_TO_ABORTED_CONSUMED",
+        "PRODUCTION_READINESS_CUSTODIAN": "DESTROY_ALL_PROVISIONAL_VERIFIERS_AND_COMPARE_AND_SWAP_PRODUCTION_READINESS_NONCE_TO_ABORTED_CONSUMED"
+      },
+      "provisional_consume_and_staged_auth_proof_bind_same_authority_prepared_sequence": true,
+      "commit_anchor_by_authorization_kind": {
+        "STANDARD_HIGH_RISK": "RESTORE_CUTOVER_LEDGER_ANCHOR",
+        "DISASTER_CUSTODIAN": "RESTORE_CUTOVER_LEDGER_AND_DISASTER_NONCE_ANCHORS",
+        "PRODUCTION_READINESS_CUSTODIAN": "PRODUCTION_READINESS_LEDGER_NONCE_AND_READY_FENCE_SUCCESSOR_ANCHORS"
+      },
+      "branch_field_rules": {
+        "STANDARD_HIGH_RISK_OR_DISASTER_CUSTODIAN": "credential_stage_id_is_restore_staged_store_authority_prepared_sequence_is_cutover_prepared_sequence_production_readiness_plan_and_fence_fields_null",
+        "PRODUCTION_READINESS_CUSTODIAN": "credential_stage_id_is_production_readiness_recovery_stage_authority_prepared_sequence_is_production_readiness_ledger_prepared_sequence_production_readiness_plan_and_fence_fields_required_restore_authorization_ids_null"
+      },
+      "staged_administrator_authentication_proof_schema": [
+        "proof_id",
+        "authority_transition_id",
+        "authority_prepared_sequence",
+        "credential_stage_id",
+        "selected_user_id",
+        "selected_person_id",
+        "selected_person_binding_generation",
+        "selected_person_eligibility_generation",
+        "credential_generation",
+        "authentication_epoch",
+        "authenticated_at",
+        "result",
+        "sanitized_proof_hash"
+      ],
+      "staged_authentication_proof_contains_password_token_or_reauthentication_material": false
+    },
+    "human_operator_independence": {
+      "production_privileged_roles": [
+        "platform_admin"
+      ],
+      "production_privileged_permissions": [
+        "risk.approve",
+        "user.manage",
+        "role.assign",
+        "deployment.manage",
+        "backup.restore",
+        "release.publish",
+        "release.rollback",
+        "device.enroll",
+        "device.revoke",
+        "secret.write",
+        "finereport.binding.manage"
+      ],
+      "person_identity_source": "EXTERNAL_CUSTODIAN_ATTESTED_HUMAN_OPERATOR_REGISTRY",
+      "person_identity_attestation_minimum_distinct_custodians": 2,
+      "person_identity_attestation_signature_algorithm": "Ed25519",
+      "person_identity_attestation_signature_purpose_domain": "HUMAN_OPERATOR_ATTESTATION_SIGNATURE",
+      "person_identity_attestation_verification_requires_record_bound_key_id_and_exact_purpose": true,
+      "person_identity_attestation_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "person_identity_attestation_domain_separator": "shuziren:p1:operator-person-attestation:v1",
+      "person_identity_attestation_signed_payload": "COMPLETE_ATTESTATION_EXCLUDING_SIGNATURE_TUPLES",
+      "person_identity_attestation_schema": [
+        "person_id",
+        "deployment_id",
+        "eligible_roles_and_permissions_sorted",
+        "eligibility_generation",
+        "custodian_ids_sorted_distinct",
+        "custodian_signature_key_ids_sorted_distinct",
+        "custodian_signature_tuples_sorted_by_custodian_id",
+        "custodian_registry_generation",
+        "person_registry_generation",
+        "issued_at",
+        "expires_at",
+        "revoked_at"
+      ],
+      "person_identity_attestation_quorum_counts_distinct_custodian_ids_not_key_ids": true,
+      "user_binding_signature_purpose_domain": "HUMAN_OPERATOR_ATTESTATION_SIGNATURE",
+      "user_binding_signature_algorithm": "Ed25519",
+      "user_binding_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "user_binding_domain_separator": "shuziren:p1:human-operator-user-binding:v1",
+      "user_binding_verification_requires_record_bound_key_id_and_exact_purpose": true,
+      "user_binding_signed_payload": "COMPLETE_USER_BINDING_EXCLUDING_SIGNATURE_TUPLES",
+      "user_binding_schema": [
+        "binding_id",
+        "deployment_id",
+        "user_id",
+        "person_id",
+        "user_credential_generation_at_attestation",
+        "possession_challenge_id",
+        "possession_challenge_nonce_hash",
+        "target_channel_event_id",
+        "user_possession_proof_hash",
+        "binding_generation",
+        "person_eligibility_generation",
+        "person_registry_generation",
+        "custodian_registry_generation",
+        "custodian_ids_sorted_distinct",
+        "custodian_signature_key_ids_sorted_distinct",
+        "custodian_signature_tuples_sorted_by_custodian_id",
+        "issued_at",
+        "expires_at",
+        "revoked_at"
+      ],
+      "user_binding_requires_two_distinct_custodian_signatures_and_current_user_possession_proof": true,
+      "user_possession_proof_is_server_challenge_and_authenticated_target_channel_event_not_password_derived_material": true,
+      "user_possession_proof_contains_password_verifier_token_or_reusable_authentication_material": false,
+      "user_credential_generation_at_attestation_is_historical_evidence_not_a_current_equality_requirement": true,
+      "later_authorized_password_rotation_does_not_invalidate_user_binding": true,
+      "binding_validity_depends_on_current_binding_person_registry_eligibility_and_revocation_generations": true,
+      "user_binding_rotation_or_revocation_is_external_registry_monotonic_and_ledger_anchored": true,
+      "person_identity_fields_client_assertable": false,
+      "user_account_person_binding_reference_schema": [
+        "human_operator_person_id",
+        "person_binding_id",
+        "person_binding_generation",
+        "person_eligibility_generation"
+      ],
+      "person_identity_registry_in_external_monotonic_anchor": true,
+      "person_identity_registry_rotation_or_revocation_is_monotonic_and_ledger_anchored": true,
+      "restore_uses_current_external_person_registry_never_backup_copy": true,
+      "restore_never_widens_person_eligibility": true,
+      "every_production_control_plane_authorization_rechecks_active_person_attestation_and_eligibility_generation": true,
+      "person_registry_unavailable_result": {
+        "error_code": "KEY_SERVICE_UNAVAILABLE",
+        "state_effect": "AUTHORIZATION_AND_DOMAIN_STATE_UNCHANGED",
+        "retryable": true
+      },
+      "revoked_expired_or_stale_person_mapping_result": "FORBIDDEN",
+      "person_revocation_immediately_updates_credential_usable_admin_floor": true,
+      "all_authenticatable_control_plane_human_users_require_active_attested_person_id_and_user_binding": true,
+      "one_active_user_per_person_per_deployment": true,
+      "user_provisioning_policy": {
+        "create_user_initial_state": "PROVISIONING",
+        "create_user_accepts_password_enabled_roles_or_person_binding_fields": false,
+        "provisioning_user_has_empty_role_set_and_cannot_authenticate_or_approve": true,
+        "target_only_credential_setup_uses_provisioning_credential_setup_reset_token_and_possession_challenge_before_user_binding": true,
+        "custodian_signed_user_binding_precedes_enable_or_role_grant": true,
+        "enable_and_role_grant_recheck_current_person_binding_and_target_credential_generation": true,
+        "abandoned_provisioning_user_remains_non_authoritative_and_may_be_governed_purged_without_reusing_user_id": true
+      },
+      "all_high_risk_initiators_and_approvers_require_active_attested_person_id": true,
+      "production_activation_requires_two_distinct_active_person_ids": true,
+      "high_risk_initiator_and_approver_person_ids_must_differ": true,
+      "high_risk_initiator_and_approver_user_ids_must_differ": true,
+      "high_risk_action_binds_initiator_user_person_role_credential_and_eligibility_generations": true,
+      "approval_eligibility_snapshot_rechecked_at_execution": true,
+      "human_identity_role_or_credential_change_invalidates_affected_pending_or_approved_actions": true,
+      "production_privileged_user_mutations_require_four_eyes": [
+        "createUser",
+        "updateUser",
+        "disableUser",
+        "enableUser",
+        "unlockUser",
+        "issuePasswordReset",
+        "revokeUserAuthSession",
+        "replaceUserRoles"
+      ],
+      "privileged_role_grant_requires_active_custodian_attested_person_identity": true,
+      "privileged_password_reset_token_returned_to_initiator": false,
+      "privileged_password_reset_delivery": "TARGET_PERSON_CONTROLLED_LOCAL_ONE_TIME_CHANNEL_NO_STORE",
+      "privileged_password_change_requires_target_person_proof": true,
+      "privileged_lost_credential_recovery": "OFFLINE_CUSTODIAN_AUTHORIZED_LOCAL_RECOVERY_ONLY",
+      "initiator_may_not_claim_or_observe_another_privileged_person_credential": true,
+      "same_person_multi_account_approval_result": "FORBIDDEN",
+      "unattested_privileged_identity_result": "PRODUCTION_READINESS_REQUIRED"
+    },
+    "disaster_recovery_authorization": {
+      "enabled": true,
+      "entry_conditions": [
+        "ACTIVE_STORE_UNAVAILABLE",
+        "NO_CREDENTIAL_USABLE_ENABLED_DEPLOYMENT_PLATFORM_ADMIN"
+      ],
+      "surface": "LOCAL_MAINTENANCE_ONLY",
+      "network_api_exposed": false,
+      "authorization_mode_xor": "STANDARD_HIGH_RISK_ACTION_XOR_DISASTER_RECOVERY_CUSTODIAN_ENVELOPE",
+      "custodian_envelope_is_restricted_execute_restore_authorization": true,
+      "standard_high_risk_action_not_required_in_disaster_mode": true,
+      "minimum_registered_custodians": 3,
+      "minimum_distinct_custodian_signatures": 2,
+      "custodian_signature_algorithm": "Ed25519",
+      "custodian_signature_purpose_domain": "OFFLINE_RECOVERY_AUTHENTICATION",
+      "custodian_signature_verification_requires_record_bound_key_id_and_exact_purpose": true,
+      "custodian_signature_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "custodian_signature_domain_separator": "shuziren:p1:disaster-recovery-authorization:v1",
+      "custodian_signature_input": "COMPLETE_ENVELOPE_EXCLUDING_SIGNATURES",
+      "custodian_quorum_counts_distinct_custodian_ids_not_key_ids": true,
+      "active_signature_key_id_maps_to_exactly_one_custodian_id": true,
+      "one_signature_per_custodian_id": true,
+      "custodian_registry_version_bound": true,
+      "custodian_revocation_state_from_external_anchor": true,
+      "authorization_ttl_minutes": 30,
+      "authorization_time_source": "EXTERNAL_TRUSTED_MONOTONIC_TIME",
+      "clock_rollback_never_extends_authorization": true,
+      "single_use_nonce": true,
+      "custodian_public_keys_in_external_anchor": true,
+      "custodian_private_keys_offline": true,
+      "backup_recovery_key_is_distinct": true,
+      "authorization_envelope_binds": [
+        "deployment_id",
+        "deployment_mode",
+        "deployment_operational_posture",
+        "backup_manifest_hash",
+        "recovery_security_ledger_head",
+        "staged_store_id",
+        "disaster_entry_condition",
+        "entry_condition_preflight_evidence_hash",
+        "exact_restore_mode",
+        "exact_missing_credential_subject_set",
+        "admin_readiness_branch",
+        "selected_platform_admin_user_ids_sorted_distinct",
+        "selected_admin_user_person_tuples_sorted_distinct",
+        "selected_admin_person_binding_generations",
+        "selected_admin_person_eligibility_generations",
+        "person_registry_generation",
+        "replacement_person_attestation_hash",
+        "replacement_user_binding_hash",
+        "human_attestation_custodian_registry_generation",
+        "human_attestation_signature_key_ids_sorted_distinct",
+        "human_attestation_signature_tuples_sorted_distinct",
+        "custodian_registry_version",
+        "custodian_ids_sorted_distinct",
+        "custodian_signature_key_ids_sorted_distinct",
+        "custodian_signature_tuples_sorted_by_custodian_id",
+        "nonce",
+        "issued_at",
+        "expires_at"
+      ],
+      "authorization_envelope_admin_readiness_branch_rules": {
+        "NONE": "REPLACEMENT_ATTESTATION_BINDING_AND_HUMAN_SIGNATURE_FIELDS_NULL",
+        "LOCAL_DISASTER_REPLACE_ONE": "REPLACEMENT_ATTESTATION_BINDING_HUMAN_REGISTRY_KEY_AND_SIGNATURE_FIELDS_REQUIRED"
+      },
+      "entry_condition_preflight_evidence_is_canonical_sanitized_and_signed": true,
+      "entry_condition_rechecked_immediately_before_prepared_commit": true,
+      "active_store_available_and_standard_authorization_possible_result": "FORBIDDEN",
+      "active_store_unavailable_condition_requires_full_loss_source_mode": true,
+      "no_usable_admin_condition_requires_online_source_mode_and_authoritative_query": true,
+      "envelope_nonce_registry": "EXTERNAL_DISASTER_NONCE_REGISTRY_AND_MONOTONIC_ANCHOR_DISTINCT_FROM_RECOVERY_SECURITY_LEDGER",
+      "envelope_nonce_record_schema": [
+        "deployment_id",
+        "authorization_envelope_hash",
+        "cutover_id",
+        "nonce_hmac",
+        "nonce_hmac_key_id",
+        "authenticated_payload_hash",
+        "state",
+        "registry_generation",
+        "reserved_at",
+        "terminal_at"
+      ],
+      "envelope_nonce_hmac_algorithm": "HMAC-SHA-256",
+      "envelope_nonce_hmac_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "envelope_nonce_hmac_domain_separator": "shuziren:p1:disaster-envelope-nonce:v1",
+      "envelope_nonce_hmac_input": [
+        "deployment_id",
+        "authorization_envelope_hash",
+        "cutover_id",
+        "nonce",
+        "authenticated_payload_hash"
+      ],
+      "envelope_nonce_unique_compare_and_swap_key": [
+        "deployment_id",
+        "nonce_hmac"
+      ],
+      "envelope_nonce_uniqueness_and_transition_use_external_compare_and_swap": true,
+      "envelope_nonce_hmac_purpose_domain": "DISASTER_ENVELOPE_NONCE_HMAC",
+      "envelope_nonce_reserved_before_grant_issue": true,
+      "envelope_nonce_reservation_states": [
+        "RESERVED",
+        "COMMITTED_CONSUMED",
+        "ABORTED_CONSUMED"
+      ],
+      "pre_pointer_abort_marks_nonce_aborted_consumed_and_never_reusable": true,
+      "envelope_nonce_exact_retry_allowed_only_for_same_cutover_id_and_authenticated_payload": true,
+      "allowed_commands": [
+        "validate_exact_backup",
+        "authorize_exact_restore",
+        "issue_required_recovery_password_setup_grants_by_deployment_mode"
+      ],
+      "selected_admins_requirement_by_branch": {
+        "NONE": "ALL_SELECTED_ADMINS_ENABLED_LEDGER_AUTHORITATIVE_EXISTING_DEPLOYMENT_PLATFORM_ADMINS",
+        "LOCAL_DISASTER_REPLACE_ONE": "ONE_CURRENT_LEDGER_AUTHORITATIVE_ADMIN_PLUS_ONE_EXACT_CUSTODIAN_ATTESTED_REPLACEMENT_PROVISIONAL_UNTIL_CUTOVER_ANCHOR"
+      },
+      "selected_admins_must_have_distinct_active_attested_person_ids": true,
+      "local_disaster_admin_readiness_replacement": {
+        "branch_id": "LOCAL_DISASTER_REPLACE_ONE",
+        "allowed_when_local_disaster_and_exactly_one_current_active_attested_existing_admin_remains_for_online_or_full_loss_source": true,
+        "zero_current_active_attested_admins_result": "EXPLICIT_REINITIALIZATION_REQUIRED",
+        "two_current_active_attested_admins_use_branch": "NONE",
+        "replacement_requires_current_two_of_three_human_attestation_signatures_under_human_operator_purpose": true,
+        "human_signature_algorithm": "Ed25519",
+        "human_signature_purpose_domain": "HUMAN_OPERATOR_ATTESTATION_SIGNATURE",
+        "human_signature_domain_separator": "shuziren:p1:local-disaster-admin-replacement:v1",
+        "human_signed_payload": "COMPLETE_AUTHORIZATION_ENVELOPE_EXCLUDING_OFFLINE_AND_HUMAN_SIGNATURE_TUPLES",
+        "disaster_restore_still_requires_separate_two_of_three_offline_recovery_signatures": true,
+        "may_create_bind_enable_and_assign_exactly_one_replacement_platform_admin_only": true,
+        "replacement_person_id_must_differ_from_surviving_admin_person_id": true,
+        "replacement_user_id_must_be_new_and_not_alias_existing_or_revoked_user": true,
+        "replacement_attestation_binding_and_eligibility_generations_rechecked_immediately_before_cutover_commit": true,
+        "cannot_reactivate_revoked_person_binding_or_widen_any_other_authority": true,
+        "two_grants_target_surviving_and_replacement_admins_and_both_must_authenticate_staged_store": true,
+        "replacement_user_person_binding_role_password_and_eligibility_generations_provisional_until_same_cutover_ledger_and_disaster_nonce_anchors": true,
+        "abort_destroys_replacement_verifier_and_leaves_no_authoritative_replacement_account": true
+      },
+      "production_disaster_admin_branch_selection": {
+        "two_or_more_current_active_attested_ledger_admins": "SELECT_EXACTLY_TWO_AND_ISSUE_TWO_PROVISIONAL_GRANTS",
+        "exactly_one_current_active_attested_ledger_admin_with_online_or_full_loss_source": "LOCAL_DISASTER_REPLACE_ONE",
+        "zero_current_active_attested_ledger_admins": "NO_IN_PLACE_RESTORE_EXPLICIT_NEW_DEPLOYMENT_REINITIALIZATION_AND_INCIDENT_PATH"
+      },
+      "disaster_recovery_password_setup_grant_count_by_deployment_mode": {
+        "SETUP": 1,
+        "PRODUCTION_ACTIVE_ANY_POSTURE": 2
+      },
+      "recovery_password_setup_grant_entropy_bits_min": 256,
+      "recovery_password_setup_grant_stored_as_keyed_digest_with_key_id": true,
+      "recovery_password_setup_grant_verifier_algorithm": "HMAC-SHA-256",
+      "recovery_password_setup_grant_plaintext_local_one_time_no_store": true,
+      "recovery_password_setup_grant_binds": [
+        "authorization_kind",
+        "high_risk_action_id",
+        "disaster_recovery_authorization_envelope_id",
+        "authorization_reference_exactly_one_id",
+        "authorization_evidence_hash",
+        "deployment_id",
+        "staged_store_id",
+        "selected_user_id",
+        "selected_person_id",
+        "selected_person_binding_generation",
+        "selected_person_eligibility_generation",
+        "expected_old_credential_generation",
+        "expected_new_credential_generation",
+        "expected_authentication_epoch",
+        "cutover_prepared_sequence",
+        "nonce",
+        "expires_at"
+      ],
+      "recovery_password_setup_grant_single_use": true,
+      "recovery_password_setup_grant_ttl_minutes": 30,
+      "recovery_password_setup_grant_provisional_consume_sets_staged_verifier_and_auth_proof": true,
+      "recovery_password_setup_grant_consume_revokes_sibling_grants_for_user": true,
+      "recovery_password_setup_grant_plaintext_in_continuity_ledger_audit_backup_or_logs": false,
+      "all_required_grants_provisionally_consumed_before_cutover": true,
+      "staged_authentication_proof_required_for_each_selected_admin": true,
+      "provisional_staged_verifier_not_authoritative_before_cutover": true,
+      "password_generation_authority_commits_only_with_cutover_anchor": true,
+      "pre_pointer_abort_result": "DESTROY_PROVISIONAL_VERIFIERS_REQUIRE_FRESH_ENVELOPE_AND_GRANTS_OLD_CREDENTIALS_REMAIN_AUTHORITATIVE",
+      "authority_change_rules_by_admin_readiness_branch": {
+        "NONE": "CANNOT_CREATE_ENABLE_ASSIGN_OR_WIDEN_USER_AUTHORITY",
+        "LOCAL_DISASTER_REPLACE_ONE": "MAY_PROVISIONALLY_CREATE_BIND_ENABLE_AND_ASSIGN_ONLY_THE_EXACT_SIGNED_REPLACEMENT_PLATFORM_ADMIN_ALL_OTHER_AUTHORITY_INCREASE_FORBIDDEN"
+      },
+      "cannot_reactivate_old_credential": true,
+      "ledger_prepared_committed_anchor_required": true,
+      "external_recovery_audit_inserted_via_continuity": true,
+      "production_activation_readiness_checks": [
+        "backup_recovery_key_available",
+        "production_backup_root_writable_on_required_separate_mount",
+        "current_checkpoint_at_exact_ledger_head_key_person_registry_and_selected_admin_generations_cryptographically_verified",
+        "recovery_security_ledger_and_anchor_healthy",
+        "external_disaster_nonce_registry_read_write_compare_and_swap_and_replay_preflight_passed",
+        "external_operational_fence_anchor_hmac_read_write_compare_and_swap_and_initial_ready_generation_preflight_passed",
+        "active_operational_fence_hmac_key_and_exact_purpose_verification_preflight_passed",
+        "external_production_readiness_nonce_registry_and_active_hmac_key_read_write_cas_preflight_passed",
+        "external_emergency_authority_reduction_nonce_registry_and_active_hmac_key_read_write_cas_preflight_passed",
+        "external_trusted_monotonic_time_read_and_clock_rollback_preflight_passed",
+        "anchor_native_root_recovery_nonce_compare_and_swap_checkpoint_and_offline_signature_preflight_passed",
+        "minimum_three_active_offline_recovery_custodian_public_keys_registered",
+        "offline_recovery_custodian_signature_preflight_passed",
+        "minimum_three_active_human_operator_attestation_custodian_public_keys_registered",
+        "human_operator_attestation_signature_preflight_passed",
+        "current_external_person_registry_healthy",
+        "two_distinct_active_attested_admin_person_ids_and_eligibility_generations",
+        "restore_continuity_envelope_key_available",
+        "two_credential_usable_deployment_platform_admins"
+      ],
+      "cutover_admin_access_requirement_by_deployment_mode": {
+        "SETUP": "ONE_SELECTED_EXISTING_ATTESTED_ADMIN_CREDENTIAL_USABLE_AND_AUTHENTICATED_AGAINST_STAGED_STORE",
+        "PRODUCTION_ACTIVE_ANY_POSTURE": "TWO_SELECTED_DISTINCT_ATTESTED_PERSON_ADMINS_CREDENTIAL_USABLE_AND_AUTHENTICATED_AGAINST_STAGED_STORE"
+      },
+      "invalid_or_unavailable_result": "FAIL_CLOSED_KEEP_ACTIVE_OR_STAGED_UNSERVED"
+    },
+    "authorization_scope": {
+      "role_catalog_version": "p1_roles_v1",
+      "scope_types": [
+        "DEPLOYMENT",
+        "SITE",
+        "SCREEN"
+      ],
+      "scope_id_required": true,
+      "scope_must_share_authenticated_tenant_and_deployment": true,
+      "inheritance": "NAMED_SCOPE_AND_DESCENDANTS_ONLY",
+      "sibling_or_ancestor_access": false,
+      "unknown_role_scope_or_catalog_result": "DENY",
+      "production_high_risk_min_distinct_authorized_users": 2,
+      "production_high_risk_min_distinct_active_attested_person_ids": 2,
+      "production_activation_requires_two_credential_usable_deployment_platform_admins": true,
+      "production_activation_requires_two_distinct_active_attested_admin_person_ids": true,
+      "production_admin_floor_enforced_after_activation_on_disable_and_role_replace": true,
+      "production_activation_failure_result": "PRODUCTION_READINESS_REQUIRED",
+      "allowed_scopes_by_role": {
+        "platform_admin": [
+          "DEPLOYMENT"
+        ],
+        "implementation_engineer": [
+          "DEPLOYMENT",
+          "SITE",
+          "SCREEN"
+        ],
+        "business_operator": [
+          "SITE",
+          "SCREEN"
+        ],
+        "operations_engineer": [
+          "DEPLOYMENT",
+          "SITE"
+        ],
+        "auditor": [
+          "DEPLOYMENT",
+          "SITE",
+          "SCREEN"
+        ]
+      }
     }
   },
   "device_policy": {
     "enrollment_ttl_minutes": 15,
     "credential_entropy_bits_min": 256,
+    "enrollment_and_credential_verifier_algorithm": "HMAC-SHA-256",
+    "enrollment_and_credential_verifier_key_id_stored": true,
     "rotation_activation_minutes": 10,
-    "hard_revoke_increments_epoch": true
+    "hard_revoke_increments_epoch": true,
+    "hard_revoke_etag_resource": "DeviceCredentialFamily",
+    "hard_revoke_requires_ledger_head": true,
+    "hard_revoke_atomic_family": true,
+    "hard_revoke_epoch_increment_exactly_once": true,
+    "hard_revoke_commit_time_epoch_recheck": true,
+    "hard_revoke_stale_result": "RESOURCE_VERSION_CONFLICT",
+    "enrollment_claim_when_active_family_exists": "ACTIVE_DEVICE_FAMILY_EXISTS",
+    "rotation_requires_active_requester_version": true,
+    "rotation_concurrency": "credential_epoch_and_family_generation",
+    "rotation_request_family_generation_increment_exactly_once": true,
+    "successor_activation_family_generation_increment_exactly_once": true,
+    "concurrent_successor_result": "SUCCESSOR_ALREADY_PENDING",
+    "pending_successor_expiry_revokes_only_successor_and_keeps_predecessor_active": true,
+    "active_credential_expiry_atomically_sets_family_reenroll_required_advances_family_generation_and_commits_ledger": true,
+    "reenrollment_allowed_only_when_family_reenroll_required_or_absent": true,
+    "reenrollment_requires_family_generation_and_ledger_head": true
+  },
+  "external_credential_rotation_policy": {
+    "secret_version_encryption_schema": [
+      "ciphertext",
+      "nonce_96_bit",
+      "authentication_tag_128_bit",
+      "envelope_encryption_key_id",
+      "associated_data_hash"
+    ],
+    "secret_version_nonce_unique_per_envelope_encryption_key": true,
+    "secret_version_associated_data_binds": [
+      "tenant_id",
+      "deployment_id",
+      "secret_ref",
+      "secret_version_id",
+      "secret_type"
+    ],
+    "secret_plaintext_or_deterministic_unkeyed_plaintext_commitment_persisted_or_exposed": false,
+    "finereport_identity_binding_references_secret_version_and_never_duplicates_ciphertext": true,
+    "version_states": [
+      "ACTIVE",
+      "RETIRING",
+      "REVOKED"
+    ],
+    "version_transitions": [
+      "ACTIVE|RETIRING|staged_successor",
+      "ACTIVE|REVOKED|emergency_revoke",
+      "RETIRING|REVOKED|deadline_or_emergency_revoke"
+    ],
+    "modes": [
+      "STAGED",
+      "EMERGENCY_REVOKE"
+    ],
+    "default_mode": "STAGED",
+    "retiring_max_hours": 24,
+    "active_version_only_for_new_bindings": true,
+    "retiring_use_scope": "EXACT_PRE_ROTATION_APPLIED_TARGETS_UNTIL_DEADLINE",
+    "high_risk_action_binds_retiring_target_set_hash_and_runtime_binding_generations": true,
+    "execution_recomputes_and_requires_exact_retiring_target_set": true,
+    "changed_retiring_target_set_result": "HIGH_RISK_ACTION_MISMATCH",
+    "revoked_use_allowed": false,
+    "restore_never_increases_version_usability": true,
+    "emergency_revocation_blocks_affected_runtime": true
+  },
+  "key_management_policy": {
+    "format_version": 1,
+    "purpose_domains": [
+      "HIGH_RISK_REQUEST_HMAC",
+      "SENSITIVE_REQUEST_DIGEST_HMAC",
+      "RESTORE_CONTINUITY_ENVELOPE_HMAC",
+      "RECOVERY_LEDGER_CHAIN_HMAC",
+      "RECOVERY_LEDGER_RECORD_AEAD",
+      "AUTH_SESSION_VERIFIER_PEPPER",
+      "CSRF_TOKEN_VERIFIER_PEPPER",
+      "ONE_TIME_TOKEN_VERIFIER_PEPPER",
+      "ONE_TIME_RESPONSE_ENCRYPTION",
+      "DEVICE_CREDENTIAL_VERIFIER_PEPPER",
+      "SECRET_ENVELOPE_ENCRYPTION",
+      "BACKUP_RECOVERY_ENCRYPTION",
+      "OFFLINE_RECOVERY_AUTHENTICATION",
+      "HUMAN_OPERATOR_ATTESTATION_SIGNATURE",
+      "DISASTER_ENVELOPE_NONCE_HMAC",
+      "OPERATIONAL_FENCE_HMAC",
+      "PRODUCTION_READINESS_NONCE_HMAC",
+      "EMERGENCY_AUTHORITY_REDUCTION_NONCE_HMAC"
+    ],
+    "production_required_active_key_purpose_domains": [
+      "HIGH_RISK_REQUEST_HMAC",
+      "SENSITIVE_REQUEST_DIGEST_HMAC",
+      "RESTORE_CONTINUITY_ENVELOPE_HMAC",
+      "RECOVERY_LEDGER_CHAIN_HMAC",
+      "RECOVERY_LEDGER_RECORD_AEAD",
+      "AUTH_SESSION_VERIFIER_PEPPER",
+      "CSRF_TOKEN_VERIFIER_PEPPER",
+      "ONE_TIME_TOKEN_VERIFIER_PEPPER",
+      "ONE_TIME_RESPONSE_ENCRYPTION",
+      "DEVICE_CREDENTIAL_VERIFIER_PEPPER",
+      "SECRET_ENVELOPE_ENCRYPTION",
+      "BACKUP_RECOVERY_ENCRYPTION",
+      "OFFLINE_RECOVERY_AUTHENTICATION",
+      "HUMAN_OPERATOR_ATTESTATION_SIGNATURE",
+      "DISASTER_ENVELOPE_NONCE_HMAC",
+      "OPERATIONAL_FENCE_HMAC",
+      "PRODUCTION_READINESS_NONCE_HMAC",
+      "EMERGENCY_AUTHORITY_REDUCTION_NONCE_HMAC"
+    ],
+    "production_activation_and_ready_recovery_require_exact_active_key_purpose_set_algorithm_entropy_and_crypto_preflight": true,
+    "key_states": [
+      "ACTIVE",
+      "VERIFY_ONLY",
+      "RETIRED",
+      "REVOKED"
+    ],
+    "cross_purpose_key_reuse_allowed": false,
+    "hmac_algorithm": "HMAC-SHA-256",
+    "symmetric_and_hmac_key_entropy_bits_min": 256,
+    "aead_policy": {
+      "algorithm": "AES-256-GCM",
+      "key_entropy_bits": 256,
+      "nonce_bits": 96,
+      "tag_bits": 128,
+      "nonce_unique_per_key_required": true,
+      "nonce_generation_and_reservation_atomic_per_key": true,
+      "nonce_reuse_result": "CRYPTOGRAPHIC_INTEGRITY_FAILURE",
+      "associated_data_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "associated_data_hash_algorithm": "SHA-256",
+      "associated_data_schema_version": 1,
+      "associated_data_domain_separator_by_purpose": {
+        "RECOVERY_LEDGER_RECORD_AEAD": "shuziren:p1:aead:recovery-ledger-record:v1",
+        "ONE_TIME_RESPONSE_ENCRYPTION": "shuziren:p1:aead:one-time-response:v1",
+        "SECRET_ENVELOPE_ENCRYPTION": "shuziren:p1:aead:secret-envelope:v1",
+        "BACKUP_RECOVERY_ENCRYPTION": "shuziren:p1:aead:backup-bundle:v1"
+      },
+      "decrypt_reconstructs_and_authenticates_complete_canonical_associated_data_not_stored_hash_alone": true,
+      "record_schema": [
+        "ciphertext",
+        "nonce",
+        "authentication_tag",
+        "key_id",
+        "associated_data_hash"
+      ],
+      "authentication_failure_result": "CRYPTOGRAPHIC_INTEGRITY_FAILURE",
+      "protected_purpose_domains": [
+        "RECOVERY_LEDGER_RECORD_AEAD",
+        "ONE_TIME_RESPONSE_ENCRYPTION",
+        "SECRET_ENVELOPE_ENCRYPTION",
+        "BACKUP_RECOVERY_ENCRYPTION"
+      ]
+    },
+    "keyed_verifier_policy": {
+      "algorithm": "HMAC-SHA-256",
+      "canonical_input_encoding": "DOMAIN_SEPARATED_LENGTH_PREFIXED_TYPED_BINARY_ENCODING",
+      "record_bound_key_id_required": true,
+      "purpose_by_record": {
+        "BootstrapGrant": "ONE_TIME_TOKEN_VERIFIER_PEPPER",
+        "AuthSession.session": "AUTH_SESSION_VERIFIER_PEPPER",
+        "AuthSession.csrf": "CSRF_TOKEN_VERIFIER_PEPPER",
+        "PasswordResetToken": "ONE_TIME_TOKEN_VERIFIER_PEPPER",
+        "RecoveryPasswordSetupGrant": "ONE_TIME_TOKEN_VERIFIER_PEPPER",
+        "DeviceEnrollment": "ONE_TIME_TOKEN_VERIFIER_PEPPER",
+        "DeviceCredential": "DEVICE_CREDENTIAL_VERIFIER_PEPPER"
+      },
+      "input_by_record": {
+        "BootstrapGrant": "shuziren:p1:bootstrap-grant:v1|deployment_id|grant_id|raw_token_bytes",
+        "AuthSession.session": "shuziren:p1:auth-session:v1|deployment_id|auth_session_id|raw_session_secret_bytes",
+        "AuthSession.csrf": "shuziren:p1:csrf-token:v1|deployment_id|auth_session_id|csrf_generation|raw_csrf_token_bytes",
+        "PasswordResetToken": "shuziren:p1:password-reset-token:v1|deployment_id|issuance_kind|target_user_id|target_channel_event_id|token_id|raw_token_bytes",
+        "RecoveryPasswordSetupGrant": "shuziren:p1:recovery-password-setup-grant:v1|deployment_id|authorization_kind|authorization_id|credential_stage_id|selected_user_id|grant_id|raw_token_bytes",
+        "DeviceEnrollment": "shuziren:p1:device-enrollment:v1|deployment_id|screen_id|enrollment_id|raw_token_bytes",
+        "DeviceCredential": "shuziren:p1:device-credential:v1|deployment_id|screen_id|family_id|credential_version|credential_id|raw_credential_bytes"
+      },
+      "cross_record_type_tenant_deployment_or_subject_verifier_substitution_result": "AUTHENTICATION_REQUIRED"
+    },
+    "symmetric_service_maximum_active_keys_per_purpose": 1,
+    "offline_recovery_maximum_active_keys_per_custodian": 1,
+    "human_operator_attestation_maximum_active_keys_per_custodian": 1,
+    "offline_recovery_and_human_operator_attestation_keys_must_be_distinct": true,
+    "minimum_active_offline_recovery_custodians": 3,
+    "minimum_active_human_operator_attestation_custodians": 3,
+    "custodian_key_revocation_is_never_blocked_by_minimum_readiness_floor": true,
+    "confirmed_custodian_or_required_key_loss_below_readiness_appends_production_recovery_required_fence": true,
+    "authoritative_registry_location": "EXTERNAL_KEYSTORE_AND_MONOTONIC_ANCHOR",
+    "monotonic_key_registry_generation_required": true,
+    "rotation_and_revocation_ledger_backed_and_anchored": true,
+    "restore_uses_current_external_registry_never_backup_copy": true,
+    "restore_never_widens_key_state": true,
+    "registry_temporarily_unavailable_result": {
+      "error_code": "KEY_SERVICE_UNAVAILABLE",
+      "state_effect": "CREDENTIAL_AND_DOMAIN_STATE_UNCHANGED",
+      "retryable": true
+    },
+    "key_record_schema": [
+      "key_id",
+      "purpose_domain",
+      "algorithm",
+      "version",
+      "state",
+      "registry_generation",
+      "custodian_id",
+      "public_verification_key",
+      "created_at",
+      "activated_at",
+      "verify_only_until",
+      "retired_at",
+      "revoked_at"
+    ],
+    "key_record_branches": {
+      "SYMMETRIC_OR_HMAC": "custodian_id_and_public_verification_key_null_secret_key_material_external_nonexportable",
+      "CUSTODIAN_SIGNATURE": "custodian_id_and_public_verification_key_required_private_key_material_offline_and_absent"
+    },
+    "protected_record_key_id_fields": {
+      "BootstrapGrant": "verifier_key_id",
+      "AuthSession": [
+        "session_verifier_key_id",
+        "csrf_verifier_key_id"
+      ],
+      "PasswordResetToken": "verifier_key_id",
+      "DeviceEnrollment": "verifier_key_id",
+      "DeviceCredential": "verifier_key_id",
+      "IdempotencyRecord": "sensitive_digest_key_id",
+      "DirectOperationAuthorization": "request_hmac_key_id",
+      "HighRiskAction": "request_hmac_key_id",
+      "SecretVersion": "envelope_encryption_key_id",
+      "OneTimeSecretResponseReplay": "response_encryption_key_id",
+      "RecoveryPasswordSetupGrant": "verifier_key_id",
+      "RecoverySecurityLedgerRecord": [
+        "chain_hmac_key_id",
+        "record_aead_key_id"
+      ],
+      "RestoreContinuityEnvelope": "envelope_hmac_key_id",
+      "HumanOperatorIdentityAttestation": [
+        "custodian_registry_generation",
+        "custodian_signature_key_ids_sorted_distinct"
+      ],
+      "HumanOperatorUserBinding": [
+        "custodian_registry_generation",
+        "custodian_signature_key_ids_sorted_distinct"
+      ],
+      "DisasterRecoveryAuthorizationEnvelope": [
+        "custodian_registry_version",
+        "custodian_signature_key_ids_sorted_distinct"
+      ],
+      "DisasterEnvelopeNonceRecord": "nonce_hmac_key_id",
+      "ExternalOperationalFenceRecord": "fence_hmac_key_id",
+      "ProductionReadinessRecoveryAuthorization": [
+        "offline_recovery_signature_key_ids_sorted_distinct",
+        "human_attestation_signature_key_ids_sorted_distinct"
+      ],
+      "ProductionReadinessNonceRecord": "nonce_hmac_key_id",
+      "EmergencyAuthorityReductionAuthorization": "signature_key_ids_sorted_distinct",
+      "EmergencyAuthorityReductionNonceRecord": "nonce_hmac_key_id",
+      "ExternalAuthorityRevocationTombstone": "fence_hmac_key_id",
+      "CryptographicRootRecoveryAuthorization": "signature_key_ids_sorted_distinct",
+      "ExternalRecoveryAudit": [
+        "custodian_registry_generation",
+        "custodian_signature_key_ids_sorted_distinct"
+      ],
+      "ExternalProductionReadinessRecoveryAudit": [
+        "offline_recovery_signature_key_ids_sorted_distinct",
+        "human_attestation_signature_key_ids_sorted_distinct"
+      ],
+      "ExternalCryptographicRootRecoveryAudit": [
+        "custodian_registry_generation",
+        "custodian_signature_key_ids_sorted_distinct"
+      ],
+      "BackupManifest": [
+        "recovery_encryption_key_id",
+        "ledger_chain_hmac_key_id",
+        "ledger_record_aead_key_id"
+      ]
+    },
+    "secret_or_private_key_material_persisted_in_live_store_logs_backups_or_evidence": false,
+    "public_verification_keys_only_in_authoritative_external_registry": true,
+    "all_protected_records_bind_key_id": true,
+    "new_writes_use_active_key_only": true,
+    "verification_uses_record_bound_key_id": true,
+    "rotation_moves_predecessor_to_verify_only": true,
+    "verify_only_retained_until_last_reference_and_evidence_retention_expire": true,
+    "immutable_protected_records_never_rewritten_for_key_rotation": true,
+    "rotation_by_purpose": {
+      "request_hmacs": "NEW_WRITES_ACTIVE_OLD_VERIFY_ONLY_UNTIL_LAST_REFERENCE_AND_EVIDENCE_RETENTION",
+      "continuity_envelope_hmac": "NEW_ENVELOPES_ACTIVE_OLD_VERIFY_ONLY_UNTIL_CUTOVER_AND_EVIDENCE_RETENTION",
+      "recovery_ledger_chain_hmac": "APPEND_KEY_ROTATION_RECORD_RETAIN_OLD_VERIFY_KEY_NO_CHAIN_REWRITE",
+      "recovery_ledger_record_aead": "APPEND_WRAPPED_DEK_METADATA_OR_RETAIN_DECRYPT_KEY_NO_RECORD_REWRITE",
+      "session_csrf_token_device_verifiers": "VERIFY_BOUND_KEY_UNTIL_ARTIFACT_EXPIRY_OR_CONTROLLED_REVOCATION",
+      "one_time_response_encryption": "RETAIN_BOUND_KEY_AT_MOST_FIVE_MINUTES_THEN_DESTROY_CIPHERTEXT",
+      "secret_envelope_encryption": "CREATE_SUCCESSOR_VERSION_OR_AUTHENTICATED_DEK_REWRAP_WITHOUT_PERSISTING_ANY_PLAINTEXT_DERIVED_DETERMINISTIC_HASH",
+      "backup_recovery_encryption": "PER_BUNDLE_KEY_ID_RETAIN_DECRYPT_KEY_THROUGH_BUNDLE_RETENTION",
+      "offline_recovery_authentication": "ROTATE_PER_CUSTODIAN_KEY_AND_ANCHOR_REGISTRY_VERSION",
+      "human_operator_attestation_signature": "ROTATE_SEPARATE_PER_CUSTODIAN_ATTESTATION_KEY_REATTEST_OR_RETAIN_VERIFY_ONLY_THROUGH_ATTESTATION_LIFETIME",
+      "disaster_envelope_nonce_hmac": "NEW_RESERVATIONS_ACTIVE_OLD_VERIFY_ONLY_THROUGH_NONCE_TOMBSTONE_RETENTION",
+      "operational_fence_hmac": "NEW_FENCE_RECORDS_ACTIVE_OLD_VERIFY_ONLY_THROUGH_FENCE_EVIDENCE_RETENTION",
+      "production_readiness_nonce_hmac": "NEW_RESERVATIONS_ACTIVE_OLD_VERIFY_ONLY_THROUGH_AUTHORIZATION_TOMBSTONE_RETENTION",
+      "emergency_authority_reduction_nonce_hmac": "NEW_RESERVATIONS_ACTIVE_OLD_VERIFY_ONLY_THROUGH_AUTHORIZATION_TOMBSTONE_RETENTION"
+    },
+    "confirmed_verifier_key_loss_or_revocation_invalidates_affected_sessions_tokens_or_device_credentials": true,
+    "temporary_key_service_unavailable_result": {
+      "error_code": "KEY_SERVICE_UNAVAILABLE",
+      "state_effect": "CREDENTIAL_AND_DOMAIN_STATE_UNCHANGED",
+      "retryable": true
+    },
+    "durable_chain_key_loss_blocks_restore_and_security_mutation": true,
+    "backup_recovery_and_offline_authorization_keys_distinct": true,
+    "compromise_response": {
+      "high_risk_request_hmac": "FAIL_PENDING_ACTIONS_KEY_EPOCH_CHANGED",
+      "sensitive_request_digest_hmac": "DO_NOT_REPEAT_DOMAIN_EFFECT_RECONCILE_BY_EXACT_COMMAND_AND_AUTHORIZATION_REFERENCE",
+      "restore_continuity_envelope_hmac": "FENCE_RESTORE_AND_RECONCILE_FROM_POINTER_LEDGER_AND_EXTERNAL_ANCHOR",
+      "recovery_ledger": "FREEZE_SECURITY_MUTATION_AND_RESTORE_INCIDENT_REQUIRED",
+      "session_csrf_or_token_verifier": "REVOKE_AFFECTED_AUTHENTICATION_EPOCHS",
+      "device_verifier": "REENROLL_REQUIRED",
+      "one_time_response_encryption": "CLEAN_UP_UNREACHABLE_ARTIFACT_BY_OPERATION_WITHOUT_DUPLICATING_DOMAIN_EFFECT",
+      "secret_encryption": "SECRET_ROTATION_REQUIRED",
+      "backup_recovery": "BACKUP_UNRECOVERABLE_UNTIL_AUTHORIZED_KEY_RECOVERY",
+      "offline_recovery_authentication": "DISABLE_CUSTODIAN_KEY_AND_REQUIRE_FRESH_QUORUM",
+      "human_operator_attestation_signature": "REVOKE_AFFECTED_ATTESTATIONS_AND_ROTATE_ONLY_IF_INDEPENDENT_HUMAN_ATTESTATION_QUORUM_REMAINS_OTHERWISE_REINITIALIZE",
+      "disaster_envelope_nonce_hmac": "FREEZE_DISASTER_RESTORE_AND_USE_OFFLINE_CRYPTOGRAPHIC_ROOT_RECOVERY_OR_REINITIALIZE",
+      "operational_fence_hmac": "EFFECTIVE_POSTURE_RECOVERY_REQUIRED_AND_USE_OFFLINE_CRYPTOGRAPHIC_ROOT_RECOVERY_OR_REINITIALIZE",
+      "production_readiness_nonce_hmac": "KEEP_RECOVERY_FENCED_AND_USE_OFFLINE_CRYPTOGRAPHIC_ROOT_RECOVERY_OR_REINITIALIZE",
+      "emergency_authority_reduction_nonce_hmac": "KEEP_RECOVERY_FENCED_DENY_NEW_REDUCTION_AND_USE_OFFLINE_CRYPTOGRAPHIC_ROOT_RECOVERY_OR_REINITIALIZE"
+    },
+    "one_time_response_confirmed_key_loss_cleanup_by_operation": {
+      "issuePasswordReset": "REVOKE_UNREACHABLE_RESET_TOKEN_THEN_ALLOW_FRESH_ISSUANCE",
+      "issueDeviceEnrollment": "REVOKE_UNREACHABLE_ENROLLMENT_THEN_ALLOW_FRESH_ISSUANCE",
+      "claimDeviceEnrollment": "LEDGER_BACK_FAMILY_TO_REENROLL_REQUIRED_BECAUSE_CREDENTIAL_WAS_NOT_DELIVERED",
+      "rotateDeviceCredential": "REVOKE_UNREACHABLE_PENDING_SUCCESSOR_KEEP_PREDECESSOR_ACTIVE_THEN_ALLOW_FRESH_ROTATION"
+    },
+    "one_time_response_temporary_key_outage_keeps_ciphertext_and_domain_state_for_exact_retry": true,
+    "external_security_registry_retention_policy": {
+      "expiry_uses_external_trusted_monotonic_time_not_client_or_host_wall_clock": true,
+      "trusted_time_unavailable_result": "KEY_SERVICE_UNAVAILABLE",
+      "clock_rollback_never_renews_expired_authorization_or_reopens_terminal_nonce": true,
+      "disaster_admin_and_emergency_terminal_nonce_records_retained_for_deployment_cryptographic_lifetime_or_worm_archived": true,
+      "authority_revocation_tombstone_retained_until_matching_ledger_commit_anchor_and_all_retained_backups_are_covered_by_that_ledger_sequence": true,
+      "highest_operational_fence_generation_and_complete_predecessor_chain_never_deleted_during_deployment_lifetime": true,
+      "restore_never_overwrites_rolls_back_or_deletes_external_registry_records": true
+    }
   },
   "storage": {
     "embedded": {
@@ -809,7 +3125,21 @@
       "restore_in_place": false,
       "recovery_key_inside_bundle": false,
       "bundle_encryption": "AEAD_AES_256_GCM",
+      "bundle_encryption_record_schema": [
+        "ciphertext",
+        "nonce",
+        "authentication_tag",
+        "recovery_encryption_key_id",
+        "associated_data_hash"
+      ],
+      "bundle_encryption_nonce_unique_per_key": true,
+      "bundle_encryption_associated_data_binds_manifest_hash_schema_product_and_ledger_heads": true,
       "password_hashes_and_secret_ciphertext_inside_encrypted_bundle": true,
+      "manifest_key_ids": [
+        "recovery_encryption_key_id",
+        "ledger_chain_hmac_key_id",
+        "ledger_record_aead_key_id"
+      ],
       "manifest_forbidden_fields": [
         "password",
         "password_hash",
@@ -824,7 +3154,28 @@
       "format_version": 1,
       "append_only": true,
       "chain_algorithm": "HMAC-SHA-256",
+      "chain_hmac_purpose_domain": "RECOVERY_LEDGER_CHAIN_HMAC",
+      "chain_verification_requires_record_bound_key_id_and_exact_purpose": true,
+      "chain_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "chain_domain_separator": "shuziren:p1:recovery-security-ledger-chain:v1",
+      "chain_hmac_input": "COMPLETE_RECORD_EXCLUDING_CHAIN_HMAC",
+      "duplicate_json_members_or_non_finite_numbers_result": "CRYPTOGRAPHIC_INTEGRITY_FAILURE",
       "record_encryption": "AEAD_AES_256_GCM",
+      "record_encryption_purpose_domain": "RECOVERY_LEDGER_RECORD_AEAD",
+      "record_decryption_requires_record_bound_key_id_and_exact_purpose": true,
+      "record_encryption_schema": [
+        "ciphertext",
+        "nonce",
+        "authentication_tag",
+        "record_aead_key_id",
+        "associated_data_hash"
+      ],
+      "record_encryption_nonce_unique_per_key": true,
+      "record_encryption_associated_data_binds_sequence_state_subject_mutation_and_chain_key_id": true,
+      "record_key_ids": [
+        "chain_hmac_key_id",
+        "record_aead_key_id"
+      ],
       "key_outside_live_store_and_backup_root": true,
       "ledger_outside_live_store_and_backup_root": true,
       "anchor_outside_live_store_backup_root_and_ledger": true,
@@ -841,26 +3192,127 @@
         "commit_domain_row_with_ledger_sequence",
         "append_committed_and_advance_anchor"
       ],
+      "ledger_backed_mutations": [
+        "bootstrap_completion",
+        "deployment_production_activation",
+        "deployment_production_readiness_recovery",
+        "emergency_authority_reduction_reconciliation",
+        "cryptographic_readiness_root_recovery_reconciliation",
+        "user_identity_create",
+        "user_identity_fields_update",
+        "user_enabled_state_change",
+        "user_password_change",
+        "user_role_scope_assignment_replace",
+        "device_credential_family_create_from_enrollment_claim",
+        "device_credential_family_rotation_expiry_or_revoke",
+        "secret_record_create_or_rotate",
+        "finereport_identity_binding_create_or_replace",
+        "key_registry_rotation_or_revocation",
+        "human_operator_identity_or_user_binding_or_eligibility_change"
+      ],
       "unresolved_prepared_result": "FAIL_CLOSED_FOR_SUBJECT",
+      "role_scope_snapshot_schema": [
+        "user_id",
+        "assignment_generation",
+        "authorization_epoch",
+        "role_catalog_version",
+        "assignments_sorted_by_role_scope",
+        "assignment.role_id",
+        "assignment.scope_type",
+        "assignment.scope_id"
+      ],
+      "user_identity_snapshot_schema": [
+        "user_id",
+        "tenant_id",
+        "deployment_id",
+        "normalized_username",
+        "display_name",
+        "enabled",
+        "account_state_generation",
+        "authentication_epoch",
+        "authorization_epoch",
+        "human_operator_person_id",
+        "person_binding_generation",
+        "person_eligibility_generation",
+        "credential_material_excluded"
+      ],
+      "retiring_applied_target_set_schema": [
+        "subject_id",
+        "credential_version_id",
+        "targets_sorted_by_screen_and_release_target",
+        "target.screen_id",
+        "target.release_target_id",
+        "target.credential_version_id",
+        "set_hash",
+        "retire_deadline"
+      ],
       "tracked_security_facts": [
         "control_plane_security_epoch",
+        "key_registry_generation",
+        "key_state_snapshot_hash",
+        "person_registry_generation",
+        "person_registry_state_hash",
+        "deployment_mode",
+        "deployment_operational_posture",
+        "operational_fence_generation",
+        "operational_fence_evidence_hash",
         "bootstrap_completed",
         "user_enabled_state",
+        "user_identity_snapshot",
         "user_account_state_generation",
         "user_authentication_epoch",
         "user_authorization_epoch",
+        "user_human_operator_person_id",
+        "user_person_binding_generation",
+        "user_person_eligibility_generation",
+        "user_person_eligibility_state",
+        "user_role_scope_assignment_generation",
+        "user_role_scope_assignment_snapshot",
+        "user_role_scope_assignment_hash",
         "user_credential_generation",
         "user_password_state",
         "device_family_state",
         "device_family_generation",
         "device_family_active_credential_version",
         "device_family_revocation_epoch",
+        "secret_record_security_generation",
+        "secret_record_owner_scope",
+        "secret_record_state",
+        "secret_record_current_version",
+        "secret_record_revocation_epoch",
+        "secret_record_revocation_tombstone",
+        "secret_version_authorization_state",
+        "secret_retiring_applied_target_set_snapshot",
+        "secret_retiring_applied_target_set_hash",
+        "secret_retire_deadline",
+        "finereport_binding_security_generation",
+        "finereport_binding_screen_id",
+        "finereport_binding_state",
+        "finereport_binding_current_version",
+        "finereport_binding_revocation_epoch",
+        "finereport_binding_revocation_tombstone",
+        "finereport_binding_version_authorization_state",
+        "finereport_retiring_applied_target_set_snapshot",
+        "finereport_retiring_applied_target_set_hash",
+        "finereport_retire_deadline",
         "latest_chain_head"
       ],
       "backup_manifest_binds": [
         "security_ledger_sequence",
         "security_ledger_head_hash",
-        "security_ledger_key_id"
+        "ledger_chain_hmac_key_id",
+        "ledger_record_aead_key_id",
+        "control_plane_epoch",
+        "deployment_mode",
+        "deployment_operational_posture",
+        "operational_fence_generation",
+        "operational_fence_evidence_hash",
+        "activation_readiness_candidate_hash",
+        "key_registry_generation",
+        "key_state_snapshot_hash",
+        "person_registry_generation",
+        "person_registry_state_hash",
+        "selected_admin_user_person_credential_authentication_and_eligibility_generations"
       ],
       "restore_plan_and_approval_bind_current_ledger_head": true,
       "execute_requires_unchanged_current_ledger_head": true,
@@ -868,19 +3320,432 @@
       "restore_user_rules": {
         "newer_disabled_state_wins": true,
         "maximum_authentication_epoch_wins": true,
+        "latest_role_scope_assignment_snapshot_is_authoritative": true,
+        "role_scope_reconciliation_mode": "REPLACE_NOT_MERGE",
+        "restored_assignment_absent_from_latest_snapshot_removed": true,
+        "unknown_role_scope_or_catalog_result": {
+          "subject_state": "ROLE_RECONCILIATION_REQUIRED",
+          "authorization_effect": "DENY_ALL"
+        },
+        "missing_or_mismatched_assignment_snapshot_result": {
+          "subject_state": "ROLE_RECONCILIATION_REQUIRED",
+          "authorization_effect": "DENY_ALL"
+        },
+        "user_missing_from_backup_result": {
+          "recovery_action": "RECONSTRUCT_IDENTITY_FROM_LEDGER",
+          "credential_state": "RESET_REQUIRED"
+        },
+        "reconstructed_user_contains_credential_material": false,
+        "reconstructed_identity_conflict_result": "IDENTITY_RECONCILIATION_CONFLICT",
+        "credential_usable_and_staged_authenticated_admins_required_before_cutover_by_deployment_mode": {
+          "SETUP": 1,
+          "PRODUCTION_ACTIVE_ANY_POSTURE": 2
+        },
+        "production_admins_must_have_distinct_current_active_attested_person_ids": true,
+        "staged_auth_proofs_bind_person_registry_binding_and_eligibility_generations": true,
+        "restore_uses_current_external_person_registry_and_never_backup_person_authority": true,
+        "revoked_or_stale_person_mapping_result": "AUTHENTICATABLE_PLATFORM_ADMIN_REQUIRED",
+        "missing_admin_access_path_result": "AUTHENTICATABLE_PLATFORM_ADMIN_REQUIRED",
         "older_password_generation_authentication_allowed": false,
-        "older_password_generation_result": "RESET_REQUIRED"
+        "older_password_generation_result": "RESET_REQUIRED",
+        "online_restore_stale_or_missing_selected_admin_credentials_use_provisional_setup_grants": true,
+        "normal_grants_require_original_four_eyes_action_to_bind_exact_admin_user_person_tuples_and_missing_generations": true,
+        "normal_grant_plaintext_delivered_only_to_each_selected_target_person_local_one_time_no_store": true,
+        "normal_grants_follow_same_provisional_state_machine_and_commit_only_with_cutover_anchor": true,
+        "normal_grant_pre_pointer_abort_requires_fresh_high_risk_action_and_grants": true
       },
       "restore_device_rules": {
         "maximum_family_revocation_epoch_wins": true,
         "revoked_family_remains_revoked": true,
         "older_or_mismatched_active_version_authentication_allowed": false,
-        "older_or_mismatched_active_version_result": "REENROLL_REQUIRED"
+        "older_or_mismatched_active_version_result": "REENROLL_REQUIRED",
+        "reenroll_recovery_operation": "issueDeviceEnrollment",
+        "reenroll_requires_current_family_generation_ledger_head_and_four_eyes": true
+      },
+      "restore_secret_rules": {
+        "maximum_security_generation_wins": true,
+        "authoritative_version_authorization_state_wins": true,
+        "restored_version_cannot_gain_usability": true,
+        "revoked_version_use_allowed": false,
+        "retiring_use_scope": "EXACT_PRE_ROTATION_APPLIED_TARGETS_UNTIL_DEADLINE",
+        "retiring_target_set_snapshot_required": true,
+        "missing_or_mismatched_retiring_target_set_result": {
+          "authorization_effect": "DENY_ALL",
+          "credential_state": "SECRET_ROTATION_REQUIRED"
+        },
+        "latest_version_missing_result": "SECRET_ROTATION_REQUIRED",
+        "mismatch_blocks": [
+          "new_release_create",
+          "new_publish",
+          "rollback",
+          "new_runtime_delivery",
+          "decrypt_outside_frozen_retiring_targets"
+        ]
+      },
+      "restore_finereport_rules": {
+        "maximum_security_generation_wins": true,
+        "authoritative_version_authorization_state_wins": true,
+        "restored_binding_cannot_gain_usability": true,
+        "revoked_binding_use_allowed": false,
+        "retiring_use_scope": "EXACT_PRE_ROTATION_APPLIED_TARGETS_UNTIL_DEADLINE",
+        "retiring_target_set_snapshot_required": true,
+        "missing_or_mismatched_retiring_target_set_result": {
+          "authorization_effect": "DENY_ALL",
+          "credential_state": "FINEREPORT_REBIND_REQUIRED"
+        },
+        "latest_binding_missing_result": "FINEREPORT_REBIND_REQUIRED",
+        "mismatch_blocks": [
+          "new_release_create",
+          "new_publish",
+          "rollback",
+          "new_runtime_delivery",
+          "decrypt_outside_frozen_retiring_targets"
+        ]
+      },
+      "restore_degraded_credential_rules": {
+        "default_cutover_when_authoritative_material_missing": false,
+        "default_missing_material_result": "AUTHORITATIVE_CREDENTIAL_MATERIAL_MISSING",
+        "explicit_mode": "DEGRADED_CREDENTIAL_RECOVERY",
+        "requires_exact_missing_subject_set_in_restore_action": true,
+        "authorization_requirements_by_mode": {
+          "NORMAL_API_FOUR_EYES": "DIFFERENT_ACTIVE_ATTESTED_PERSON_HIGH_RISK_APPROVAL_BINDS_EXACT_MISSING_SUBJECT_SET",
+          "LOCAL_DISASTER_QUORUM": "TWO_OF_THREE_CUSTODIAN_ENVELOPE_BINDS_EXACT_MISSING_SUBJECT_SET_NO_HIGH_RISK_ACTION_OR_USER_APPROVAL"
+        },
+        "confirmation": "RESTORE_DEGRADED_CREDENTIALS",
+        "affected_secret_state": "SECRET_ROTATION_REQUIRED",
+        "affected_finereport_state": "FINEREPORT_REBIND_REQUIRED",
+        "affected_secret_recovery_operation": "rotateSecret",
+        "affected_finereport_recovery_operation": "putFineReportIdentityBinding",
+        "affected_recovery_operations_require_current_generation_ledger_head_and_four_eyes": true,
+        "affected_subjects_blocked": [
+          "decrypt",
+          "new_release_create",
+          "new_publish",
+          "rollback",
+          "new_runtime_delivery"
+        ],
+        "unaffected_subjects_may_recover": true,
+        "restore_plan_result_state": "COMPLETED_DEGRADED"
       },
       "restore_token_rules": {
         "all_auth_sessions_invalidated": true,
         "all_one_time_tokens_invalidated": true,
-        "all_device_sessions_invalidated": true
+        "all_device_sessions_invalidated": true,
+        "all_one_time_secret_response_replay_records_and_ciphertexts_destroyed": true,
+        "restored_secret_result_idempotency_records_cannot_return_prior_plaintext": true,
+        "claimed_device_credential_with_authenticated_possession_evidence_may_remain_active": true,
+        "claimed_device_credential_without_authenticated_possession_evidence_becomes_ledger_backed_reenroll_required": true,
+        "unreachable_pending_rotation_successor_revoked_and_predecessor_remains_active": true
+      },
+      "restore_approval_rules": {
+        "all_restored_pending_or_approved_high_risk_actions_result": {
+          "state": "FAILED",
+          "failure_reason": "RESTORE_EPOCH_CHANGED"
+        },
+        "all_restored_config_approvals_require_new_epoch_validation_preview_and_approval": true,
+        "historical_evidence_preserved": true
+      },
+      "restore_continuity": {
+        "external_authenticated_envelope_required": true,
+        "envelope_binds_authorization_evidence_and_ledger_prepared_sequence": true,
+        "authorization_modes": [
+          "NORMAL_API_FOUR_EYES",
+          "LOCAL_DISASTER_QUORUM"
+        ],
+        "authorization_mode_xor_required": true,
+        "recovery_source_modes": [
+          "ONLINE_ACTIVE_STORE",
+          "FULL_LOSS_ACTIVE_STORE_UNAVAILABLE"
+        ],
+        "recovery_source_mode_xor_required": true,
+        "allowed_authorization_and_source_mode_combinations": {
+          "NORMAL_API_FOUR_EYES": [
+            "ONLINE_ACTIVE_STORE"
+          ],
+          "LOCAL_DISASTER_QUORUM": [
+            "ONLINE_ACTIVE_STORE",
+            "FULL_LOSS_ACTIVE_STORE_UNAVAILABLE"
+          ]
+        },
+        "full_loss_requires_local_disaster_quorum": true,
+        "local_disaster_with_online_source_requires_no_credential_usable_enabled_deployment_platform_admin": true,
+        "normal_api_four_eyes_with_full_loss_forbidden": true,
+        "online_source_requires_maintenance_barrier_live_head_and_retained_pointer": true,
+        "full_loss_previous_store_pointer": null,
+        "full_loss_security_audit_suffix": "EMPTY_BACKUP_HEAD_TO_BACKUP_HEAD",
+        "full_loss_recovery_audit_source": "SIGNED_EXTERNAL_RECOVERY_AUDIT_THEN_NEW_STAGED_AUDIT_CHAIN",
+        "common_carried_forward_records": [
+          "RestorePlan",
+          "ImmutableTypedCommand",
+          "AsyncOperation",
+          "OutboxRecord",
+          "IdempotencyRecord",
+          "RestoreCutoverRecord",
+          "SecurityAuditSuffix"
+        ],
+        "normal_authorization_records": [
+          "HighRiskAction",
+          "HighRiskApproval",
+          "OptionalRecoveryPasswordSetupGrantProvisionalEvidence"
+        ],
+        "disaster_authorization_records": [
+          "DisasterRecoveryAuthorizationEnvelope",
+          "ProvisionallyConsumedRecoveryPasswordSetupGrantEvidence",
+          "ExternalRecoveryAudit"
+        ],
+        "disaster_mode_fabricates_user_actor_or_approval": false,
+        "provisional_admin_grant_sequence": [
+          "authorize_exact_selected_admin_user_person_tuples_and_missing_generations",
+          "issue_digest_only_grants",
+          "deliver_plaintext_once_to_each_selected_person_locally",
+          "provisionally_consume_each_grant_and_set_staged_verifier",
+          "authenticate_each_selected_admin_against_staged_store",
+          "bind_provisional_password_mutations_to_same_cutover_prepared_sequence",
+          "proceed_to_cutover_preconditions"
+        ],
+        "normal_mode_grants_only_when_selected_admin_backup_credentials_are_stale_or_missing": true,
+        "disaster_mode_required_grants_follow_deployment_mode_cardinality": true,
+        "carried_forward_records_initial_atomic_insert_and_verification_before_cutover": true,
+        "payload_contains_secret_request_body": false,
+        "restore_plan_authorization_schema": [
+          "restore_plan_id",
+          "deployment_id",
+          "deployment_mode",
+          "deployment_operational_posture",
+          "authorization_mode",
+          "recovery_source_mode",
+          "high_risk_action_id",
+          "high_risk_approval_id",
+          "disaster_recovery_authorization_envelope_id",
+          "authorization_evidence_hash",
+          "admin_readiness_branch",
+          "replacement_person_attestation_hash",
+          "replacement_user_binding_hash",
+          "disaster_entry_condition",
+          "entry_condition_preflight_evidence_hash",
+          "person_registry_generation",
+          "operational_fence_generation"
+        ],
+        "envelope_authentication_algorithm": "HMAC-SHA-256",
+        "envelope_authentication_purpose_domain": "RESTORE_CONTINUITY_ENVELOPE_HMAC",
+        "envelope_canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+        "envelope_domain_separator": "shuziren:p1:restore-continuity-envelope:v1",
+        "envelope_hmac_input": "COMPLETE_ENVELOPE_EXCLUDING_ENVELOPE_HMAC",
+        "envelope_duplicate_json_members_or_non_finite_numbers_result": "INVALID_REQUEST",
+        "envelope_schema": [
+          "cutover_id",
+          "deployment_id",
+          "deployment_mode",
+          "deployment_operational_posture",
+          "restore_plan_id",
+          "authorization_mode",
+          "recovery_source_mode",
+          "high_risk_action_id",
+          "high_risk_approval_id",
+          "disaster_recovery_authorization_envelope_id",
+          "authorization_evidence_hash",
+          "admin_readiness_branch",
+          "replacement_person_attestation_hash",
+          "replacement_user_binding_hash",
+          "disaster_entry_condition",
+          "entry_condition_preflight_evidence_hash",
+          "person_registry_generation",
+          "ledger_prepared_sequence",
+          "ledger_prepared_head_hash",
+          "ledger_chain_hmac_key_id",
+          "envelope_hmac_key_id",
+          "payload_hash",
+          "previous_store_id",
+          "staged_store_id",
+          "nonce",
+          "issued_at",
+          "expires_at"
+        ],
+        "envelope_ttl_minutes_max": 30,
+        "envelope_time_source": "EXTERNAL_TRUSTED_MONOTONIC_TIME",
+        "clock_rollback_never_extends_envelope": true,
+        "authorization_branch_field_rules": {
+          "NORMAL_API_FOUR_EYES": "high_risk_action_and_approval_evidence_required_disaster_entry_condition_and_preflight_evidence_null",
+          "LOCAL_DISASTER_QUORUM": "disaster_envelope_entry_condition_and_preflight_evidence_required_high_risk_action_and_user_approval_null"
+        },
+        "admin_readiness_branch_field_rules": {
+          "NONE": "replacement_person_attestation_and_user_binding_hashes_null",
+          "LOCAL_DISASTER_REPLACE_ONE": "replacement_person_attestation_and_user_binding_hashes_required_and_match_disaster_envelope_human_signature_evidence"
+        },
+        "same_branch_nullability_applies_to_restore_plan_continuity_envelope_and_cutover_record": true,
+        "envelope_single_use_cutover_id_and_nonce": true,
+        "startup_recomputes_and_verifies_envelope_payload_and_keys": true,
+        "envelope_key_temporarily_unavailable_result": {
+          "error_code": "KEY_SERVICE_UNAVAILABLE",
+          "state_effect": "RESTORE_FENCED_POINTER_AND_STORES_UNCHANGED",
+          "retryable": true
+        },
+        "envelope_invalid_replay_revoked_or_permanently_lost_key_result": {
+          "error_code": "RESTORE_CONTINUITY_AUTHENTICATION_FAILED",
+          "state_effect": "FAIL_CLOSED_ABORT_BEFORE_POINTER_OR_FENCE_FOR_RECONCILIATION_AFTER_POINTER",
+          "retryable": false
+        },
+        "security_audit_suffix_policy_by_source_mode": {
+          "ONLINE_ACTIVE_STORE": {
+            "binds_backup_and_barrier_live_heads": true,
+            "range": "BACKUP_MANIFEST_HEAD_EXCLUSIVE_TO_BARRIER_LIVE_HEAD_INCLUSIVE",
+            "maintenance_lock_blocks_all_audit_producers_after_live_head_capture": true,
+            "pre_pointer_requires_unchanged_live_audit_head": true
+          },
+          "FULL_LOSS_ACTIVE_STORE_UNAVAILABLE": {
+            "backup_and_barrier_heads_both_equal_backup_manifest_head": true,
+            "event_count": 0,
+            "ordered_events": [],
+            "first_event_previous_hash": null,
+            "last_event_hash": "BACKUP_MANIFEST_AUDIT_HEAD_HASH",
+            "suffix_hash_input": "CANONICAL_COMPLETE_SUFFIX_SCHEMA_WITH_EMPTY_ORDERED_EVENTS",
+            "live_head_or_maintenance_barrier_required": false
+          }
+        },
+        "security_audit_suffix_insert_order_and_hash_verified": true,
+        "security_audit_suffix_contains_complete_canonical_sanitized_events": true,
+        "security_audit_suffix_schema": [
+          "backup_manifest_audit_head_hash",
+          "barrier_live_audit_head_hash",
+          "ordered_canonical_sanitized_security_audit_events",
+          "first_event_previous_hash",
+          "last_event_hash",
+          "event_count",
+          "suffix_hash"
+        ],
+        "security_audit_events_inserted_into_primary_audit_table_in_chain_order": true,
+        "external_recovery_audit_policy": {
+          "signature_algorithm": "Ed25519",
+          "signature_purpose_domain": "OFFLINE_RECOVERY_AUTHENTICATION",
+          "signature_verification_requires_record_bound_key_id_and_exact_purpose": true,
+          "canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+          "domain_separator": "shuziren:p1:external-recovery-audit:v1",
+          "record_schema": [
+            "sequence",
+            "previous_record_hash",
+            "authorization_envelope_hash",
+            "disaster_entry_condition",
+            "custodian_registry_generation",
+            "custodian_ids_sorted_distinct",
+            "custodian_signature_key_ids_sorted_distinct",
+            "custodian_signature_tuples_sorted_by_custodian_id",
+            "selected_admin_user_person_tuples_sorted_distinct",
+            "command",
+            "result",
+            "created_at"
+          ],
+          "each_record_requires_same_valid_two_of_three_distinct_custodian_quorum": true,
+          "signed_payload_excludes_signature_tuples_but_carried_record_includes_them": true,
+          "record_hash_algorithm": "SHA-256",
+          "ordered_hash_chain_required": true,
+          "first_record_previous_hash": "BACKUP_MANIFEST_AUDIT_HEAD_HASH",
+          "first_staged_security_audit_event_binds_backup_head_and_external_recovery_audit_terminal_hash": true
+        },
+        "missing_actor_user_reconstructed_from_ledger_identity_snapshot": true,
+        "maintenance_lock_blocks_control_plane_and_device_writes_during_cutover": true,
+        "staged_execution_records_committed_before_pointer": true,
+        "external_visibility_rule_by_deployment_mode": {
+          "SETUP": "FORBIDDEN_AFTER_RESTORE_UNTIL_LATER_PRODUCTION_ACTIVATION",
+          "PRODUCTION_ACTIVE": "BEGINS_ONLY_AFTER_LEDGER_AND_APPLICABLE_NONCE_ANCHORS_CUTOVER_FINALIZATION_SEPARATE_LOCAL_PRODUCTION_READINESS_RECOVERY_AND_AUTHENTICATED_READY_FENCE_SUCCESSOR"
+        },
+        "cutover_completion_mode_frozen_before_prepared": true,
+        "cutover_record_states": [
+          "CUTOVER_PREPARED",
+          "POINTER_SWITCHED_PENDING_ANCHOR",
+          "ANCHOR_COMMITTED_PENDING_FINALIZATION",
+          "FINALIZED",
+          "REVERTED"
+        ],
+        "restore_cutover_record_schema": [
+          "cutover_id",
+          "restore_plan_id",
+          "deployment_mode",
+          "deployment_operational_posture",
+          "authorization_mode",
+          "recovery_source_mode",
+          "high_risk_action_id",
+          "high_risk_approval_id",
+          "disaster_recovery_authorization_envelope_id",
+          "authorization_evidence_hash",
+          "admin_readiness_branch",
+          "replacement_person_attestation_hash",
+          "replacement_user_binding_hash",
+          "disaster_entry_condition",
+          "entry_condition_preflight_evidence_hash",
+          "person_registry_generation",
+          "completion_mode",
+          "continuity_payload_hash",
+          "ledger_prepared_sequence",
+          "previous_store_pointer",
+          "staged_store_pointer",
+          "state",
+          "resource_revision",
+          "created_at",
+          "updated_at"
+        ],
+        "continuity_envelope_protocol": [
+          "compute_payload_and_hash",
+          "append_prepared_binding_payload_hash_and_fsync",
+          "authenticate_envelope_with_prepared_sequence",
+          "insert_and_verify_records_in_staged_store",
+          "verify_three_screen_complete_bindings_and_all_cutover_preconditions"
+        ],
+        "cutover_protocol": [
+          "commit_staged_store_with_ledger_sequence_and_cutover_prepared_record",
+          "atomic_replace_active_pointer",
+          "idempotently_mark_or_infer_pointer_switched_from_actual_pointer_and_authenticated_cutover_record",
+          "append_cutover_committed_and_advance_anchor",
+          "compare_and_swap_disaster_nonce_reserved_to_committed_consumed_and_advance_nonce_anchor_when_disaster_mode",
+          "idempotently_finalize_entire_restore_execution_audit_and_exact_result_from_committed_anchor",
+          "when_production_append_or_confirm_recovery_required_fence_bound_to_restore_finalized_result",
+          "require_separate_local_production_readiness_recovery_with_fresh_authorization_nonce_complete_readiness_external_audit_and_ready_fence_successor"
+        ],
+        "every_production_restore_finalization_sets_or_keeps_recovery_required_until_separate_local_production_readiness_recovery": true,
+        "restore_finalized_but_readiness_incomplete_keeps_external_serving_fenced_until_generic_production_readiness_recovery": true,
+        "ready_fence_without_matching_restore_finalized_result_is_invalid_and_never_opens_serving": true,
+        "post_restore_posture_by_deployment_mode": {
+          "SETUP": "RESTORE_REMAINS_SETUP_EXTERNAL_SERVING_FORBIDDEN_NO_PRODUCTION_READY_FENCE_REQUIRED",
+          "PRODUCTION_ACTIVE": "RESTORE_FINALIZATION_REMAINS_RECOVERY_REQUIRED_UNTIL_SEPARATE_LOCAL_PRODUCTION_READINESS_RECOVERY_APPENDS_AUTHENTICATED_READY_FENCE_SUCCESSOR"
+        },
+        "pre_pointer_abort_requires_atomic_grant_set_cleanup_and_applicable_disaster_nonce_aborted_consumed_before_return": true,
+        "ledger_anchor_committed_nonce_still_reserved_result": "FENCE_AND_IDEMPOTENTLY_COMMIT_MATCHING_NONCE_FROM_AUTHENTICATED_CUTOVER_EVIDENCE",
+        "nonce_committed_without_matching_ledger_anchor_result": "FENCE_AND_FAIL_CLOSED_INCIDENT_REQUIRED",
+        "nonce_registry_unavailable_during_reconciliation_result": {
+          "error_code": "KEY_SERVICE_UNAVAILABLE",
+          "state_effect": "RESTORE_AND_EXTERNAL_VISIBILITY_FENCED",
+          "retryable": true
+        },
+        "finalization_transaction_records": [
+          "RestorePlanTerminalState",
+          "AsyncOperationTerminalResult",
+          "OutboxRecordDeliveredOrSuppressed",
+          "IdempotencyRecordExactResult",
+          "RestoreCutoverRecordFinalized",
+          "SecurityAuditEvent"
+        ],
+        "already_finalized_replay_result": "RETURN_EXACT_STORED_RESULT_NO_REDISPATCH",
+        "disaster_authorization_nonce_replay_result": "RETURN_EXACT_STORED_RESULT_IF_FINALIZED_ELSE_REJECT_REPLAY",
+        "startup_reconciliation_idempotent": true,
+        "anchor_committed_db_terminal_missing_result": "FINALIZE_ENTIRE_EXECUTION_FROM_AUTHENTICATED_CUTOVER_RECORD",
+        "pointer_switched_anchor_not_committed_result": "FENCE_AND_COMPLETE_IF_EXACT_LEDGER_COMMIT_EXISTS_ELSE_REVERT_AND_ABORT",
+        "ledger_committed_anchor_not_advanced_result": "FENCE_AND_ADVANCE_MATCHING_ANCHOR_OR_FAIL_CLOSED",
+        "anchor_unavailable_during_reconciliation_result": "RESTORE_CUTOVER_RECONCILIATION_REQUIRED",
+        "online_previous_store_retained_until_committed_anchor": true,
+        "online_crash_before_pointer_result": "KEEP_PREVIOUS_STORE_ABORT_PREPARED",
+        "full_loss_crash_before_pointer_result": "ABORT_PREPARED_KEEP_STAGED_UNSERVED",
+        "crash_after_pointer_before_anchor_result": "FENCE_AND_COMPLETE_IF_EXACT_LEDGER_COMMIT_EXISTS_ELSE_REVERT_AND_ABORT",
+        "missing_or_mismatch_result_by_source_mode": {
+          "ONLINE_ACTIVE_STORE": {
+            "error_code": "RESTORE_CUTOVER_RECONCILIATION_REQUIRED",
+            "state_effect": "KEEP_PREVIOUS_ACTIVE",
+            "retryable": true
+          },
+          "FULL_LOSS_ACTIVE_STORE_UNAVAILABLE": {
+            "error_code": "RESTORE_CUTOVER_RECONCILIATION_REQUIRED",
+            "state_effect": "KEEP_STAGED_UNSERVED",
+            "retryable": true
+          }
+        }
       },
       "missing_stale_or_unverifiable_result": "FAIL_CLOSED"
     }
@@ -904,7 +3769,11 @@
     ],
     "control_plane_forbidden_actor_fields": [
       "operator",
-      "actor_id"
+      "actor_id",
+      "person_id",
+      "person_registry_generation",
+      "person_eligibility_generation",
+      "person_identity_attestation"
     ],
     "device_forbidden_request_scope_fields": [
       "tenant_id",
@@ -923,6 +3792,347 @@
       "csrf_secret",
       "reauthentication_proof"
     ],
+    "sensitive_request_digest": {
+      "purpose_domain": "SENSITIVE_REQUEST_DIGEST_HMAC",
+      "algorithm": "HMAC-SHA-256",
+      "canonicalization": "RFC8785_JCS_AFTER_STRICT_TYPED_PARSE",
+      "domain_separator": "shuziren:p1:sensitive-request-digest:v1",
+      "duplicate_json_members_or_non_finite_numbers_result": "INVALID_REQUEST",
+      "length_safe_typed_object_encoding": true,
+      "key_outside_live_store_logs_and_backups": true,
+      "key_id_stored_with_digest": true,
+      "verification_uses_bound_key_id": true,
+      "key_retention_policy": "UNTIL_LAST_REFERENCE_TERMINAL_AND_EVIDENCE_RETENTION_EXPIRES",
+      "plaintext_body_persisted": false,
+      "key_temporarily_unavailable_result": {
+        "error_code": "SENSITIVE_REQUEST_DIGEST_KEY_UNAVAILABLE",
+        "state_effect": "REQUEST_AND_DOMAIN_STATE_UNCHANGED",
+        "retryable": true
+      },
+      "key_revoked_or_permanently_lost_result": {
+        "error_code": "REQUEST_DIGEST_KEY_EPOCH_CHANGED",
+        "state_effect": "DO_NOT_REPEAT_DOMAIN_EFFECT_RECONCILE_BY_EXACT_COMMAND_AND_AUTHORIZATION_REFERENCE",
+        "retryable": false
+      }
+    },
+    "one_time_secret_response_replay": {
+      "purpose_domain": "ONE_TIME_RESPONSE_ENCRYPTION",
+      "algorithm": "AEAD_AES_256_GCM",
+      "nonce_bits": 96,
+      "authentication_tag_bits": 128,
+      "nonce_unique_per_response_encryption_key": true,
+      "ciphertext_record_schema": [
+        "ciphertext",
+        "nonce",
+        "authentication_tag",
+        "response_encryption_key_id",
+        "associated_data_hash",
+        "expires_at"
+      ],
+      "applicable_operations": [
+        "issuePasswordReset",
+        "issueDeviceEnrollment",
+        "claimDeviceEnrollment",
+        "rotateDeviceCredential"
+      ],
+      "maximum_replay_minutes": 5,
+      "ciphertext_only_persisted": true,
+      "key_id_stored_with_ciphertext": true,
+      "associated_data_common_fields": [
+        "operation_id",
+        "canonical_route",
+        "idempotency_key_digest",
+        "sensitive_request_digest_hmac",
+        "sensitive_request_digest_hmac_key_id",
+        "sensitive_request_digest_schema_version",
+        "delivery_channel_id",
+        "expires_at"
+      ],
+      "associated_data_branch_fields_by_operation": {
+        "issuePasswordReset": [
+          "issuance_kind",
+          "target_user_id",
+          "target_person_id",
+          "target_person_binding_generation",
+          "target_person_eligibility_generation",
+          "target_channel_event_id",
+          "target_possession_challenge_hash"
+        ],
+        "issueDeviceEnrollment": [
+          "device_enrollment_id",
+          "screen_id",
+          "installation_channel_id"
+        ],
+        "claimDeviceEnrollment": [
+          "device_enrollment_id",
+          "device_credential_family_id",
+          "device_credential_id",
+          "claiming_device_channel_id"
+        ],
+        "rotateDeviceCredential": [
+          "device_credential_family_id",
+          "predecessor_credential_id",
+          "successor_credential_id",
+          "rotating_device_channel_id"
+        ]
+      },
+      "issue_password_reset_associated_data_branch_rules": {
+        "NORMAL_PASSWORD_RESET": "TARGET_PERSON_AND_BINDING_FIELDS_REQUIRED_TARGET_CHANNEL_AND_CHALLENGE_FIELDS_REQUIRED",
+        "PROVISIONING_CREDENTIAL_SETUP": "TARGET_PERSON_AND_BINDING_FIELDS_NULL_TARGET_CHANNEL_AND_CHALLENGE_FIELDS_REQUIRED"
+      },
+      "associated_data_operation_discriminator_and_branch_nullability_strict": true,
+      "plaintext_never_persisted_or_logged": true,
+      "ciphertext_destroyed_after_expiry": true,
+      "same_idempotency_key_and_request_returns_exact_secret_within_window": true,
+      "operation_specific_replay_authorization": {
+        "issuePasswordReset": "TARGET_PERSON_CONTROLLED_CHANNEL_ONLY_INITIATOR_CANNOT_DECRYPT_OR_RETRIEVE",
+        "issueDeviceEnrollment": "ORIGINAL_AUTHORIZED_INITIATOR_AND_EXACT_INSTALLATION_CHANNEL",
+        "claimDeviceEnrollment": "CLAIMING_DEVICE_CREDENTIAL_CHANNEL_ONLY",
+        "rotateDeviceCredential": "ROTATING_ACTIVE_DEVICE_CREDENTIAL_CHANNEL_ONLY"
+      },
+      "replay_ciphertext_domain_effect_idempotency_and_authorization_consumption_atomic": true,
+      "crash_after_atomic_commit_result": "RETURN_EXACT_ENCRYPTED_RESPONSE_REPLAY_WITHIN_WINDOW",
+      "expired_result": {
+        "error_code": "ONE_TIME_RESPONSE_REPLAY_EXPIRED",
+        "state_effect": "RUN_OPERATION_SPECIFIC_UNREACHABLE_ARTIFACT_CLEANUP_WHEN_POSSESSION_OR_CONSUMPTION_NOT_PROVEN",
+        "retryable": false
+      },
+      "expired_replay_cleanup_by_operation": {
+        "issuePasswordReset": "REVOKE_UNCONSUMED_UNREACHABLE_RESET_TOKEN_THEN_REQUIRE_FRESH_IDEMPOTENCY_AND_AUTHORIZATION",
+        "issueDeviceEnrollment": "REVOKE_UNCLAIMED_UNREACHABLE_ENROLLMENT_THEN_REQUIRE_FRESH_IDEMPOTENCY_AND_AUTHORIZATION",
+        "claimDeviceEnrollment": "IF_NO_AUTHENTICATED_POSSESSION_EVIDENCE_LEDGER_BACK_FAMILY_TO_REENROLL_REQUIRED_THEN_REQUIRE_FRESH_ENROLLMENT",
+        "rotateDeviceCredential": "IF_SUCCESSOR_NOT_AUTHENTICATED_REVOKE_PENDING_SUCCESSOR_KEEP_PREDECESSOR_ACTIVE_THEN_REQUIRE_FRESH_ROTATION"
+      },
+      "expired_replay_cleanup_and_exact_artifact_state_change_are_atomic": true,
+      "artifact_with_proven_secret_possession_or_consumption_is_not_revoked_only_because_replay_window_expired": true,
+      "key_temporarily_unavailable_result": {
+        "error_code": "ONE_TIME_RESPONSE_KEY_UNAVAILABLE",
+        "state_effect": "CIPHERTEXT_AND_DOMAIN_STATE_UNCHANGED_FOR_EXACT_RETRY",
+        "retryable": true
+      },
+      "key_revoked_or_permanently_lost_cleanup_uses_key_management_operation_matrix": true
+    },
+    "errors": [
+      {
+        "code": "INVALID_REQUEST",
+        "http_status": 400,
+        "retryable": false
+      },
+      {
+        "code": "IDEMPOTENCY_KEY_REQUIRED",
+        "http_status": 400,
+        "retryable": false
+      },
+      {
+        "code": "AUTHENTICATION_REQUIRED",
+        "http_status": 401,
+        "retryable": false
+      },
+      {
+        "code": "SESSION_EXPIRED",
+        "http_status": 401,
+        "retryable": false
+      },
+      {
+        "code": "DEVICE_CREDENTIAL_INVALID",
+        "http_status": 401,
+        "retryable": false
+      },
+      {
+        "code": "FORBIDDEN",
+        "http_status": 403,
+        "retryable": false
+      },
+      {
+        "code": "RECENT_REAUTHENTICATION_REQUIRED",
+        "http_status": 403,
+        "retryable": false
+      },
+      {
+        "code": "RESOURCE_NOT_FOUND",
+        "http_status": 404,
+        "retryable": false
+      },
+      {
+        "code": "INVALID_STATE_TRANSITION",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "DUPLICATE_RESOURCE",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "IDEMPOTENCY_KEY_REUSED",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "PUBLISH_TARGET_CHANGED",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "RESOLUTION_FINGERPRINT_STALE",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "HIGH_RISK_APPROVAL_REQUIRED",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "HIGH_RISK_ACTION_MISMATCH",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "ACTIVE_DEVICE_FAMILY_EXISTS",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "SUCCESSOR_ALREADY_PENDING",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "AUTHORITATIVE_CREDENTIAL_MATERIAL_MISSING",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "AUTHENTICATABLE_PLATFORM_ADMIN_REQUIRED",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "IDENTITY_RECONCILIATION_CONFLICT",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "ONE_TIME_RESPONSE_REPLAY_EXPIRED",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "REQUEST_DIGEST_KEY_EPOCH_CHANGED",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "PRODUCTION_READINESS_REQUIRED",
+        "http_status": 409,
+        "retryable": false
+      },
+      {
+        "code": "RESOURCE_VERSION_CONFLICT",
+        "http_status": 412,
+        "retryable": false
+      },
+      {
+        "code": "ACTIVE_RELEASE_CHANGED",
+        "http_status": 412,
+        "retryable": false
+      },
+      {
+        "code": "SECURITY_LEDGER_HEAD_CHANGED",
+        "http_status": 412,
+        "retryable": false
+      },
+      {
+        "code": "SCHEMA_VALIDATION_FAILED",
+        "http_status": 422,
+        "retryable": false
+      },
+      {
+        "code": "PRECONDITION_REQUIRED",
+        "http_status": 428,
+        "retryable": false
+      },
+      {
+        "code": "RATE_LIMITED",
+        "http_status": 429,
+        "retryable": true
+      },
+      {
+        "code": "STORAGE_UNAVAILABLE",
+        "http_status": 503,
+        "retryable": true
+      },
+      {
+        "code": "DEPENDENCY_UNAVAILABLE",
+        "http_status": 503,
+        "retryable": true
+      },
+      {
+        "code": "KEY_SERVICE_UNAVAILABLE",
+        "http_status": 503,
+        "retryable": true
+      },
+      {
+        "code": "SECURITY_LEDGER_UNAVAILABLE",
+        "http_status": 503,
+        "retryable": true
+      },
+      {
+        "code": "SECURITY_LEDGER_RECONCILIATION_REQUIRED",
+        "http_status": 503,
+        "retryable": true
+      },
+      {
+        "code": "SENSITIVE_REQUEST_DIGEST_KEY_UNAVAILABLE",
+        "http_status": 503,
+        "retryable": true
+      },
+      {
+        "code": "ONE_TIME_RESPONSE_KEY_UNAVAILABLE",
+        "http_status": 503,
+        "retryable": true
+      },
+      {
+        "code": "RESTORE_CONTINUITY_AUTHENTICATION_FAILED",
+        "http_status": 503,
+        "retryable": false
+      },
+      {
+        "code": "RESTORE_CUTOVER_RECONCILIATION_REQUIRED",
+        "http_status": 503,
+        "retryable": true
+      },
+      {
+        "code": "CRYPTOGRAPHIC_INTEGRITY_FAILURE",
+        "http_status": 503,
+        "retryable": false
+      },
+      {
+        "code": "INTERNAL_ERROR",
+        "http_status": 500,
+        "retryable": false
+      }
+    ],
+    "result_encoding_policy": {
+      "api_failure_shape": [
+        "type",
+        "title",
+        "status",
+        "code",
+        "detail",
+        "state_effect",
+        "request_id",
+        "retryable",
+        "field_errors"
+      ],
+      "every_api_error_code_must_exist_in_error_registry": true,
+      "http_status_is_derived_from_error_registry_not_embedded_in_error_code": true,
+      "body_status_must_equal_http_status_and_registry_status": true,
+      "type_is_stable_product_error_uri_and_title_is_safe_static_text": true,
+      "detail_and_field_errors_never_contain_secrets": true,
+      "internal_reconciliation_markers_are_not_api_error_codes": true
+    },
     "operations": [
       {
         "operation_id": "completeBootstrap",
@@ -935,6 +4145,49 @@
         "scope": "bootstrap_secret",
         "response_secret": "none",
         "response_cache_control": "no-store",
+        "request_forbidden_fields": [
+          "user_id",
+          "person_id",
+          "roles",
+          "enabled",
+          "person_attestation",
+          "user_binding",
+          "target_channel"
+        ],
+        "uses_only_grant_bound_server_reserved_user_person_attestation_binding_and_target_channel": true,
+        "rechecks_current_external_person_custodian_and_key_registries_before_commit": true,
+        "security_ledger_mutation": "bootstrap_completion",
+        "async": false
+      },
+      {
+        "operation_id": "getDeploymentStatus",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/deployment",
+        "required_permissions_any": [
+          "operation.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "snapshot",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "response_schema": "safe_deployment_mode_generation_readiness_and_reason",
+        "async": false
+      },
+      {
+        "operation_id": "activateDeploymentProduction",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/deployment:activate-production",
+        "required_permissions_any": [
+          "deployment.manage"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match_and_production_readiness_snapshot_and_ledger_head",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "security_ledger_mutation": "deployment_production_activation",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -960,6 +4213,20 @@
         "concurrency": "not_applicable",
         "scope": "authenticated_tenant",
         "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "refreshCsrfToken",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/auth/session:refresh-csrf",
+        "required_permissions_any": [],
+        "idempotency": "not_applicable",
+        "concurrency": "rotate_session_bound_csrf_generation",
+        "scope": "authenticated_tenant",
+        "response_secret": "one_time_csrf_token_response_header",
+        "response_cache_control": "no-store",
+        "browser_security_policy": "exact_origin_required_existing_csrf_header_narrowly_exempt",
         "async": false
       },
       {
@@ -1012,6 +4279,78 @@
         "async": false
       },
       {
+        "operation_id": "changeOwnPassword",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/auth/session:change-password",
+        "required_permissions_any": [],
+        "idempotency": "required",
+        "concurrency": "if_match_current_password_authentication_epoch_and_ledger_head",
+        "scope": "authenticated_tenant_self",
+        "response_secret": "none",
+        "response_cache_control": "no-store",
+        "security_ledger_mutation": "user_password_change",
+        "high_risk_policy": "self_service_current_password_recent_reauthentication",
+        "invalidates_sessions_tokens_and_affected_pending_or_approved_high_risk_actions": true,
+        "async": false
+      },
+      {
+        "operation_id": "listUsers",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/users",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "snapshot_pagination",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getUser",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/users/{user_id}",
+        "required_permissions_any": [
+          "user.manage"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getUserRoleAssignments",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/users/{user_id}/role-assignments",
+        "required_permissions_any": [
+          "role.assign"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "assignment_generation_and_etag",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "listRoleDefinitions",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/role-definitions",
+        "required_permissions_any": [
+          "role.assign"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "role_catalog_version",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
         "operation_id": "createUser",
         "surface": "control_plane",
         "method": "POST",
@@ -1023,6 +4362,20 @@
         "concurrency": "state_precondition",
         "scope": "authenticated_tenant",
         "response_secret": "none",
+        "request_forbidden_fields": [
+          "password",
+          "password_verifier",
+          "enabled",
+          "roles",
+          "role_assignments",
+          "person_id",
+          "person_binding_id",
+          "person_attestation"
+        ],
+        "created_user_state": "PROVISIONING_DISABLED_EMPTY_ROLE_SET",
+        "credential_setup_path": "issuePasswordReset_PROVISIONING_CREDENTIAL_SETUP_then_consumePasswordReset",
+        "security_ledger_mutation": "user_identity_create",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -1037,6 +4390,28 @@
         "concurrency": "if_match",
         "scope": "authenticated_tenant",
         "response_secret": "none",
+        "request_allowed_fields": [
+          "normalized_username",
+          "display_name"
+        ],
+        "request_forbidden_fields": [
+          "password",
+          "password_verifier",
+          "credential_generation",
+          "enabled",
+          "account_state_generation",
+          "authentication_epoch",
+          "authorization_epoch",
+          "roles",
+          "role_assignments",
+          "person_id",
+          "person_binding_id",
+          "person_binding_generation",
+          "person_eligibility_generation",
+          "person_attestation"
+        ],
+        "security_ledger_mutation": "user_identity_fields_update",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -1051,7 +4426,8 @@
         "concurrency": "if_match_and_security_ledger_head",
         "scope": "authenticated_tenant",
         "response_secret": "none",
-        "high_risk_policy": "recent_reauthentication_reason",
+        "security_ledger_mutation": "user_enabled_state_change",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -1066,7 +4442,8 @@
         "concurrency": "if_match_and_security_ledger_head",
         "scope": "authenticated_tenant",
         "response_secret": "none",
-        "high_risk_policy": "recent_reauthentication_reason",
+        "security_ledger_mutation": "user_enabled_state_change",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -1081,7 +4458,7 @@
         "concurrency": "if_match",
         "scope": "authenticated_tenant",
         "response_secret": "none",
-        "high_risk_policy": "recent_reauthentication_reason",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -1095,9 +4472,20 @@
         "idempotency": "required",
         "concurrency": "state_precondition",
         "scope": "authenticated_tenant",
-        "response_secret": "one_time_reset_token",
+        "response_secret": "one_time_reset_token_target_person_channel_only",
         "response_cache_control": "no-store",
-        "high_risk_policy": "recent_reauthentication_reason",
+        "high_risk_policy": "production_four_eyes_v1",
+        "privileged_target_result": {
+          "error_code": "FORBIDDEN",
+          "state_effect": "UNCHANGED",
+          "retryable": false,
+          "recovery_path": "CHANGE_OWN_PASSWORD_OR_OFFLINE_CUSTODIAN_RECOVERY"
+        },
+        "issuance_kind_by_target_state": {
+          "ACTIVE_BOUND_NON_PRIVILEGED": "NORMAL_PASSWORD_RESET",
+          "PROVISIONING_DISABLED_EMPTY_ROLE_SET": "PROVISIONING_CREDENTIAL_SETUP"
+        },
+        "initiator_never_receives_or_observes_reset_token": true,
         "async": false
       },
       {
@@ -1111,6 +4499,9 @@
         "scope": "password_reset_token",
         "response_secret": "none",
         "response_cache_control": "no-store",
+        "security_ledger_mutation": "user_password_change",
+        "privileged_target_person_proof_required": true,
+        "provisioning_credential_setup_never_enables_or_grants_role_and_records_target_possession_evidence": true,
         "async": false
       },
       {
@@ -1139,7 +4530,7 @@
         "concurrency": "if_match",
         "scope": "authenticated_tenant",
         "response_secret": "none",
-        "high_risk_policy": "recent_reauthentication_reason",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -1151,10 +4542,11 @@
           "role.assign"
         ],
         "idempotency": "inherent",
-        "concurrency": "if_match",
+        "concurrency": "if_match_and_assignment_generation_and_ledger_head",
         "scope": "authenticated_tenant",
         "response_secret": "none",
-        "high_risk_policy": "recent_reauthentication_reason",
+        "security_ledger_mutation": "user_role_scope_assignment_replace",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -1186,6 +4578,34 @@
         "async": false
       },
       {
+        "operation_id": "listScreenGroups",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/screen-groups",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "snapshot_pagination",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getScreenGroup",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/screen-groups/{screen_group_id}",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
         "operation_id": "createScreenGroup",
         "surface": "control_plane",
         "method": "POST",
@@ -1209,6 +4629,34 @@
         ],
         "idempotency": "request_precondition",
         "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "listScreenInstances",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/screen-instances",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "snapshot_pagination",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
+        "operation_id": "getScreenInstance",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/screen-instances/{screen_id}",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag",
         "scope": "authenticated_tenant",
         "response_secret": "none",
         "async": false
@@ -1256,6 +4704,20 @@
         "async": false
       },
       {
+        "operation_id": "getDigitalHumanInstance",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/digital-human-instances/{digital_human_instance_id}",
+        "required_permissions_any": [
+          "screen.read"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "etag",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "async": false
+      },
+      {
         "operation_id": "getRuntimeBinding",
         "surface": "control_plane",
         "method": "GET",
@@ -1297,9 +4759,12 @@
           "finereport.binding.manage"
         ],
         "idempotency": "inherent",
-        "concurrency": "if_match_or_if_none_match_star",
+        "concurrency": "if_match_or_if_none_match_star_and_security_generation_and_ledger_head",
         "scope": "authenticated_tenant",
         "response_secret": "none",
+        "retiring_target_set_preconditions": "exact_set_hash_and_runtime_binding_generations",
+        "recovery_state_allowed": "FINEREPORT_REBIND_REQUIRED",
+        "security_ledger_mutation": "finereport_identity_binding_create_or_replace",
         "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
@@ -1312,10 +4777,11 @@
           "device.enroll"
         ],
         "idempotency": "required",
-        "concurrency": "state_precondition",
+        "concurrency": "state_precondition_and_family_generation_and_ledger_head",
         "scope": "authenticated_tenant",
         "response_secret": "one_time_enrollment_secret",
         "response_cache_control": "no-store",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -1344,7 +4810,21 @@
         "concurrency": "if_match",
         "scope": "authenticated_tenant",
         "response_secret": "none",
-        "high_risk_policy": "recent_reauthentication_reason",
+        "high_risk_policy": "production_four_eyes_v1",
+        "async": false
+      },
+      {
+        "operation_id": "getDeviceCredentialMetadata",
+        "surface": "control_plane",
+        "method": "GET",
+        "path": "/screen-instances/{screen_id}/device-credentials/{credential_id}",
+        "required_permissions_any": [
+          "device.revoke"
+        ],
+        "idempotency": "inherent",
+        "concurrency": "credential_family_etag_read",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
         "async": false
       },
       {
@@ -1356,9 +4836,10 @@
           "device.revoke"
         ],
         "idempotency": "required",
-        "concurrency": "if_match_and_credential_epoch",
+        "concurrency": "if_match_credential_family_and_expected_credential_epoch_and_ledger_head",
         "scope": "authenticated_tenant",
         "response_secret": "none",
+        "security_ledger_mutation": "device_credential_family_rotation_expiry_or_revoke",
         "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
@@ -1374,7 +4855,8 @@
         "concurrency": "state_precondition",
         "scope": "authenticated_tenant",
         "response_secret": "none",
-        "high_risk_policy": "recent_reauthentication_reason",
+        "security_ledger_mutation": "secret_record_create_or_rotate",
+        "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
       {
@@ -1386,9 +4868,12 @@
           "secret.write"
         ],
         "idempotency": "required",
-        "concurrency": "if_match",
+        "concurrency": "if_match_and_security_generation_and_ledger_head",
         "scope": "authenticated_tenant",
         "response_secret": "none",
+        "retiring_target_set_preconditions": "exact_set_hash_and_runtime_binding_generations",
+        "recovery_state_allowed": "SECRET_ROTATION_REQUIRED",
+        "security_ledger_mutation": "secret_record_create_or_rotate",
         "high_risk_policy": "production_four_eyes_v1",
         "async": false
       },
@@ -1434,6 +4919,8 @@
         "concurrency": "snapshot_pagination",
         "scope": "authenticated_tenant",
         "response_secret": "none",
+        "authorization_rule": "risk_approve_and_target_operation_permission_scope_per_item",
+        "unauthorized_items_returned": false,
         "async": false
       },
       {
@@ -1481,6 +4968,9 @@
         "concurrency": "state_precondition",
         "scope": "authenticated_tenant",
         "response_secret": "none",
+        "request_body_policy": "target_envelope_and_schema_version_only",
+        "initial_spec": "EMPTY_OBJECT",
+        "field_permission_policy": "no_initial_spec",
         "async": false
       },
       {
@@ -1511,6 +5001,41 @@
         "scope": "authenticated_tenant",
         "response_secret": "none",
         "field_permission_policy": "config_draft_spec_fields",
+        "async": false
+      },
+      {
+        "operation_id": "reviseConfigDraft",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/config-drafts/{draft_id}:revise",
+        "required_permissions_any": [
+          "config.edit_business",
+          "config.edit_technical"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "transition_rule": "validated_previewed_rejected_or_pending;approved_only_when_resolution_fingerprint_or_control_plane_epoch_stale;copy_current_spec",
+        "field_permission_policy": "config_draft_all_present_field_classes",
+        "server_revalidates_stale_fingerprint_and_epoch": true,
+        "async": false
+      },
+      {
+        "operation_id": "abandonConfigDraft",
+        "surface": "control_plane",
+        "method": "POST",
+        "path": "/config-drafts/{draft_id}:abandon",
+        "required_permissions_any": [
+          "config.edit_business",
+          "config.edit_technical"
+        ],
+        "idempotency": "required",
+        "concurrency": "if_match",
+        "scope": "authenticated_tenant",
+        "response_secret": "none",
+        "transition_rule": "draft_validated_previewed_or_rejected_only",
+        "field_permission_policy": "config_draft_all_present_field_classes",
         "async": false
       },
       {
@@ -1853,6 +5378,7 @@
         "scope": "enrollment_token",
         "response_secret": "one_time_device_credential",
         "response_cache_control": "no-store",
+        "security_ledger_mutation": "device_credential_family_create_from_enrollment_claim",
         "async": false
       },
       {
@@ -1862,10 +5388,11 @@
         "path": "/credentials:rotate",
         "required_permissions_any": [],
         "idempotency": "required",
-        "concurrency": "credential_epoch",
+        "concurrency": "credential_epoch_and_family_generation",
         "scope": "credential_bound_screen",
         "response_secret": "one_time_successor_credential",
         "response_cache_control": "no-store",
+        "security_ledger_mutation": "device_credential_family_rotation_expiry_or_revoke",
         "async": false
       },
       {
@@ -1920,39 +5447,172 @@
   },
   "three_screen_fixture": {
     "site_id": "019fa100-0000-7000-8000-000000000001",
+    "release_targets": [
+      {
+        "release_label": "A",
+        "release_id": "019fa100-0000-7000-8000-000000000401",
+        "screen_id": "019fa100-0000-7000-8000-000000000101",
+        "release_target_id": "019fa100-0000-7000-8000-000000000501"
+      },
+      {
+        "release_label": "B",
+        "release_id": "019fa100-0000-7000-8000-000000000402",
+        "screen_id": "019fa100-0000-7000-8000-000000000102",
+        "release_target_id": "019fa100-0000-7000-8000-000000000502"
+      },
+      {
+        "release_label": "C",
+        "release_id": "019fa100-0000-7000-8000-000000000403",
+        "screen_id": "019fa100-0000-7000-8000-000000000103",
+        "release_target_id": "019fa100-0000-7000-8000-000000000503"
+      },
+      {
+        "release_label": "D",
+        "release_id": "019fa100-0000-7000-8000-000000000404",
+        "screen_id": "019fa100-0000-7000-8000-000000000102",
+        "release_target_id": "019fa100-0000-7000-8000-000000000504"
+      }
+    ],
     "screens": [
       {
         "screen_id": "019fa100-0000-7000-8000-000000000101",
         "digital_human_instance_id": "019fa100-0000-7000-8000-000000000201",
-        "desired_release": "A",
-        "applied_release": "A",
-        "binding_generation": 10
+        "desired_release_target_id": "019fa100-0000-7000-8000-000000000501",
+        "applied_release_target_id": "019fa100-0000-7000-8000-000000000501",
+        "binding_generation": 10,
+        "last_acknowledged_marker": "ack-A-10",
+        "resource_revision": 10,
+        "last_acknowledged_at": "2026-07-27T00:00:10Z"
       },
       {
         "screen_id": "019fa100-0000-7000-8000-000000000102",
         "digital_human_instance_id": "019fa100-0000-7000-8000-000000000202",
-        "desired_release": "B",
-        "applied_release": "B",
-        "binding_generation": 17
+        "desired_release_target_id": "019fa100-0000-7000-8000-000000000502",
+        "applied_release_target_id": "019fa100-0000-7000-8000-000000000502",
+        "binding_generation": 17,
+        "last_acknowledged_marker": "ack-B-17",
+        "resource_revision": 17,
+        "last_acknowledged_at": "2026-07-27T00:00:17Z"
       },
       {
         "screen_id": "019fa100-0000-7000-8000-000000000103",
         "digital_human_instance_id": "019fa100-0000-7000-8000-000000000203",
-        "desired_release": "C",
-        "applied_release": "C",
-        "binding_generation": 4
+        "desired_release_target_id": "019fa100-0000-7000-8000-000000000503",
+        "applied_release_target_id": "019fa100-0000-7000-8000-000000000503",
+        "binding_generation": 4,
+        "last_acknowledged_marker": "ack-C-4",
+        "resource_revision": 4,
+        "last_acknowledged_at": "2026-07-27T00:00:04Z"
       }
     ],
     "single_screen_publication": {
       "target_screen_id": "019fa100-0000-7000-8000-000000000102",
-      "new_release": "D",
+      "new_release_id": "019fa100-0000-7000-8000-000000000404",
+      "new_release_target_id": "019fa100-0000-7000-8000-000000000504",
       "expected_binding_generation": 17,
+      "expected_resource_revision": 17,
       "changed_screen_ids": [
         "019fa100-0000-7000-8000-000000000102"
       ],
       "unchanged_screen_ids": [
         "019fa100-0000-7000-8000-000000000101",
         "019fa100-0000-7000-8000-000000000103"
+      ],
+      "pre_publish_bindings": [
+        {
+          "screen_id": "019fa100-0000-7000-8000-000000000101",
+          "digital_human_instance_id": "019fa100-0000-7000-8000-000000000201",
+          "desired_release_target_id": "019fa100-0000-7000-8000-000000000501",
+          "applied_release_target_id": "019fa100-0000-7000-8000-000000000501",
+          "binding_generation": 10,
+          "last_acknowledged_marker": "ack-A-10",
+          "resource_revision": 10,
+          "last_acknowledged_at": "2026-07-27T00:00:10Z"
+        },
+        {
+          "screen_id": "019fa100-0000-7000-8000-000000000102",
+          "digital_human_instance_id": "019fa100-0000-7000-8000-000000000202",
+          "desired_release_target_id": "019fa100-0000-7000-8000-000000000502",
+          "applied_release_target_id": "019fa100-0000-7000-8000-000000000502",
+          "binding_generation": 17,
+          "last_acknowledged_marker": "ack-B-17",
+          "resource_revision": 17,
+          "last_acknowledged_at": "2026-07-27T00:00:17Z"
+        },
+        {
+          "screen_id": "019fa100-0000-7000-8000-000000000103",
+          "digital_human_instance_id": "019fa100-0000-7000-8000-000000000203",
+          "desired_release_target_id": "019fa100-0000-7000-8000-000000000503",
+          "applied_release_target_id": "019fa100-0000-7000-8000-000000000503",
+          "binding_generation": 4,
+          "last_acknowledged_marker": "ack-C-4",
+          "resource_revision": 4,
+          "last_acknowledged_at": "2026-07-27T00:00:04Z"
+        }
+      ],
+      "post_publish_bindings": [
+        {
+          "screen_id": "019fa100-0000-7000-8000-000000000101",
+          "digital_human_instance_id": "019fa100-0000-7000-8000-000000000201",
+          "desired_release_target_id": "019fa100-0000-7000-8000-000000000501",
+          "applied_release_target_id": "019fa100-0000-7000-8000-000000000501",
+          "binding_generation": 10,
+          "last_acknowledged_marker": "ack-A-10",
+          "resource_revision": 10,
+          "last_acknowledged_at": "2026-07-27T00:00:10Z"
+        },
+        {
+          "screen_id": "019fa100-0000-7000-8000-000000000102",
+          "digital_human_instance_id": "019fa100-0000-7000-8000-000000000202",
+          "desired_release_target_id": "019fa100-0000-7000-8000-000000000504",
+          "applied_release_target_id": "019fa100-0000-7000-8000-000000000502",
+          "binding_generation": 18,
+          "last_acknowledged_marker": "ack-B-17",
+          "resource_revision": 18,
+          "last_acknowledged_at": "2026-07-27T00:00:17Z"
+        },
+        {
+          "screen_id": "019fa100-0000-7000-8000-000000000103",
+          "digital_human_instance_id": "019fa100-0000-7000-8000-000000000203",
+          "desired_release_target_id": "019fa100-0000-7000-8000-000000000503",
+          "applied_release_target_id": "019fa100-0000-7000-8000-000000000503",
+          "binding_generation": 4,
+          "last_acknowledged_marker": "ack-C-4",
+          "resource_revision": 4,
+          "last_acknowledged_at": "2026-07-27T00:00:04Z"
+        }
+      ],
+      "post_ack_bindings": [
+        {
+          "screen_id": "019fa100-0000-7000-8000-000000000101",
+          "digital_human_instance_id": "019fa100-0000-7000-8000-000000000201",
+          "desired_release_target_id": "019fa100-0000-7000-8000-000000000501",
+          "applied_release_target_id": "019fa100-0000-7000-8000-000000000501",
+          "binding_generation": 10,
+          "last_acknowledged_marker": "ack-A-10",
+          "resource_revision": 10,
+          "last_acknowledged_at": "2026-07-27T00:00:10Z"
+        },
+        {
+          "screen_id": "019fa100-0000-7000-8000-000000000102",
+          "digital_human_instance_id": "019fa100-0000-7000-8000-000000000202",
+          "desired_release_target_id": "019fa100-0000-7000-8000-000000000504",
+          "applied_release_target_id": "019fa100-0000-7000-8000-000000000504",
+          "binding_generation": 18,
+          "last_acknowledged_marker": "ack-D-18",
+          "resource_revision": 19,
+          "last_acknowledged_at": "2026-07-27T00:10:18Z"
+        },
+        {
+          "screen_id": "019fa100-0000-7000-8000-000000000103",
+          "digital_human_instance_id": "019fa100-0000-7000-8000-000000000203",
+          "desired_release_target_id": "019fa100-0000-7000-8000-000000000503",
+          "applied_release_target_id": "019fa100-0000-7000-8000-000000000503",
+          "binding_generation": 4,
+          "last_acknowledged_marker": "ack-C-4",
+          "resource_revision": 4,
+          "last_acknowledged_at": "2026-07-27T00:00:04Z"
+        }
       ]
     }
   }
