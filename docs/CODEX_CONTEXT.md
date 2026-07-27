@@ -15,9 +15,9 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P1.1 Identity And Device Trust`. G0 and P1.0 were explicitly accepted on 2026-07-27.
+Current phase: `Productization P1.2 Three-Screen Inventory`. G0, P1.0 and P1.1 were explicitly accepted on 2026-07-27.
 
-P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implements only the local identity, browser-session, RBAC, security-audit and screen-device trust slice. Multi-screen inventory, release publication and backup / restore remain later batches.
+P1.0 froze the accepted target domain model, data model, identity and permission model, configuration-release state machines, storage / recovery decision and control-plane API contract. P1.1 implemented and proved the local identity, browser-session, RBAC, security-audit and screen-device trust slice. P1.2 is active only for result-card and non-scope freezing; multi-screen inventory implementation has not started. Release publication and backup / restore remain P1.3.
 
 ## Frozen Product Boundaries
 
@@ -33,14 +33,22 @@ P1.0 froze the accepted target domain model, data model, identity and permission
 
 ## Current As-Built Baseline
 
-The implemented code remains a single-runtime POC baseline with Vue 3, FastAPI, Docker Compose, customer configuration overlays, Mock switches, provider abstractions, controlled `action_id` screen actions, Excel querying, knowledge retrieval, ASR / TTS and sanitized Ops capabilities.
+The accepted runtime baseline contains the original single-instance POC plus the
+separate P1.1 development-preview control plane. P1.1 adds local IAM, server-side
+browser sessions, RBAC, append-only security audit and screen-device trust
+without changing the existing POC route meanings. It does not add multi-screen
+inventory.
 
-Implemented POC contracts remain authoritative only for the current code:
+Implemented POC contracts remain authoritative for the original POC namespaces:
 
 - [06_API_CONTRACT.md](06_API_CONTRACT.md)
 - [07_DATA_CONTRACT.md](07_DATA_CONTRACT.md)
 
-They are not the target multi-screen product contracts. Target contracts will be created under [product/contracts](product/contracts).
+Accepted P1.1 behavior is recorded separately in
+[acceptance/productization/P1.1](acceptance/productization/P1.1). Target
+multi-screen contracts exist under [product/contracts](product/contracts), but
+their P1.2 and later behavior remains unimplemented until its result batch
+passes.
 
 ## Non-Negotiable Rules
 

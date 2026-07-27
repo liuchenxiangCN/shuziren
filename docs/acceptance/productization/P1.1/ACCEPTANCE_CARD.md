@@ -3,13 +3,17 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Result: local identity and screen-device trust
 - Base accepted version: commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`, tree `33752e13a385b4980cd3ecca309ad0f27d9307ae`
 - Candidate: commit `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`
 - Database schema / migration: `p1_control_plane_001` / `001_initial_identity_device_trust`, checksum `fd7094d87568fddc42c339a4861a6004a136dfb26ed6d1a11549cdb7a5db95ce`; empty-store, repeat initialization and checksum-tamper rejection PASS
 - Gate summary: required local automated, browser, Docker and rollback gates PASS; final-candidate independent review PASS
-- User decision: Pending
+- User decision: `通过` on 2026-07-27
+
+The user explicitly accepted this result without conditions on 2026-07-27.
+P1.1 candidate commit `8c18e5d6b10081eaaf608436440046894d235d46`
+is now the accepted runtime rollback baseline for subsequent P1 batches.
 
 ## Frozen Observable Outcome
 

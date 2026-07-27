@@ -15,7 +15,7 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 | --- | --- | --- | --- |
 | R-041 | Multi-screen configuration, session, identity or permission leakage | P1 uses separate ScreenInstance / DigitalHumanInstance / DeviceEnrollment contexts and proves three-screen isolation | Open |
 | R-043 | FineReport plugin external API, authentication, session, permission inheritance and upgrade stability are unknown | Keep the provider `Unverified` and unpublished until official documentation and isolated real-environment probes pass | Blocked |
-| R-044 | Reusing the POC admin token or local-only boundary would make production roles insecure | The P1 target requires built-in users, secure sessions, lockout / reset, RBAC, separate device credentials and immutable audit; later P1 batches must implement and prove them | Open |
+| R-044 | Reusing the POC admin token or local-only boundary would make production roles insecure | P1.1 proves the development-preview IAM, session, RBAC, separate device credential and immutable-audit slice; later batches must preserve it while production activation and custodian controls remain unverified | Open |
 | R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | P1 freezes storage / recovery; P2 introduces instance-bound providers, pools, timeouts, cancellation and backpressure | Open |
 | R-046 | Plugin failure could fall back to a database or Excel source with broader permission | Permit fallback only for technical unavailability and equivalent ScreenInstance-bound permission scope; never for permission denial | Open |
 | R-047 | “FineReport / FVS 11.0+ target” may be interpreted as automatic compatibility | Publish only exact certified FineReport + FVS + plugin + browser + product combinations | Open |
@@ -26,16 +26,16 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product Blockers
 
-### P1.1 Identity And Device Trust
+### P1.2 Three-Screen Inventory
 
-P1.0 accepted the target decisions on 2026-07-27. P1.1 now implements only the local identity, session, RBAC, audit and screen-device trust slice.
+P1.1 was explicitly accepted on 2026-07-27 and is the current runtime rollback baseline. P1.2 is active only for result-card and non-scope freezing; inventory implementation has not started.
 
-- The development preview may initialize explicit test identities and one trust-only screen fixture, but production startup must never auto-create users, passwords, roles, device targets or keys.
-- The accepted contract requires typed different-user production approval; approval records evidence only and cannot execute the effect.
-- User sessions, CSRF, one-time enrollment and device credentials must persist only keyed verifiers, never plaintext.
-- Device scope must come only from its credential record; requests cannot select tenant, deployment, Site or ScreenInstance.
-- Production custodian attestation, monotonic anchors and production activation remain unverified and must not be inferred from development-preview evidence.
-- P1.2 inventory and P1.3 publishing / recovery remain blocked until P1.1 is explicitly accepted.
+- The P1.2 result card must freeze one default Site, screen-group behavior and at least three independently addressable ScreenInstances before implementation.
+- Every Site, ScreenGroup, ScreenInstance, DigitalHumanInstance and runtime-status reference must keep the accepted tenant/deployment/site/screen ownership lineage.
+- A screen or group mutation must not alter another screen, its device family, DigitalHumanInstance or runtime status.
+- The accepted P1.1 identity, approval, audit and device-trust behavior must remain backward compatible through any inventory migration.
+- FVS credentials, FineReport identity bindings, configuration publication and recovery remain outside P1.2 unless a later accepted result card explicitly brings them into scope.
+- P1.3 publishing / recovery remains blocked until P1.2 is explicitly accepted.
 
 ### P2 External Gate
 

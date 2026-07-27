@@ -9,84 +9,66 @@
 
 ## Current Phase
 
-`Productization P1.1 Identity And Device Trust`.
+`Productization P1.2 Three-Screen Inventory`.
 
-G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. Final P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46` is frozen with required local automated, browser, Docker, rollback and independent-review gates passing. It is ready for an explicit user result decision, remains unaccepted, and the accepted runtime baseline is still the single-instance POC.
+G0, P1.0 and P1.1 were explicitly accepted on 2026-07-27. Accepted
+P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46`, tree
+`9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`, is the runtime rollback
+baseline. P1.2 inventory behavior is not implemented.
 
 ## Next Task
 
-Present final P1.1 candidate `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`, for explicit user acceptance. Record only the user's explicit result decision; do not activate P1.2 from silence.
+Freeze the P1.2 result card and non-scope against the accepted P1.1 baseline.
+This task is documentation and acceptance-boundary work only. Runtime,
+database, API and UI implementation must not start until the result card is
+frozen and `NEXT_ACTIONS.md` is updated to name that implementation task.
 
-### User-Visible Result
+### Result Card Must Resolve
 
-P1.1 must provide:
+1. The exact default Site, ScreenGroup and minimum three-screen fixture.
+2. The inventory fields and lifecycle exposed for each ScreenInstance.
+3. The per-screen DigitalHumanInstance and runtime-status boundary.
+4. Create, update, list and read permissions plus idempotency and ETag behavior.
+5. Migration from the accepted P1.1 trust-only screen fixture without losing its device-family history.
+6. Observable three-screen isolation scenarios and understandable failure behavior.
+7. Automated, browser, migration, rollback and independent-review gates.
 
-1. A built-in administrator can sign in through an opaque server-side browser session.
-2. Administrators can inspect the exact role catalog and create implementation or audit user records through typed different-user approval.
-3. An audit user can read sanitized immutable security events but cannot manage users, approve privileged changes, mutate device trust or reveal Secret values.
-4. An authorized implementation engineer can request a one-time credential for a pre-existing screen trust target through typed approval.
-5. A device can claim enrollment once, authenticate with a separate screen-bound credential, rotate to a pending successor and activate that successor on first use.
-6. An administrator can hard-revoke the complete credential family through typed approval; old, successor and replayed credentials then fail closed.
-7. A fresh enrollment after hard revocation or `REENROLL_REQUIRED` creates a distinct active family while the old terminal family remains immutable history.
+### Intended User-Visible Result
 
-### Result Package
+- The management UI shows one Site, screen groups and at least three screens.
+- Each screen has its own non-secret FVS reference, DigitalHumanInstance and runtime status.
+- Authorized users can inspect and maintain inventory through the accepted P1.1 identity and audit boundary.
+- Changing one screen or group does not change an unrelated screen.
 
-- [acceptance/productization/P1.1/ACCEPTANCE_CARD.md](acceptance/productization/P1.1/ACCEPTANCE_CARD.md)
-- [acceptance/productization/P1.1/AUTOMATED_SUMMARY.md](acceptance/productization/P1.1/AUTOMATED_SUMMARY.md)
-- [acceptance/productization/P1.1/KNOWN_LIMITATIONS.md](acceptance/productization/P1.1/KNOWN_LIMITATIONS.md)
-- [acceptance/productization/P1.1/manifest.json](acceptance/productization/P1.1/manifest.json)
-- [acceptance/productization/P1.1/USER_DECISION.md](acceptance/productization/P1.1/USER_DECISION.md)
-- [acceptance/productization/P1.1/IMPLEMENTED_API.md](acceptance/productization/P1.1/IMPLEMENTED_API.md)
-- [acceptance/productization/P1.1/IMPLEMENTED_DATA.md](acceptance/productization/P1.1/IMPLEMENTED_DATA.md)
-- [acceptance/productization/P1.1/RUNBOOK.md](acceptance/productization/P1.1/RUNBOOK.md)
+### Required Gate Families
 
-Independent review task `/root/p1_1_independent_review` returned `FAIL` for candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` and then `FAIL` for candidate `45dd8ff9455c1ab62a408d26c15f15a14256341b`. The first round's session-revocation, rotation-replay, terminal-family, key-purpose, one-time evidence, reauthentication-idempotency and named-migration findings are remediated. The second round's permanent screen-lock finding is remediated by preserving terminal history while allowing one distinct fresh active family, with stale-generation rejection. The same reviewer then returned `PASS` for the final candidate with zero blocking and zero non-blocking findings. Only the explicit user decision remains Pending.
+- Empty and accepted-P1.1 database migration, repeat initialization and rollback.
+- API and UI RBAC denial for unauthorized roles and ownership scopes.
+- Three-screen identity, inventory, device-family and runtime-status isolation.
+- Idempotency, strong ETag and stale-write rejection.
+- Database uniqueness, foreign-key and composite-ownership enforcement.
+- Frontend build and browser workflow at the supported preview size.
+- Secret and sensitive-data scan of APIs, bundles, database, logs and evidence.
+- P1 target-contract validation, lifecycle lint and independent read-only review.
 
-### User Result Scenarios
+### Frozen Non-Scope Direction
 
-1. Sign in as administrator A and inspect current session, users and role definitions.
-2. Request an implementation or audit user creation, sign in separately as administrator B to approve it, then have administrator A resubmit the identical command.
-3. Sign in as the auditor, inspect security events, and confirm user management, approval, device mutation and Secret-bearing responses are denied.
-4. Request enrollment for the trust-only screen fixture, approve with the other administrator, execute the exact request and claim it once.
-5. Rotate the active device credential, activate the successor on first authenticated use and confirm the predecessor is revoked.
-6. Hard-revoke the credential family with different-user approval and confirm every family credential is rejected.
-7. Issue and claim a fresh enrollment for the same screen; confirm the old family remains terminal and exactly one distinct new family is active.
-8. Trigger failed logins, stale ETags, missing Origin / CSRF, self-approval, altered-command replay and cross-screen selectors and confirm fail-closed results.
-
-### Automated Gates
-
-- Python formatting / syntax and API application import pass.
-- SQLite schema migration from an empty store and repeat initialization pass.
-- Argon2id policy, password length / common-password rejection and progressive lockout pass.
-- Secure host-only session cookie, exact-Origin, CSRF, idle / absolute expiry, rotation and revocation pass.
-- API RBAC denial for auditor and implementation roles passes.
-- Different-user approval, exact-command binding, self-approval denial and stale-precondition rejection pass.
-- Enrollment single use, exact idempotency replay window, credential rotation activation, family-wide hard revocation, fresh-family re-enrollment and stale-generation denial pass.
-- Device credential-derived screen scope passes and client-selected tenant, deployment, site or screen scope is rejected.
-- Secret scans cover API responses, audit details, the frontend bundle and evidence.
-- Web type-check / build and a browser workflow smoke pass where the environment supports them.
-- `git diff --check`, P1 target-contract validation and repository lifecycle lint pass.
-
-### Non-Scope
-
-- No Site, ScreenGroup or production ScreenInstance inventory management; P1.1 may use one explicitly labeled trust-only screen fixture.
-- No three-screen configuration isolation claim; that belongs to P1.2.
-- No configuration draft, release, publication, rollback, runtime binding or recovery implementation; those belong to P1.3.
-- No PostgreSQL certification, production custodian ceremony, external monotonic security anchor or production activation claim.
-- No Secret or FineReport credential implementation and no change to the POC `/api/config/*`, `/api/ops/*` or `/api/screen/*` semantics.
-- No FineReport plugin, database QuerySource, Dora, ASR, TTS, FVS or Renderer expansion.
+- No ConfigDraft, ConfigRelease, publication, rollback or recovery implementation; those remain P1.3.
+- No FineReport plugin call, FineReport credential value, Secret value, QuerySource, Dora, ASR, TTS, FVS control or Renderer expansion.
+- No multi-customer shared database, multi-Site delivery promise or high-concurrency SLA.
+- No production activation, custodian ceremony, external monotonic anchor or PostgreSQL certification claim.
+- No change to accepted POC route meanings or accepted P1.1 identity/device-trust semantics.
 
 ### Stop Conditions
 
-- A user, session, enrollment or device can select or cross another ownership scope.
-- Auditor or implementation privileges exceed the accepted role catalog.
-- Approval executes the effect, self-approval succeeds, or a changed command reuses approval.
-- Password, cookie, CSRF, enrollment or device plaintext enters the database, logs, audit details, ordinary reads, bundle or Git.
-- A revoked, expired or superseded credential authenticates.
-- A runtime result is described as production-ready without its required external security anchors and production activation evidence.
+- A screen, group, device family, DigitalHumanInstance or runtime status can cross tenant, deployment, Site or screen scope.
+- Changing one screen mutates another screen or its accepted P1.1 trust history.
+- A migration loses or silently relabels accepted P1.1 device or audit history.
+- Missing or stale ETag succeeds, an idempotency key accepts a changed command, or unauthorized inventory access succeeds.
+- FVS or production readiness is described as verified without its external evidence.
 
-## Queued After P1.1 Acceptance
+## Queued After P1.2 Acceptance
 
-`Productization P1.2 Three-Screen Inventory`.
+`Productization P1.3 Publish, Rollback And Recovery`.
 
-P1.2 remains queued until P1.1 receives an explicit user result decision.
+P1.3 remains queued until P1.2 receives an explicit user result decision.

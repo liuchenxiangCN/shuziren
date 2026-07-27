@@ -9,6 +9,15 @@
 
 ## 2026-07-27
 
+### P1.1 User Acceptance And P1.2 Activation
+
+#### Completed Facts
+
+- The user explicitly accepted P1.1 (`通过`) without conditions or scope reduction.
+- P1.1 candidate commit `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`, became the accepted runtime rollback baseline.
+- P1.2 Three-Screen Inventory became the sole active result batch.
+- P1.2 is authorized only for result-card and non-scope freezing; no P1.2 runtime implementation is claimed or started by this acceptance record.
+
 ### P1.0 User Acceptance And P1.1 Activation
 
 #### Completed Facts
@@ -49,7 +58,7 @@
 - Detached-worktree rollback to P1.0 passed contract/lifecycle checks and POC API import, then the temporary worktree was removed.
 - The pinned pnpm 9.15.4 frontend build and isolated Docker / Compose API/web build-runtime smoke pass; `/api/health` and `/manage` returned HTTP 200, and the Compose project shut down cleanly.
 - The same independent reviewer completed a third read-only review of the final candidate: `PASS`, zero blocking findings and zero non-blocking findings. Evidence hashes, P1.0 rollback and all prior findings were independently rechecked.
-- P1.1 is ready for explicit user acceptance but remains unaccepted until that decision is recorded.
+- P1.1 became ready for explicit user acceptance; the user subsequently accepted it without conditions as recorded above.
 
 ### P1.0 Target Contract Result Pack
 

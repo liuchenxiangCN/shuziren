@@ -3,9 +3,9 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Logical schema: `p1_control_plane_001`
-- Scope: factual SQLite P1.1 candidate subset; not the complete P1 target model
+- Scope: factual accepted SQLite P1.1 subset; not the complete P1 target model
 - Target source: [../../../product/contracts/DATA_MODEL.md](../../../product/contracts/DATA_MODEL.md)
 
 P1.1 uses a new control-plane database, separate from the POC `sessions.db`. SQLite initialization enables WAL, `synchronous=FULL`, foreign keys and a 30-second busy timeout.

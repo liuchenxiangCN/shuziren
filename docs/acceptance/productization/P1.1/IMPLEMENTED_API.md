@@ -3,8 +3,8 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
-- Scope: factual P1.1 candidate API; not an accepted production-support claim
+- State: `ACCEPTED`
+- Scope: factual accepted P1.1 API; not a production-support claim
 - Target source: [../../../product/contracts/CONTROL_PLANE_API.md](../../../product/contracts/CONTROL_PLANE_API.md)
 
 The existing POC routes in [../../../06_API_CONTRACT.md](../../../06_API_CONTRACT.md) keep their meanings. P1.1 adds the separate namespaces below without changing `/api/config/*`, `/api/ops/*` or `/api/screen/*`.
