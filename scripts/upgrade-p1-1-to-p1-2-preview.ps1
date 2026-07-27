@@ -63,15 +63,31 @@ if ([string]::IsNullOrWhiteSpace($previewSettings["CONTROL_PLANE_ROOT_KEY_B64"])
     throw "The source preview root key is missing."
 }
 
-$env:CONTROL_PLANE_ROOT_KEY_B64 = $previewSettings["CONTROL_PLANE_ROOT_KEY_B64"]
-Push-Location $apiRoot
+$previousRootKey = [System.Environment]::GetEnvironmentVariable(
+    "CONTROL_PLANE_ROOT_KEY_B64",
+    [System.EnvironmentVariableTarget]::Process
+)
 try {
-    uv run python -m app.control_plane.upgrade_preview `
-        --source $sourceDatabasePath `
-        --database $targetDatabasePath
+    $env:CONTROL_PLANE_ROOT_KEY_B64 = $previewSettings["CONTROL_PLANE_ROOT_KEY_B64"]
+    Push-Location $apiRoot
+    try {
+        uv run python -m app.control_plane.upgrade_preview `
+            --source $sourceDatabasePath `
+            --database $targetDatabasePath
+        if ($LASTEXITCODE -ne 0) {
+            throw "P1.2 copied database migration failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }
 finally {
-    Pop-Location
+    [System.Environment]::SetEnvironmentVariable(
+        "CONTROL_PLANE_ROOT_KEY_B64",
+        $previousRootKey,
+        [System.EnvironmentVariableTarget]::Process
+    )
 }
 
 $allowedOriginsLine = if (
