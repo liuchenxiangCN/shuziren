@@ -84,11 +84,89 @@ class DigitalHumanInstanceCreateRequest(StrictModel):
     pass
 
 
+class ConfigDraftCreateRequest(StrictModel):
+    target_type: str = Field(min_length=1, max_length=32)
+    target_id: str = Field(min_length=1, max_length=200)
+    schema_version: str = Field(min_length=1, max_length=64)
+
+
+class ConfigDraftSpecRequest(StrictModel):
+    welcome_text: str = Field(min_length=1, max_length=500)
+    fvs_binding_ref: str = Field(min_length=1, max_length=512)
+
+
+class ConfigDraftDecisionRequest(StrictModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class ConfigReleaseCreateRequest(StrictModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class PublishScreenRequest(StrictModel):
+    release_id: str = Field(min_length=1, max_length=200)
+    release_target_id: str = Field(min_length=1, max_length=200)
+    expected_binding_generation: int = Field(ge=0)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class GroupPublicationTargetRequest(StrictModel):
+    screen_id: str = Field(min_length=1, max_length=200)
+    release_target_id: str = Field(min_length=1, max_length=200)
+    runtime_if_match: str = Field(min_length=5, max_length=200)
+    expected_binding_generation: int = Field(ge=0)
+
+
+class PublishGroupRequest(StrictModel):
+    release_id: str = Field(min_length=1, max_length=200)
+    targets: list[GroupPublicationTargetRequest] = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class RollbackScreenRequest(StrictModel):
+    source_release_target_id: str = Field(min_length=1, max_length=200)
+    expected_binding_generation: int = Field(ge=0)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class GroupRollbackSourceRequest(StrictModel):
+    screen_id: str = Field(min_length=1, max_length=200)
+    source_release_target_id: str = Field(min_length=1, max_length=200)
+
+
+class RollbackGroupRequest(StrictModel):
+    source_targets: list[GroupRollbackSourceRequest] = Field(min_length=1, max_length=200)
+    targets: list[GroupPublicationTargetRequest] = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class DeviceReleaseAcknowledgementRequest(StrictModel):
+    binding_generation: int = Field(ge=1)
+    content_hash: str = Field(min_length=64, max_length=64)
+
+
+class BackupCreateRequest(StrictModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class RestorePlanCreateRequest(StrictModel):
+    backup_id: str = Field(min_length=1, max_length=200)
+
+
+class RestorePlanExecuteRequest(StrictModel):
+    confirmation: str = Field(min_length=1, max_length=64)
+    reason: str = Field(min_length=3, max_length=500)
+
+
 IdempotencyKeyHeader = Annotated[
     str,
     Header(alias="Idempotency-Key", min_length=8, max_length=200),
 ]
 IfMatchHeader = Annotated[str, Header(alias="If-Match", min_length=5, max_length=200)]
+HighRiskActionHeader = Annotated[
+    str | None,
+    Header(alias="High-Risk-Action-ID", min_length=8, max_length=200),
+]
 
 
 def service_from_request(request: Request) -> ControlPlaneService:
@@ -633,6 +711,468 @@ def list_audit_events(
     return {"items": service_from_request(request).list_audit_events(context.principal, limit)}
 
 
+@router.post(f"{CONTROL_PREFIX}/config-drafts", status_code=201)
+def create_config_draft(
+    payload: ConfigDraftCreateRequest,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.create_config_draft(
+        context.principal,
+        target_type=payload.target_type,
+        target_id=payload.target_id,
+        schema_version=payload.schema_version,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}")
+def get_config_draft(
+    draft_id: str,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).p1_3.get_config_draft(
+        context.principal,
+        draft_id,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.put(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}/spec")
+def replace_config_draft_spec(
+    draft_id: str,
+    payload: ConfigDraftSpecRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.replace_config_draft_spec(
+        context.principal,
+        draft_id,
+        spec=payload.model_dump(),
+        if_match=if_match,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}:validate")
+def validate_config_draft(
+    draft_id: str,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.validate_config_draft(
+        context.principal,
+        draft_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}:preview")
+def preview_config_draft(
+    draft_id: str,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.preview_config_draft(
+        context.principal,
+        draft_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}:submit-for-approval")
+def submit_config_draft_approval(
+    draft_id: str,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.submit_config_draft(
+        context.principal,
+        draft_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}:approve")
+def approve_config_draft(
+    draft_id: str,
+    payload: ConfigDraftDecisionRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.decide_config_draft(
+        context,
+        draft_id,
+        decision="APPROVED",
+        reason=payload.reason,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}:reject")
+def reject_config_draft(
+    draft_id: str,
+    payload: ConfigDraftDecisionRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.decide_config_draft(
+        context,
+        draft_id,
+        decision="REJECTED",
+        reason=payload.reason,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}:revise")
+def revise_config_draft(
+    draft_id: str,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.revise_config_draft(
+        context.principal,
+        draft_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}:abandon")
+def abandon_config_draft(
+    draft_id: str,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.abandon_config_draft(
+        context.principal,
+        draft_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}:release", status_code=201)
+def create_config_release(
+    draft_id: str,
+    payload: ConfigReleaseCreateRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.create_config_release(
+        context.principal,
+        draft_id,
+        reason=payload.reason,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/config-releases/{{release_id}}")
+def get_config_release(
+    release_id: str,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).p1_3.get_config_release(
+        context.principal,
+        release_id,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/config-release-diffs")
+def diff_config_releases(
+    request: Request,
+    from_release_id: str = Query(alias="from", min_length=1, max_length=200),
+    to_release_id: str = Query(alias="to", min_length=1, max_length=200),
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p1_3.diff_config_releases(
+        context.principal,
+        from_release_id,
+        to_release_id,
+    )
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/publications",
+    status_code=202,
+)
+def publish_config_to_screen(
+    screen_id: str,
+    payload: PublishScreenRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+    high_risk_action_id: HighRiskActionHeader = None,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.publish_to_screen(
+        context,
+        screen_id,
+        release_id=payload.release_id,
+        release_target_id=payload.release_target_id,
+        expected_binding_generation=payload.expected_binding_generation,
+        runtime_if_match=if_match,
+        reason=payload.reason,
+        idempotency_key=idempotency_key,
+        high_risk_action_id=high_risk_action_id,
+    )
+    if result.get("kind") == "CONFIG_RELEASE_PUBLISHED":
+        response.status_code = 201
+    return result
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/screen-groups/{{screen_group_id}}/publications",
+    status_code=202,
+)
+def publish_config_to_group(
+    screen_group_id: str,
+    payload: PublishGroupRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+    high_risk_action_id: HighRiskActionHeader = None,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.publish_to_group(
+        context,
+        screen_group_id,
+        release_id=payload.release_id,
+        group_if_match=if_match,
+        targets=[item.model_dump() for item in payload.targets],
+        reason=payload.reason,
+        idempotency_key=idempotency_key,
+        high_risk_action_id=high_risk_action_id,
+    )
+    if result.get("kind") == "CONFIG_RELEASE_PUBLISHED":
+        response.status_code = 201
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/publications/{{publication_id}}")
+def get_publication(
+    publication_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p1_3.get_publication(
+        context.principal,
+        publication_id,
+    )
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/rollbacks",
+    status_code=202,
+)
+def rollback_config_on_screen(
+    screen_id: str,
+    payload: RollbackScreenRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+    high_risk_action_id: HighRiskActionHeader = None,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.rollback_screen(
+        context,
+        screen_id,
+        source_release_target_id=payload.source_release_target_id,
+        expected_binding_generation=payload.expected_binding_generation,
+        runtime_if_match=if_match,
+        reason=payload.reason,
+        idempotency_key=idempotency_key,
+        high_risk_action_id=high_risk_action_id,
+    )
+    if result.get("kind") == "CONFIG_ROLLBACK_PUBLISHED":
+        response.status_code = 201
+    return result
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/screen-groups/{{screen_group_id}}/rollbacks",
+    status_code=202,
+)
+def rollback_config_on_group(
+    screen_group_id: str,
+    payload: RollbackGroupRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+    high_risk_action_id: HighRiskActionHeader = None,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.rollback_group(
+        context,
+        screen_group_id,
+        source_targets=[item.model_dump() for item in payload.source_targets],
+        group_if_match=if_match,
+        targets=[item.model_dump() for item in payload.targets],
+        reason=payload.reason,
+        idempotency_key=idempotency_key,
+        high_risk_action_id=high_risk_action_id,
+    )
+    if result.get("kind") == "CONFIG_ROLLBACK_PUBLISHED":
+        response.status_code = 201
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/storage-profile")
+def get_storage_profile(request: Request) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p1_3.get_storage_profile(context.principal)
+
+
+@router.post(f"{CONTROL_PREFIX}/backups", status_code=201)
+def create_backup(
+    payload: BackupCreateRequest,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    return service_from_request(request).p1_3.create_backup(
+        context.principal,
+        reason=payload.reason,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.get(f"{CONTROL_PREFIX}/backups/{{backup_id}}")
+def get_backup(
+    backup_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p1_3.get_backup(
+        context.principal,
+        backup_id,
+    )
+
+
+@router.post(f"{CONTROL_PREFIX}/backups/{{backup_id}}:verify")
+def verify_backup(
+    backup_id: str,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    return service_from_request(request).p1_3.verify_backup(
+        context.principal,
+        backup_id,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(f"{CONTROL_PREFIX}/restore-plans", status_code=201)
+def create_restore_plan(
+    payload: RestorePlanCreateRequest,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.create_restore_plan(
+        context,
+        backup_id=payload.backup_id,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/restore-plans/{{restore_plan_id}}:execute",
+    status_code=202,
+)
+def execute_restore_plan(
+    restore_plan_id: str,
+    payload: RestorePlanExecuteRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+    high_risk_action_id: HighRiskActionHeader = None,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p1_3.execute_restore_plan(
+        context,
+        restore_plan_id,
+        confirmation=payload.confirmation,
+        reason=payload.reason,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+        high_risk_action_id=high_risk_action_id,
+    )
+    if result.get("kind") == "RESTORE_COMPLETED":
+        response.status_code = 200
+    return result
+
+
 @router.post(f"{DEVICE_PREFIX}/enrollments:claim")
 def claim_device_enrollment(
     payload: EnrollmentClaimRequest,
@@ -661,6 +1201,29 @@ def rotate_device_credential(
 def get_device_runtime_binding(request: Request) -> dict[str, Any]:
     context = device_from_request(request)
     return service_from_request(request).device_trust_status(context)
+
+
+@router.get(f"{DEVICE_PREFIX}/config-releases/current")
+def get_device_current_release(request: Request) -> dict[str, Any]:
+    context = device_from_request(request)
+    return service_from_request(request).p1_3.get_device_current_release(context)
+
+
+@router.post(f"{DEVICE_PREFIX}/config-releases/{{release_target_id}}:ack")
+def acknowledge_device_release(
+    release_target_id: str,
+    payload: DeviceReleaseAcknowledgementRequest,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = device_from_request(request)
+    return service_from_request(request).p1_3.acknowledge_device_release(
+        context,
+        release_target_id,
+        binding_generation=payload.binding_generation,
+        content_hash=payload.content_hash,
+        idempotency_key=idempotency_key,
+    )
 
 
 async def control_plane_error_handler(request: Request, exc: ControlPlaneError) -> JSONResponse:

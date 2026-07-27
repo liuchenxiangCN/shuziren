@@ -6,8 +6,8 @@ from typing import Any
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.services.yaml_loader import load_yaml_file
 from app.services.config_overrides import apply_settings_overrides
+from app.services.yaml_loader import load_yaml_file
 
 
 def _resolve_project_root() -> Path:
@@ -37,23 +37,19 @@ class Settings(BaseSettings):
     customer_config_dir: str = ""
     demo_stable_mode: bool = False
 
-    action_whitelist_path: str = Field(
-        default=str(PROJECT_ROOT / "config" / "screen-actions.yaml")
-    )
+    action_whitelist_path: str = Field(default=str(PROJECT_ROOT / "config" / "screen-actions.yaml"))
     demo_cases_path: str = Field(default=str(PROJECT_ROOT / "config" / "demo-cases.yaml"))
     wake_words_path: str = Field(default=str(PROJECT_ROOT / "config" / "wake-words.yaml"))
-    ask_metrics_data_dir: str = Field(
-        default=str(PROJECT_ROOT / "docs" / "demo_data" / "ask_metrics")
-    )
-    ask_metrics_config_path: str = Field(
-        default=str(PROJECT_ROOT / "config" / "ask-metrics.yaml")
-    )
+    ask_metrics_data_dir: str = Field(default=str(PROJECT_ROOT / "docs" / "demo_data" / "ask_metrics"))
+    ask_metrics_config_path: str = Field(default=str(PROJECT_ROOT / "config" / "ask-metrics.yaml"))
     ask_metrics_mode: str = "excel"
     sqlite_path: str = Field(default=str(PROJECT_ROOT / "data" / "sessions.db"))
+    session_log_retention_days: int = Field(default=3, ge=1, le=3650)
     tts_cache_dir: str = Field(default=str(PROJECT_ROOT / "data" / "tts-cache"))
     config_overrides_dir: str = Field(default=str(PROJECT_ROOT / "data" / "config-overrides"))
     config_admin_token: str = ""
     control_plane_db_path: str = Field(default=str(PROJECT_ROOT / "data" / "control-plane.db"))
+    control_plane_backup_root: str = Field(default=str(PROJECT_ROOT / "data" / "control-plane-backups"))
     control_plane_root_key_b64: str = ""
     control_plane_preview_mode: bool = False
     control_plane_allowed_origins: list[str] = [
@@ -673,9 +669,7 @@ def _has_env_override(
     normalized = value.replace("\\", "/").rstrip("/")
     if legacy_config_file and normalized.endswith(f"/config/{legacy_config_file}"):
         return False
-    if legacy_data_dir and normalized.endswith("/docs/demo_data/ask_metrics"):
-        return False
-    return True
+    return not (legacy_data_dir and normalized.endswith("/docs/demo_data/ask_metrics"))
 
 
 def _resolve_config_path(value: str, base_dir: Path) -> Path:

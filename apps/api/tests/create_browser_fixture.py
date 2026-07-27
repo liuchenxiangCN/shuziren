@@ -7,11 +7,13 @@ from app.control_plane.service import ControlPlaneService
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create an isolated P1.2 browser-gate fixture.")
+    parser = argparse.ArgumentParser(description="Create an isolated control-plane browser fixture.")
     parser.add_argument("--database", required=True)
     args = parser.parse_args()
     root_key = os.environ.get("CONTROL_PLANE_ROOT_KEY_B64", "")
-    password = os.environ.get("P1_2_BROWSER_GATE_PASSWORD", "")
+    password = os.environ.get("P1_3_BROWSER_GATE_PASSWORD", "") or os.environ.get(
+        "P1_2_BROWSER_GATE_PASSWORD", ""
+    )
     if not root_key or not password:
         raise SystemExit("Browser-gate key and password must be supplied through the process environment")
     service = ControlPlaneService(args.database, root_key, preview_mode=True)

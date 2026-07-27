@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +18,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from app.control_plane import store as store_module
 from app.control_plane.errors import ControlPlaneError
+from app.control_plane.recovery import BackupIntegrityError, BackupManager
 from app.control_plane.router import (
     control_plane_error_handler,
     router,
@@ -36,6 +39,7 @@ from app.control_plane.store import (
     SCHEMA_SQL,
 )
 from app.control_plane.upgrade_preview import copy_sqlite_database
+from app.services.session_log import SessionLogStore
 
 ORIGIN = "https://manage.test"
 PASSWORDS = {
@@ -2026,16 +2030,26 @@ def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
         screens = connection.execute("SELECT screen_id, slug FROM screen_instances ORDER BY slug").fetchall()
         assert tuple(screens[0]) == ("screen-trust-fixture", "screen-1")
         assert len(screens) == 3
-        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 2
-        assert (
-            connection.execute(
-                "SELECT event_type FROM security_audit_events ORDER BY sequence DESC LIMIT 1"
-            ).fetchone()[0]
-            == "THREE_SCREEN_INVENTORY_MIGRATED"
-        )
+        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 3
+        assert [
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT event_type FROM security_audit_events
+                WHERE event_type IN (
+                    'THREE_SCREEN_INVENTORY_MIGRATED',
+                    'PUBLISH_ROLLBACK_RECOVERY_SCHEMA_MIGRATED'
+                )
+                ORDER BY sequence
+                """
+            ).fetchall()
+        ] == [
+            "THREE_SCREEN_INVENTORY_MIGRATED",
+            "PUBLISH_ROLLBACK_RECOVERY_SCHEMA_MIGRATED",
+        ]
     ControlPlaneService(str(legacy_path), root_key, preview_mode=True)
     with service.store.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 2
+        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 3
 
     with sqlite3.connect(pre_migration_copy) as connection:
         assert connection.execute("SELECT version, checksum_sha256 FROM schema_migrations").fetchone() == (
@@ -2207,3 +2221,1665 @@ def test_concurrent_group_membership_uses_one_winning_etag(
         f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}"
     ).json()["member_screen_ids"]
     assert final_members in (members[:2], members[1:])
+
+
+def test_accepted_p1_2_copy_upgrades_to_p1_3_and_source_is_recoverable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted_path = tmp_path / "accepted-p1-2.db"
+    upgraded_path = tmp_path / "p1-3-candidate.db"
+    root_key = PurposeKeyring.generate_root_base64()
+    full_migrations = store_module.MIGRATIONS
+    monkeypatch.setattr(store_module, "MIGRATIONS", full_migrations[:2])
+    accepted = ControlPlaneService(
+        str(accepted_path),
+        root_key,
+        preview_mode=True,
+    )
+    accepted.initialize_preview(
+        tenant_id="tenant-p1-2-copy",
+        deployment_id="deployment-p1-2-copy",
+        screen_id="screen-trust-fixture",
+        identities=[
+            {
+                "username": username,
+                "display_name": username,
+                "role_id": role_id,
+                "password": PASSWORDS[username],
+            }
+            for username, role_id in (
+                ("admin-a", "platform_admin"),
+                ("admin-b", "platform_admin"),
+                ("implementation", "implementation_engineer"),
+                ("auditor", "auditor"),
+            )
+        ],
+    )
+    with sqlite3.connect(accepted_path) as connection:
+        assert (
+            connection.execute(
+                "SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()[0]
+            == full_migrations[1][0]
+        )
+        source_hash = hashlib.sha256(accepted_path.read_bytes()).hexdigest()
+    copy_sqlite_database(str(accepted_path), str(upgraded_path))
+    monkeypatch.setattr(store_module, "MIGRATIONS", full_migrations)
+    upgraded = ControlPlaneService(
+        str(upgraded_path),
+        root_key,
+        preview_mode=True,
+        backup_root=tmp_path / "p1-3-backups",
+    )
+    assert upgraded.status()["migration_version"] == full_migrations[2][0]
+    with upgraded.store.connect() as connection:
+        assert [
+            tuple(row)
+            for row in connection.execute(
+                "SELECT version, checksum_sha256 FROM schema_migrations ORDER BY rowid"
+            ).fetchall()
+        ] == [(version, checksum) for version, checksum, _ in full_migrations]
+        bindings = connection.execute(
+            """
+            SELECT desired_release_target_id, applied_release_target_id,
+                binding_generation
+            FROM runtime_bindings ORDER BY screen_id
+            """
+        ).fetchall()
+        assert len(bindings) == 3
+        assert all(tuple(row) == (None, None, 0) for row in bindings)
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert hashlib.sha256(accepted_path.read_bytes()).hexdigest() == source_hash
+    with sqlite3.connect(accepted_path) as connection:
+        assert (
+            connection.execute(
+                "SELECT version FROM schema_migrations ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()[0]
+            == full_migrations[1][0]
+        )
+        assert (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'config_releases'"
+            ).fetchone()
+            is None
+        )
+
+
+def create_p1_3_release(
+    implementation: TestClient,
+    csrf_impl: str,
+    approver: TestClient,
+    csrf_approver: str,
+    *,
+    target_type: str,
+    target_id: str,
+    expected_target_count: int,
+    welcome_text: str,
+    suffix: str,
+) -> dict[str, Any]:
+    created = implementation.post(
+        "/api/v1/control-plane/config-drafts",
+        headers=mutation_headers(
+            csrf_impl,
+            **{"Idempotency-Key": f"draft-create-{suffix}"},
+        ),
+        json={
+            "target_type": target_type,
+            "target_id": target_id,
+            "schema_version": "p1_screen_config_v1",
+        },
+    )
+    assert created.status_code == 201, created.text
+    draft = created.json()
+    replaced = implementation.put(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}/spec",
+        headers=mutation_headers(
+            csrf_impl,
+            **{"If-Match": draft["etag"]},
+        ),
+        json={
+            "welcome_text": welcome_text,
+            "fvs_binding_ref": f"https://fvs.example.test/{target_id}/{suffix}",
+        },
+    )
+    assert replaced.status_code == 200, replaced.text
+    draft = replaced.json()
+    validated = implementation.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:validate",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": f"draft-validate-{suffix}",
+            },
+        ),
+    )
+    assert validated.status_code == 200, validated.text
+    draft = validated.json()
+    assert draft["state"] == "VALIDATED"
+    assert draft["validation"]["outcome"] == "VALID"
+    previewed = implementation.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:preview",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": f"draft-preview-{suffix}",
+            },
+        ),
+    )
+    assert previewed.status_code == 200, previewed.text
+    draft = previewed.json()
+    assert draft["state"] == "PREVIEWED"
+    assert draft["preview"]["outcome"] == "MOCK_PASSED"
+    submitted = implementation.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:submit-for-approval",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": f"draft-submit-{suffix}",
+            },
+        ),
+    )
+    assert submitted.status_code == 200, submitted.text
+    draft = submitted.json()
+    assert draft["state"] == "APPROVAL_PENDING"
+    approved = approver.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:approve",
+        headers=mutation_headers(
+            csrf_approver,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": f"draft-approve-{suffix}",
+            },
+        ),
+        json={"reason": "independent release approval"},
+    )
+    assert approved.status_code == 200, approved.text
+    draft = approved.json()
+    assert draft["state"] == "APPROVED"
+    assert draft["approval"]["last_editor_user_id"] != draft["approval"]["approver_user_id"]
+    released = implementation.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:release",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": f"release-create-{suffix}",
+            },
+        ),
+        json={"reason": "create immutable accepted candidate"},
+    )
+    assert released.status_code == 201, released.text
+    result = released.json()
+    assert result["creation_kind"] == "NORMAL"
+    assert result["immutable"] is True
+    assert len(result["targets"]) == expected_target_count
+    return result
+
+
+def publish_p1_3_group_release(
+    requester: TestClient,
+    csrf_requester: str,
+    approver: TestClient,
+    csrf_approver: str,
+    *,
+    group: dict[str, Any],
+    release: dict[str, Any],
+    suffix: str,
+) -> dict[str, Any]:
+    targets_by_screen = {target["screen_id"]: target for target in release["targets"]}
+    targets = []
+    for screen_id in sorted(targets_by_screen):
+        binding = requester.get(f"/api/v1/control-plane/screen-instances/{screen_id}/runtime-binding").json()
+        targets.append(
+            {
+                "screen_id": screen_id,
+                "release_target_id": targets_by_screen[screen_id]["release_target_id"],
+                "runtime_if_match": binding["etag"],
+                "expected_binding_generation": binding["binding_generation"],
+            }
+        )
+    payload = {
+        "release_id": release["release_id"],
+        "targets": targets,
+        "reason": f"publish exact group release {suffix}",
+    }
+    action = request_action(
+        requester,
+        csrf_requester,
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}/publications",
+        payload,
+        f"group-request-{suffix}",
+        extra_headers={"If-Match": group["etag"]},
+    )
+    approve_action(
+        approver,
+        csrf_approver,
+        action,
+        key=f"group-approve-{suffix}",
+    )
+    result = requester.post(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}/publications",
+        headers=mutation_headers(
+            csrf_requester,
+            **{
+                "If-Match": group["etag"],
+                "Idempotency-Key": f"group-execute-{suffix}",
+                "High-Risk-Action-ID": action["high_risk_action_id"],
+            },
+        ),
+        json=payload,
+    )
+    assert result.status_code == 201, result.text
+    return result.json()
+
+
+def test_p1_3_draft_release_publish_ack_and_forward_rollback(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, _, database_path = control_plane
+    implementation, csrf_impl = login(app, "implementation")
+    admin_a, csrf_a = login(app, "admin-a")
+    admin_b, csrf_b = login(app, "admin-b")
+    screens = implementation.get("/api/v1/control-plane/screen-instances").json()["items"]
+    screen_id = screens[1]["screen_id"]
+
+    first_release = create_p1_3_release(
+        implementation,
+        csrf_impl,
+        admin_a,
+        csrf_a,
+        target_type="SCREEN",
+        target_id=screen_id,
+        expected_target_count=1,
+        welcome_text="第一版欢迎语",
+        suffix="first",
+    )
+    second_release = create_p1_3_release(
+        implementation,
+        csrf_impl,
+        admin_a,
+        csrf_a,
+        target_type="SCREEN",
+        target_id=screen_id,
+        expected_target_count=1,
+        welcome_text="第二版欢迎语",
+        suffix="second",
+    )
+    sibling_release = create_p1_3_release(
+        implementation,
+        csrf_impl,
+        admin_a,
+        csrf_a,
+        target_type="SCREEN",
+        target_id=screens[0]["screen_id"],
+        expected_target_count=1,
+        welcome_text="兄弟屏幕版本",
+        suffix="sibling",
+    )
+    enrollment_payload = {"reason": "enroll device for release acknowledgement"}
+    enrollment_action = request_action(
+        implementation,
+        csrf_impl,
+        f"/api/v1/control-plane/screen-instances/{screen_id}/device-enrollments",
+        enrollment_payload,
+        "p13-enroll-request",
+    )
+    approve_action(admin_b, csrf_b, enrollment_action, key="p13-enroll-approve")
+    issued = implementation.post(
+        f"/api/v1/control-plane/screen-instances/{screen_id}/device-enrollments",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "Idempotency-Key": "p13-enroll-execute",
+                "High-Risk-Action-ID": enrollment_action["high_risk_action_id"],
+            },
+        ),
+        json=enrollment_payload,
+    )
+    assert issued.status_code == 201, issued.text
+    device = TestClient(app, base_url="https://device.test")
+    claimed = device.post(
+        "/api/v1/device/enrollments:claim",
+        headers={"Idempotency-Key": "p13-device-claim"},
+        json={"enrollment_token": issued.json()["enrollment_token"]},
+    )
+    assert claimed.status_code == 200, claimed.text
+    device_headers = {"Authorization": f"DeviceCredential {claimed.json()['credential']}"}
+    difference = implementation.get(
+        "/api/v1/control-plane/config-release-diffs",
+        params={
+            "from": first_release["release_id"],
+            "to": second_release["release_id"],
+        },
+    )
+    assert difference.status_code == 200, difference.text
+    field_changes = difference.json()["changes"][0]["field_changes"]
+    assert {item["path"] for item in field_changes} == {
+        "/fvs_binding_ref",
+        "/welcome_text",
+    }
+
+    bindings_before = {
+        screen["screen_id"]: implementation.get(
+            f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/runtime-binding"
+        ).json()
+        for screen in screens
+    }
+    binding = bindings_before[screen_id]
+    target = second_release["targets"][0]
+    publish_payload = {
+        "release_id": second_release["release_id"],
+        "release_target_id": target["release_target_id"],
+        "expected_binding_generation": binding["binding_generation"],
+        "reason": "publish second release",
+    }
+    action = request_action(
+        implementation,
+        csrf_impl,
+        f"/api/v1/control-plane/screen-instances/{screen_id}/publications",
+        publish_payload,
+        "publish-request-second",
+        extra_headers={"If-Match": binding["etag"]},
+    )
+    approve_action(admin_b, csrf_b, action, key="publish-approve-second")
+    published = implementation.post(
+        f"/api/v1/control-plane/screen-instances/{screen_id}/publications",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": binding["etag"],
+                "Idempotency-Key": "publish-execute-second",
+                "High-Risk-Action-ID": action["high_risk_action_id"],
+            },
+        ),
+        json=publish_payload,
+    )
+    assert published.status_code == 201, published.text
+    assert published.json()["kind"] == "CONFIG_RELEASE_PUBLISHED"
+    assert published.json()["publication"]["targets"][0]["state"] == "APPLYING"
+    current = device.get(
+        "/api/v1/device/config-releases/current",
+        headers=device_headers,
+    )
+    assert current.status_code == 200, current.text
+    assert current.json()["state"] == "DESIRED_AVAILABLE"
+    assert current.json()["release_target"]["release_target_id"] == target["release_target_id"]
+    wrong_screen_ack = device.post(
+        (f"/api/v1/device/config-releases/{sibling_release['targets'][0]['release_target_id']}:ack"),
+        headers={**device_headers, "Idempotency-Key": "p13-ack-wrong-screen"},
+        json={
+            "binding_generation": current.json()["binding_generation"],
+            "content_hash": sibling_release["targets"][0]["content_hash"],
+        },
+    )
+    assert wrong_screen_ack.status_code == 404
+    assert wrong_screen_ack.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+    wrong_ack = device.post(
+        f"/api/v1/device/config-releases/{target['release_target_id']}:ack",
+        headers={**device_headers, "Idempotency-Key": "p13-ack-wrong-hash"},
+        json={
+            "binding_generation": current.json()["binding_generation"],
+            "content_hash": "0" * 64,
+        },
+    )
+    assert wrong_ack.status_code == 412
+    assert wrong_ack.json()["error"]["code"] == "ACTIVE_RELEASE_CHANGED"
+    stale_generation_ack = device.post(
+        f"/api/v1/device/config-releases/{target['release_target_id']}:ack",
+        headers={**device_headers, "Idempotency-Key": "p13-ack-stale-generation"},
+        json={
+            "binding_generation": current.json()["binding_generation"] + 1,
+            "content_hash": target["content_hash"],
+        },
+    )
+    assert stale_generation_ack.status_code == 412
+    assert stale_generation_ack.json()["error"]["code"] == "ACTIVE_RELEASE_CHANGED"
+    acknowledged = device.post(
+        f"/api/v1/device/config-releases/{target['release_target_id']}:ack",
+        headers={**device_headers, "Idempotency-Key": "p13-ack-second"},
+        json={
+            "binding_generation": current.json()["binding_generation"],
+            "content_hash": target["content_hash"],
+        },
+    )
+    assert acknowledged.status_code == 200, acknowledged.text
+    assert acknowledged.json()["state"] == "ACTIVE"
+    acknowledgement_replay = device.post(
+        f"/api/v1/device/config-releases/{target['release_target_id']}:ack",
+        headers={**device_headers, "Idempotency-Key": "p13-ack-second"},
+        json={
+            "binding_generation": current.json()["binding_generation"],
+            "content_hash": target["content_hash"],
+        },
+    )
+    assert acknowledgement_replay.status_code == 200
+    assert acknowledgement_replay.json() == acknowledged.json()
+    changed_ack_replay = device.post(
+        f"/api/v1/device/config-releases/{target['release_target_id']}:ack",
+        headers={**device_headers, "Idempotency-Key": "p13-ack-second"},
+        json={
+            "binding_generation": current.json()["binding_generation"],
+            "content_hash": "1" * 64,
+        },
+    )
+    assert changed_ack_replay.status_code == 409
+    assert changed_ack_replay.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+    bindings_after_ack = {
+        screen["screen_id"]: implementation.get(
+            f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/runtime-binding"
+        ).json()
+        for screen in screens
+    }
+    for sibling_id in set(bindings_before) - {screen_id}:
+        assert bindings_after_ack[sibling_id] == bindings_before[sibling_id]
+    assert bindings_after_ack[screen_id]["binding_generation"] == (
+        bindings_before[screen_id]["binding_generation"] + 1
+    )
+    assert bindings_after_ack[screen_id]["applied_release_target_id"] == target["release_target_id"]
+
+    credential_id = claimed.json()["credential_id"]
+    credential_metadata = admin_a.get(
+        f"/api/v1/control-plane/screen-instances/{screen_id}/device-credentials/{credential_id}"
+    )
+    assert credential_metadata.status_code == 200
+    revoke_payload = {
+        "expected_credential_epoch": credential_metadata.json()["credential_epoch"],
+        "reason": "revoked credential must not acknowledge a release",
+    }
+    revoke_path = (
+        f"/api/v1/control-plane/screen-instances/{screen_id}/device-credentials/{credential_id}:revoke"
+    )
+    revoke_action = request_action(
+        admin_a,
+        csrf_a,
+        revoke_path,
+        revoke_payload,
+        "p13-ack-revoke-request",
+        extra_headers={"If-Match": credential_metadata.json()["family_etag"]},
+    )
+    approve_action(admin_b, csrf_b, revoke_action, key="p13-ack-revoke-approve")
+    revoked = admin_a.post(
+        revoke_path,
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "If-Match": credential_metadata.json()["family_etag"],
+                "Idempotency-Key": "p13-ack-revoke-execute",
+                "High-Risk-Action-ID": revoke_action["high_risk_action_id"],
+            },
+        ),
+        json=revoke_payload,
+    )
+    assert revoked.status_code == 200, revoked.text
+    revoked_ack = device.post(
+        f"/api/v1/device/config-releases/{target['release_target_id']}:ack",
+        headers={**device_headers, "Idempotency-Key": "p13-ack-revoked"},
+        json={
+            "binding_generation": current.json()["binding_generation"],
+            "content_hash": target["content_hash"],
+        },
+    )
+    assert revoked_ack.status_code == 401
+
+    stale_publish = implementation.post(
+        f"/api/v1/control-plane/screen-instances/{screen_id}/publications",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": binding["etag"],
+                "Idempotency-Key": "publish-stale-request",
+            },
+        ),
+        json={
+            **publish_payload,
+            "release_id": first_release["release_id"],
+            "release_target_id": first_release["targets"][0]["release_target_id"],
+        },
+    )
+    assert stale_publish.status_code == 412
+    assert stale_publish.json()["error"]["code"] == "RESOURCE_VERSION_CONFLICT"
+
+    current_binding = implementation.get(
+        f"/api/v1/control-plane/screen-instances/{screen_id}/runtime-binding"
+    ).json()
+    rollback_payload = {
+        "source_release_target_id": first_release["targets"][0]["release_target_id"],
+        "expected_binding_generation": current_binding["binding_generation"],
+        "reason": "forward rollback to first release content",
+    }
+    rollback_action = request_action(
+        implementation,
+        csrf_impl,
+        f"/api/v1/control-plane/screen-instances/{screen_id}/rollbacks",
+        rollback_payload,
+        "rollback-request-first",
+        extra_headers={"If-Match": current_binding["etag"]},
+    )
+    approve_action(admin_b, csrf_b, rollback_action, key="rollback-approve-first")
+    rollback = implementation.post(
+        f"/api/v1/control-plane/screen-instances/{screen_id}/rollbacks",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": current_binding["etag"],
+                "Idempotency-Key": "rollback-execute-first",
+                "High-Risk-Action-ID": rollback_action["high_risk_action_id"],
+            },
+        ),
+        json=rollback_payload,
+    )
+    assert rollback.status_code == 201, rollback.text
+    rollback_result = rollback.json()
+    assert rollback_result["kind"] == "CONFIG_ROLLBACK_PUBLISHED"
+    assert rollback_result["release"]["creation_kind"] == "ROLLBACK"
+    assert rollback_result["release"]["release_id"] not in {
+        first_release["release_id"],
+        second_release["release_id"],
+    }
+    with sqlite3.connect(database_path) as connection:
+        immutable_update = pytest.raises(
+            sqlite3.IntegrityError,
+            connection.execute,
+            "UPDATE config_releases SET reason = 'tampered' WHERE release_id = ?",
+            (first_release["release_id"],),
+        )
+        assert "immutable" in str(immutable_update.value).lower()
+
+
+def test_p1_3_group_publication_is_atomic_and_scope_bound(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, _, database_path = control_plane
+    implementation, csrf_impl = login(app, "implementation")
+    admin_a, csrf_a = login(app, "admin-a")
+    admin_b, csrf_b = login(app, "admin-b")
+    auditor, csrf_auditor = login(app, "auditor")
+    group = implementation.get("/api/v1/control-plane/screen-groups").json()["items"][0]
+    release = create_p1_3_release(
+        implementation,
+        csrf_impl,
+        admin_a,
+        csrf_a,
+        target_type="SCREEN_GROUP",
+        target_id=group["screen_group_id"],
+        expected_target_count=3,
+        welcome_text="三屏统一发布",
+        suffix="group",
+    )
+    alternate_release = create_p1_3_release(
+        implementation,
+        csrf_impl,
+        admin_a,
+        csrf_a,
+        target_type="SCREEN_GROUP",
+        target_id=group["screen_group_id"],
+        expected_target_count=3,
+        welcome_text="三屏混合历史回退源",
+        suffix="group-alternate",
+    )
+    screens = implementation.get("/api/v1/control-plane/screen-instances").json()["items"]
+    bindings_before = {
+        screen["screen_id"]: implementation.get(
+            f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/runtime-binding"
+        ).json()
+        for screen in screens
+    }
+    targets_by_screen = {target["screen_id"]: target for target in release["targets"]}
+    targets = [
+        {
+            "screen_id": screen_id,
+            "release_target_id": targets_by_screen[screen_id]["release_target_id"],
+            "runtime_if_match": binding["etag"],
+            "expected_binding_generation": binding["binding_generation"],
+        }
+        for screen_id, binding in sorted(bindings_before.items())
+    ]
+    stale_targets = [dict(item) for item in targets]
+    stale_targets[1]["expected_binding_generation"] += 1
+    stale = implementation.post(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}/publications",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": group["etag"],
+                "Idempotency-Key": "group-publish-stale",
+            },
+        ),
+        json={
+            "release_id": release["release_id"],
+            "targets": stale_targets,
+            "reason": "stale group publication must fail",
+        },
+    )
+    assert stale.status_code == 412
+    assert stale.json()["error"]["code"] == "RESOURCE_VERSION_CONFLICT"
+    assert {
+        screen["screen_id"]: implementation.get(
+            f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/runtime-binding"
+        ).json()
+        for screen in screens
+    } == bindings_before
+
+    crossed_targets = [dict(item) for item in targets]
+    crossed_targets[0]["release_target_id"], crossed_targets[1]["release_target_id"] = (
+        crossed_targets[1]["release_target_id"],
+        crossed_targets[0]["release_target_id"],
+    )
+    crossed = implementation.post(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}/publications",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": group["etag"],
+                "Idempotency-Key": "group-publish-crossed",
+            },
+        ),
+        json={
+            "release_id": release["release_id"],
+            "targets": crossed_targets,
+            "reason": "cross-screen target mapping must fail",
+        },
+    )
+    assert crossed.status_code in {409, 422}
+    assert crossed.json()["error"]["code"] in {
+        "PUBLISH_TARGET_CHANGED",
+        "SCHEMA_VALIDATION_FAILED",
+    }
+
+    payload = {
+        "release_id": release["release_id"],
+        "targets": targets,
+        "reason": "publish exact frozen three-screen release",
+    }
+    action = request_action(
+        implementation,
+        csrf_impl,
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}/publications",
+        payload,
+        "group-publish-request",
+        extra_headers={"If-Match": group["etag"]},
+    )
+    approve_action(admin_b, csrf_b, action, key="group-publish-approve")
+    published = implementation.post(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}/publications",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": group["etag"],
+                "Idempotency-Key": "group-publish-execute",
+                "High-Risk-Action-ID": action["high_risk_action_id"],
+            },
+        ),
+        json=payload,
+    )
+    assert published.status_code == 201, published.text
+    result_targets = published.json()["publication"]["targets"]
+    assert len(result_targets) == 3
+    assert {item["state"] for item in result_targets} == {"WAITING_FOR_DEVICE"}
+    bindings_after = {
+        screen["screen_id"]: implementation.get(
+            f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/runtime-binding"
+        ).json()
+        for screen in screens
+    }
+    for screen_id in bindings_before:
+        assert bindings_after[screen_id]["binding_generation"] == (
+            bindings_before[screen_id]["binding_generation"] + 1
+        )
+        assert (
+            bindings_after[screen_id]["desired_release_target_id"]
+            == (targets_by_screen[screen_id]["release_target_id"])
+        )
+        assert (
+            bindings_after[screen_id]["digital_human_instance_id"]
+            == (bindings_before[screen_id]["digital_human_instance_id"])
+        )
+        assert bindings_after[screen_id]["applied_release_target_id"] is None
+    with sqlite3.connect(database_path) as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM publication_targets WHERE publication_id = ?",
+                (published.json()["publication"]["publication_id"],),
+            ).fetchone()[0]
+            == 3
+        )
+
+    alternate_by_screen = {target["screen_id"]: target for target in alternate_release["targets"]}
+    sorted_screen_ids = sorted(bindings_after)
+    crossed_sources = [
+        {
+            "screen_id": screen_id,
+            "source_release_target_id": targets_by_screen[
+                sorted_screen_ids[(index + 1) % len(sorted_screen_ids)]
+            ]["release_target_id"],
+        }
+        for index, screen_id in enumerate(sorted_screen_ids)
+    ]
+    rollback_targets = [
+        {
+            "screen_id": screen_id,
+            "release_target_id": targets_by_screen[screen_id]["release_target_id"],
+            "runtime_if_match": bindings_after[screen_id]["etag"],
+            "expected_binding_generation": bindings_after[screen_id]["binding_generation"],
+        }
+        for screen_id in sorted_screen_ids
+    ]
+    crossed_rollback = implementation.post(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}/rollbacks",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": group["etag"],
+                "Idempotency-Key": "group-rollback-crossed",
+            },
+        ),
+        json={
+            "source_targets": crossed_sources,
+            "targets": rollback_targets,
+            "reason": "cross-screen rollback sources must fail",
+        },
+    )
+    assert crossed_rollback.status_code == 404
+    assert crossed_rollback.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+    mixed_sources = [
+        {
+            "screen_id": screen_id,
+            "source_release_target_id": (
+                alternate_by_screen[screen_id]["release_target_id"]
+                if index == 1
+                else targets_by_screen[screen_id]["release_target_id"]
+            ),
+        }
+        for index, screen_id in enumerate(sorted_screen_ids)
+    ]
+    rollback_payload = {
+        "source_targets": mixed_sources,
+        "targets": rollback_targets,
+        "reason": "rollback group from an explicit mixed historical source map",
+    }
+    rollback_action = request_action(
+        implementation,
+        csrf_impl,
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}/rollbacks",
+        rollback_payload,
+        "group-rollback-request",
+        extra_headers={"If-Match": group["etag"]},
+    )
+    approve_action(admin_b, csrf_b, rollback_action, key="group-rollback-approve")
+    rolled_back = implementation.post(
+        f"/api/v1/control-plane/screen-groups/{group['screen_group_id']}/rollbacks",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": group["etag"],
+                "Idempotency-Key": "group-rollback-execute",
+                "High-Risk-Action-ID": rollback_action["high_risk_action_id"],
+            },
+        ),
+        json=rollback_payload,
+    )
+    assert rolled_back.status_code == 201, rolled_back.text
+    rollback_result = rolled_back.json()
+    assert rollback_result["kind"] == "CONFIG_ROLLBACK_PUBLISHED"
+    assert rollback_result["release"]["creation_kind"] == "ROLLBACK"
+    provenance_by_screen = {target["screen_id"]: target for target in rollback_result["release"]["targets"]}
+    assert {
+        screen_id: provenance_by_screen[screen_id]["rollback_source_target_id"]
+        for screen_id in sorted_screen_ids
+    } == {item["screen_id"]: item["source_release_target_id"] for item in mixed_sources}
+    bindings_after_rollback = {
+        screen["screen_id"]: implementation.get(
+            f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/runtime-binding"
+        ).json()
+        for screen in screens
+    }
+    for screen_id in sorted_screen_ids:
+        assert bindings_after_rollback[screen_id]["binding_generation"] == (
+            bindings_after[screen_id]["binding_generation"] + 1
+        )
+        assert (
+            bindings_after_rollback[screen_id]["desired_release_target_id"]
+            == provenance_by_screen[screen_id]["release_target_id"]
+        )
+
+    denied_draft = auditor.post(
+        "/api/v1/control-plane/config-drafts",
+        headers=mutation_headers(
+            csrf_auditor,
+            **{"Idempotency-Key": "auditor-draft-denied"},
+        ),
+        json={
+            "target_type": "SCREEN",
+            "target_id": screens[0]["screen_id"],
+            "schema_version": "p1_screen_config_v1",
+        },
+    )
+    assert denied_draft.status_code == 403
+    denied_backup = auditor.post(
+        "/api/v1/control-plane/backups",
+        headers=mutation_headers(
+            csrf_auditor,
+            **{"Idempotency-Key": "auditor-backup-denied"},
+        ),
+        json={"reason": "auditor mutation must fail"},
+    )
+    assert denied_backup.status_code == 403
+
+
+def test_p1_3_draft_guards_stale_fingerprint_self_approval_and_idempotency(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, service, _ = control_plane
+    admin_a, csrf_a = login(app, "admin-a")
+    admin_b, csrf_b = login(app, "admin-b")
+    auditor, csrf_auditor = login(app, "auditor")
+    screens = admin_a.get("/api/v1/control-plane/screen-instances").json()["items"]
+    business_password = f"test-only-{secrets.token_urlsafe(18)}"
+    PASSWORDS["business-only"] = business_password
+    with service.store.transaction() as connection:
+        now = service.clock()
+        connection.execute(
+            """
+            INSERT INTO users(
+                user_id, tenant_id, deployment_id, normalized_username,
+                display_name, account_state, password_verifier,
+                credential_generation, created_at, updated_at
+            ) VALUES (
+                'usr_business_only', 'tenant-test', 'deployment-test',
+                'business-only', 'Business Only', 'ACTIVE', ?, 1, ?, ?
+            )
+            """,
+            (
+                service.passwords.hash(
+                    business_password,
+                    username="business-only",
+                ),
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO role_assignments(
+                assignment_id, user_id, role_id, scope_type, scope_id, created_at
+            ) VALUES (
+                'rla_business_only', 'usr_business_only', 'business_operator',
+                'DEPLOYMENT', 'deployment-test', ?
+            )
+            """,
+            (now,),
+        )
+    business, csrf_business = login(app, "business-only")
+    business_draft = business.post(
+        "/api/v1/control-plane/config-drafts",
+        headers=mutation_headers(
+            csrf_business,
+            **{"Idempotency-Key": "business-only-draft"},
+        ),
+        json={
+            "target_type": "SCREEN",
+            "target_id": screens[0]["screen_id"],
+            "schema_version": "p1_screen_config_v1",
+        },
+    )
+    assert business_draft.status_code == 201
+    mixed_field_denied = business.put(
+        f"/api/v1/control-plane/config-drafts/{business_draft.json()['draft_id']}/spec",
+        headers=mutation_headers(
+            csrf_business,
+            **{"If-Match": business_draft.json()["etag"]},
+        ),
+        json={
+            "welcome_text": "business-visible text",
+            "fvs_binding_ref": "https://fvs.example.test/business-denied",
+        },
+    )
+    assert mixed_field_denied.status_code == 403
+    assert mixed_field_denied.json()["error"]["code"] == "FORBIDDEN"
+    target_screen = screens[2]
+    created = admin_a.post(
+        "/api/v1/control-plane/config-drafts",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "draft-guard-create"},
+        ),
+        json={
+            "target_type": "SCREEN",
+            "target_id": target_screen["screen_id"],
+            "schema_version": "p1_screen_config_v1",
+        },
+    )
+    assert created.status_code == 201, created.text
+    draft = created.json()
+    changed_replay = admin_a.post(
+        "/api/v1/control-plane/config-drafts",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "draft-guard-create"},
+        ),
+        json={
+            "target_type": "SCREEN",
+            "target_id": screens[1]["screen_id"],
+            "schema_version": "p1_screen_config_v1",
+        },
+    )
+    assert changed_replay.status_code == 409
+    assert changed_replay.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+    early_preview = admin_a.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:preview",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": "draft-guard-early-preview",
+            },
+        ),
+    )
+    assert early_preview.status_code == 409
+    assert early_preview.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+    replaced = admin_a.put(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}/spec",
+        headers=mutation_headers(
+            csrf_a,
+            **{"If-Match": draft["etag"]},
+        ),
+        json={
+            "welcome_text": "审批护栏验证",
+            "fvs_binding_ref": "https://fvs.example.test/guard",
+        },
+    )
+    assert replaced.status_code == 200, replaced.text
+    stale_edit = admin_a.put(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}/spec",
+        headers=mutation_headers(
+            csrf_a,
+            **{"If-Match": draft["etag"]},
+        ),
+        json={
+            "welcome_text": "stale edit",
+            "fvs_binding_ref": "https://fvs.example.test/stale",
+        },
+    )
+    assert stale_edit.status_code == 412
+    draft = replaced.json()
+    for operation, key in (
+        ("validate", "draft-guard-validate"),
+        ("preview", "draft-guard-preview"),
+        ("submit-for-approval", "draft-guard-submit"),
+    ):
+        response = admin_a.post(
+            f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:{operation}",
+            headers=mutation_headers(
+                csrf_a,
+                **{
+                    "If-Match": draft["etag"],
+                    "Idempotency-Key": key,
+                },
+            ),
+        )
+        assert response.status_code == 200, response.text
+        draft = response.json()
+    target_current = admin_a.get(
+        f"/api/v1/control-plane/screen-instances/{target_screen['screen_id']}"
+    ).json()
+    changed_target = admin_a.patch(
+        f"/api/v1/control-plane/screen-instances/{target_screen['screen_id']}",
+        headers=mutation_headers(
+            csrf_a,
+            **{"If-Match": target_current["etag"]},
+        ),
+        json={"display_name": "changed after preview"},
+    )
+    assert changed_target.status_code == 200, changed_target.text
+    stale_approval = admin_b.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:approve",
+        headers=mutation_headers(
+            csrf_b,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": "draft-guard-stale-approve",
+            },
+        ),
+        json={"reason": "stale fingerprint must fail"},
+    )
+    assert stale_approval.status_code == 409
+    assert stale_approval.json()["error"]["code"] == "RESOLUTION_FINGERPRINT_STALE"
+    revised = admin_a.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:revise",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": "draft-guard-revise",
+            },
+        ),
+    )
+    assert revised.status_code == 200, revised.text
+    draft = revised.json()
+    assert draft["state"] == "DRAFT"
+    for operation, key in (
+        ("validate", "draft-guard-revalidate"),
+        ("preview", "draft-guard-repreview"),
+        ("submit-for-approval", "draft-guard-resubmit"),
+    ):
+        response = admin_a.post(
+            f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:{operation}",
+            headers=mutation_headers(
+                csrf_a,
+                **{
+                    "If-Match": draft["etag"],
+                    "Idempotency-Key": key,
+                },
+            ),
+        )
+        assert response.status_code == 200, response.text
+        draft = response.json()
+    self_approval = admin_a.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:approve",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": "draft-guard-self-approve",
+            },
+        ),
+        json={"reason": "self approval must fail"},
+    )
+    assert self_approval.status_code == 403
+    denied_approval = auditor.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:approve",
+        headers=mutation_headers(
+            csrf_auditor,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": "draft-guard-auditor-approve",
+            },
+        ),
+        json={"reason": "auditor approval must fail"},
+    )
+    assert denied_approval.status_code == 403
+    approved = admin_b.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:approve",
+        headers=mutation_headers(
+            csrf_b,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": "draft-guard-valid-approve",
+            },
+        ),
+        json={"reason": "independent approval after refresh"},
+    )
+    assert approved.status_code == 200, approved.text
+    terminal_edit = admin_a.put(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}/spec",
+        headers=mutation_headers(
+            csrf_a,
+            **{"If-Match": approved.json()["etag"]},
+        ),
+        json={
+            "welcome_text": "approved draft cannot be edited",
+            "fvs_binding_ref": "https://fvs.example.test/terminal",
+        },
+    )
+    assert terminal_edit.status_code == 409
+    assert terminal_edit.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+
+
+def test_p1_3_encrypted_backup_tamper_wrong_key_and_staged_restore(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, service, database_path = control_plane
+    admin_a, csrf_a = login(app, "admin-a")
+    admin_b, csrf_b = login(app, "admin-b")
+    screen_before = admin_a.get("/api/v1/control-plane/screen-instances/screen-trust-fixture").json()
+    group = admin_a.get("/api/v1/control-plane/screen-groups").json()["items"][0]
+    backup_release = create_p1_3_release(
+        admin_a,
+        csrf_a,
+        admin_b,
+        csrf_b,
+        target_type="SCREEN_GROUP",
+        target_id=group["screen_group_id"],
+        expected_target_count=3,
+        welcome_text="备份中的三屏版本",
+        suffix="restore-backup",
+    )
+    publish_p1_3_group_release(
+        admin_a,
+        csrf_a,
+        admin_b,
+        csrf_b,
+        group=group,
+        release=backup_release,
+        suffix="restore-backup",
+    )
+    backup_bindings = {
+        screen_id: admin_a.get(f"/api/v1/control-plane/screen-instances/{screen_id}/runtime-binding").json()
+        for screen_id in group["member_screen_ids"]
+    }
+
+    created = admin_a.post(
+        "/api/v1/control-plane/backups",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p13-backup-create"},
+        ),
+        json={"reason": "verified restore candidate"},
+    )
+    assert created.status_code == 201, created.text
+    backup = created.json()
+    assert backup["state"] == "VERIFIED"
+    assert backup["recovery_key_in_bundle"] is False
+    bundle_name = f"backup-{backup['backup_id']}"
+    bundle_dir = service.p1_3.backups.backup_root / bundle_name
+    assert {item.name for item in bundle_dir.iterdir() if item.is_file()} == {
+        "manifest.json",
+        "payload.aes256gcm",
+        "checksums.sha256",
+        "verification.json",
+    }
+    payload_path = bundle_dir / "payload.aes256gcm"
+    original_payload = payload_path.read_bytes()
+    payload_path.write_bytes(bytes([original_payload[0] ^ 1]) + original_payload[1:])
+    tampered = admin_a.post(
+        f"/api/v1/control-plane/backups/{backup['backup_id']}:verify",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p13-backup-tampered"},
+        ),
+    )
+    assert tampered.status_code == 503
+    assert tampered.json()["error"]["code"] == "CRYPTOGRAPHIC_INTEGRITY_FAILURE"
+    payload_path.write_bytes(original_payload)
+
+    wrong_key_manager = BackupManager(
+        service.store,
+        PurposeKeyring.from_base64(PurposeKeyring.generate_root_base64()),
+        service.p1_3.backups.backup_root,
+    )
+    with pytest.raises(BackupIntegrityError, match="key is unavailable|authentication failed"):
+        wrong_key_manager.verify_bundle(bundle_name)
+    verified = admin_a.post(
+        f"/api/v1/control-plane/backups/{backup['backup_id']}:verify",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p13-backup-verified"},
+        ),
+    )
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["outcome"] == "VERIFIED"
+    changed_release = create_p1_3_release(
+        admin_a,
+        csrf_a,
+        admin_b,
+        csrf_b,
+        target_type="SCREEN_GROUP",
+        target_id=group["screen_group_id"],
+        expected_target_count=3,
+        welcome_text="恢复前必须被替换的三屏版本",
+        suffix="restore-changed",
+    )
+    publish_p1_3_group_release(
+        admin_a,
+        csrf_a,
+        admin_b,
+        csrf_b,
+        group=group,
+        release=changed_release,
+        suffix="restore-changed",
+    )
+    changed_bindings = {
+        screen_id: admin_a.get(f"/api/v1/control-plane/screen-instances/{screen_id}/runtime-binding").json()
+        for screen_id in group["member_screen_ids"]
+    }
+    assert all(
+        changed_bindings[screen_id]["desired_release_target_id"]
+        != backup_bindings[screen_id]["desired_release_target_id"]
+        for screen_id in group["member_screen_ids"]
+    )
+
+    user_payload = {
+        "normalized_username": "post-backup-user",
+        "display_name": "Post Backup User",
+        "reason": "prove newer live identity survives restore",
+    }
+    user_action = request_action(
+        admin_a,
+        csrf_a,
+        "/api/v1/control-plane/users",
+        user_payload,
+        "restore-live-user-request",
+    )
+    approve_action(admin_b, csrf_b, user_action, key="restore-live-user-approve")
+    user_created = admin_a.post(
+        "/api/v1/control-plane/users",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "Idempotency-Key": "restore-live-user-execute",
+                "High-Risk-Action-ID": user_action["high_risk_action_id"],
+            },
+        ),
+        json=user_payload,
+    )
+    assert user_created.status_code == 201, user_created.text
+    post_backup_user_id = user_created.json()["user"]["user_id"]
+
+    screens = admin_a.get("/api/v1/control-plane/screen-instances").json()["items"]
+    active_screen_id = screens[1]["screen_id"]
+    active_enrollment_payload = {"reason": "new live device must survive restore"}
+    active_enrollment_action = request_action(
+        admin_a,
+        csrf_a,
+        f"/api/v1/control-plane/screen-instances/{active_screen_id}/device-enrollments",
+        active_enrollment_payload,
+        "restore-live-device-request",
+    )
+    approve_action(
+        admin_b,
+        csrf_b,
+        active_enrollment_action,
+        key="restore-live-device-approve",
+    )
+    active_issued = admin_a.post(
+        f"/api/v1/control-plane/screen-instances/{active_screen_id}/device-enrollments",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "Idempotency-Key": "restore-live-device-execute",
+                "High-Risk-Action-ID": active_enrollment_action["high_risk_action_id"],
+            },
+        ),
+        json=active_enrollment_payload,
+    )
+    assert active_issued.status_code == 201, active_issued.text
+    device = TestClient(app, base_url="https://device.test")
+    active_claim = device.post(
+        "/api/v1/device/enrollments:claim",
+        headers={"Idempotency-Key": "restore-live-device-claim"},
+        json={"enrollment_token": active_issued.json()["enrollment_token"]},
+    )
+    assert active_claim.status_code == 200, active_claim.text
+    active_device_credential = active_claim.json()["credential"]
+
+    pending_screen_id = screens[2]["screen_id"]
+    pending_enrollment_payload = {"reason": "one-time enrollment must be revoked by restore"}
+    pending_enrollment_action = request_action(
+        admin_a,
+        csrf_a,
+        f"/api/v1/control-plane/screen-instances/{pending_screen_id}/device-enrollments",
+        pending_enrollment_payload,
+        "restore-pending-token-request",
+    )
+    approve_action(
+        admin_b,
+        csrf_b,
+        pending_enrollment_action,
+        key="restore-pending-token-approve",
+    )
+    pending_issued = admin_a.post(
+        f"/api/v1/control-plane/screen-instances/{pending_screen_id}/device-enrollments",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "Idempotency-Key": "restore-pending-token-execute",
+                "High-Risk-Action-ID": pending_enrollment_action["high_risk_action_id"],
+            },
+        ),
+        json=pending_enrollment_payload,
+    )
+    assert pending_issued.status_code == 201, pending_issued.text
+    pending_token = pending_issued.json()["enrollment_token"]
+    unfinished_action = request_action(
+        admin_a,
+        csrf_a,
+        "/api/v1/control-plane/users",
+        {
+            "normalized_username": "unfinished-user",
+            "display_name": "Unfinished User",
+            "reason": "unfinished action must fail after restore",
+        },
+        "restore-unfinished-action",
+    )
+
+    plan_response = admin_a.post(
+        "/api/v1/control-plane/restore-plans",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p13-restore-plan"},
+        ),
+        json={"backup_id": backup["backup_id"]},
+    )
+    assert plan_response.status_code == 201, plan_response.text
+    plan = plan_response.json()
+    assert plan["state"] == "READY"
+    changed = admin_a.patch(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture",
+        headers=mutation_headers(
+            csrf_a,
+            **{"If-Match": screen_before["etag"]},
+        ),
+        json={"display_name": "must disappear after restore"},
+    )
+    assert changed.status_code == 200, changed.text
+
+    restore_payload = {
+        "confirmation": "RESTORE_VERIFIED_BACKUP",
+        "reason": "restore the verified online snapshot",
+    }
+    restore_action = request_action(
+        admin_a,
+        csrf_a,
+        f"/api/v1/control-plane/restore-plans/{plan['restore_plan_id']}:execute",
+        restore_payload,
+        "p13-restore-request",
+        extra_headers={"If-Match": plan["etag"]},
+    )
+    approve_action(admin_b, csrf_b, restore_action, key="p13-restore-approve")
+    payload_path.write_bytes(bytes([original_payload[0] ^ 1]) + original_payload[1:])
+    failed_restore = admin_a.post(
+        f"/api/v1/control-plane/restore-plans/{plan['restore_plan_id']}:execute",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "If-Match": plan["etag"],
+                "Idempotency-Key": "p13-restore-execute",
+                "High-Risk-Action-ID": restore_action["high_risk_action_id"],
+            },
+        ),
+        json=restore_payload,
+    )
+    assert failed_restore.status_code == 503
+    assert failed_restore.json()["error"]["code"] == "CRYPTOGRAPHIC_INTEGRITY_FAILURE"
+    unchanged_after_failure = admin_a.get("/api/v1/control-plane/screen-instances/screen-trust-fixture")
+    assert unchanged_after_failure.status_code == 200
+    assert unchanged_after_failure.json()["display_name"] == "must disappear after restore"
+    assert {
+        screen_id: admin_a.get(f"/api/v1/control-plane/screen-instances/{screen_id}/runtime-binding").json()
+        for screen_id in group["member_screen_ids"]
+    } == changed_bindings
+    payload_path.write_bytes(original_payload)
+    restored = admin_a.post(
+        f"/api/v1/control-plane/restore-plans/{plan['restore_plan_id']}:execute",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "If-Match": plan["etag"],
+                "Idempotency-Key": "p13-restore-execute",
+                "High-Risk-Action-ID": restore_action["high_risk_action_id"],
+            },
+        ),
+        json=restore_payload,
+    )
+    assert restored.status_code == 200, restored.text
+    result = restored.json()
+    assert result["kind"] == "RESTORE_COMPLETED"
+    assert result["recovery_source_mode"] == "ONLINE_ACTIVE_STORE"
+    assert result["retained_previous_store"] is True
+    assert len(result["reconciled_security_hash"]) == 64
+    assert database_path.is_file()
+
+    invalidated = admin_a.get("/api/v1/control-plane/auth/session")
+    assert invalidated.status_code == 401
+    relogged, _ = login(app, "admin-a")
+    screen_after = relogged.get("/api/v1/control-plane/screen-instances/screen-trust-fixture")
+    assert screen_after.status_code == 200, screen_after.text
+    assert screen_after.json()["display_name"] == screen_before["display_name"]
+    restored_bindings = {
+        screen_id: relogged.get(f"/api/v1/control-plane/screen-instances/{screen_id}/runtime-binding").json()
+        for screen_id in group["member_screen_ids"]
+    }
+    assert restored_bindings == backup_bindings
+    users_after = relogged.get("/api/v1/control-plane/users")
+    assert users_after.status_code == 200, users_after.text
+    assert post_backup_user_id in {user["user_id"] for user in users_after.json()["items"]}
+    active_device_after = device.get(
+        "/api/v1/device/runtime-binding",
+        headers={"Authorization": f"DeviceCredential {active_device_credential}"},
+    )
+    assert active_device_after.status_code == 200, active_device_after.text
+    assert active_device_after.json()["screen_id"] == active_screen_id
+    pending_claim_after = device.post(
+        "/api/v1/device/enrollments:claim",
+        headers={"Idempotency-Key": "restore-pending-token-claim"},
+        json={"enrollment_token": pending_token},
+    )
+    assert pending_claim_after.status_code == 409
+    exact_secrets = (
+        active_issued.json()["enrollment_token"],
+        active_device_credential,
+        pending_token,
+        *PASSWORDS.values(),
+    )
+    database_bytes = database_path.read_bytes()
+    safe_bundle_bytes = b"".join(
+        (bundle_dir / name).read_bytes()
+        for name in (
+            "manifest.json",
+            "checksums.sha256",
+            "verification.json",
+            "payload.aes256gcm",
+        )
+    )
+    for secret_value in exact_secrets:
+        assert secret_value.encode() not in database_bytes
+        assert secret_value.encode() not in safe_bundle_bytes
+    plaintext_safe_bundle_text = (
+        (bundle_dir / "manifest.json").read_text(encoding="utf-8")
+        + (bundle_dir / "verification.json").read_text(encoding="utf-8")
+    ).casefold()
+    for forbidden_name in (
+        '"password_verifier":',
+        '"verifier_hmac":',
+        '"response_ciphertext":',
+        '"enrollment_token":',
+        '"credential":',
+    ):
+        assert forbidden_name not in plaintext_safe_bundle_text
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        audit_text = canonical_json(
+            [
+                tuple(row)
+                for row in connection.execute(
+                    """
+                    SELECT event_type, actor_id, target_type, target_id,
+                        outcome, reason, details_json
+                    FROM security_audit_events ORDER BY sequence
+                    """
+                ).fetchall()
+            ]
+        )
+        for secret_value in exact_secrets:
+            assert secret_value not in audit_text
+        assert (
+            connection.execute(
+                """
+            SELECT state FROM high_risk_actions
+            WHERE high_risk_action_id = ?
+            """,
+                (unfinished_action["high_risk_action_id"],),
+            ).fetchone()[0]
+            == "FAILED"
+        )
+        replay_rows = connection.execute(
+            """
+            SELECT response_nonce, response_ciphertext,
+                response_encryption_key_id, response_aad_json,
+                response_aad_hash, response_expires_at
+            FROM idempotency_records
+            """
+        ).fetchall()
+        assert replay_rows
+        assert all(all(value is None for value in row) for row in replay_rows)
+        restore_row = connection.execute(
+            """
+            SELECT rp.state, re.retained_previous_store_name
+            FROM restore_plans rp
+            JOIN restore_executions re USING (restore_plan_id)
+            WHERE rp.restore_plan_id = ?
+            """,
+            (plan["restore_plan_id"],),
+        ).fetchone()
+        assert restore_row[0] == "EXECUTED"
+        assert (service.p1_3.backups.backup_root / restore_row[1]).is_file()
+
+
+def test_p1_3_three_day_runtime_detail_retention_preserves_control_plane(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+    tmp_path: Path,
+) -> None:
+    app, service, database_path = control_plane
+    implementation, csrf_impl = login(app, "implementation")
+    admin_a, csrf_a = login(app, "admin-a")
+    admin_b, csrf_b = login(app, "admin-b")
+    release = create_p1_3_release(
+        implementation,
+        csrf_impl,
+        admin_a,
+        csrf_a,
+        target_type="SCREEN",
+        target_id="screen-trust-fixture",
+        expected_target_count=1,
+        welcome_text="保留策略验证",
+        suffix="retention",
+    )
+    binding = implementation.get(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/runtime-binding"
+    ).json()
+    publish_payload = {
+        "release_id": release["release_id"],
+        "release_target_id": release["targets"][0]["release_target_id"],
+        "expected_binding_generation": binding["binding_generation"],
+        "reason": "create protected publication evidence",
+    }
+    action = request_action(
+        implementation,
+        csrf_impl,
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/publications",
+        publish_payload,
+        "retention-publish-request",
+        extra_headers={"If-Match": binding["etag"]},
+    )
+    approve_action(admin_b, csrf_b, action, key="retention-publish-approve")
+    published = implementation.post(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/publications",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": binding["etag"],
+                "Idempotency-Key": "retention-publish-execute",
+                "High-Risk-Action-ID": action["high_risk_action_id"],
+            },
+        ),
+        json=publish_payload,
+    )
+    assert published.status_code == 201, published.text
+    enrollment_payload = {"reason": "create protected device-security evidence"}
+    enrollment_action = request_action(
+        implementation,
+        csrf_impl,
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        enrollment_payload,
+        "retention-enroll-request",
+    )
+    approve_action(admin_b, csrf_b, enrollment_action, key="retention-enroll-approve")
+    enrollment = implementation.post(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "Idempotency-Key": "retention-enroll-execute",
+                "High-Risk-Action-ID": enrollment_action["high_risk_action_id"],
+            },
+        ),
+        json=enrollment_payload,
+    )
+    assert enrollment.status_code == 201, enrollment.text
+    device = TestClient(app, base_url="https://device.test")
+    claimed = device.post(
+        "/api/v1/device/enrollments:claim",
+        headers={"Idempotency-Key": "retention-device-claim"},
+        json={"enrollment_token": enrollment.json()["enrollment_token"]},
+    )
+    assert claimed.status_code == 200, claimed.text
+
+    session_path = tmp_path / "runtime-detail.db"
+    session_store = SessionLogStore(session_path, retention_days=3)
+    session_store.initialize()
+    now = datetime(2026, 7, 27, 12, 0, tzinfo=timezone(timedelta(hours=8)))
+    with sqlite3.connect(session_path) as connection:
+        connection.executemany(
+            """
+            INSERT INTO session_logs(
+                session_id, message_id, created_at, user_text, intent_type,
+                dora_response_json, screen_action_json, error_json,
+                latency_total_ms
+            ) VALUES (?, ?, ?, ?, 'chat', '{}', NULL, NULL, 1)
+            """,
+            [
+                (
+                    "expired-session",
+                    "expired-message",
+                    (now - timedelta(days=4)).isoformat(timespec="seconds"),
+                    "expired runtime detail",
+                ),
+                (
+                    "retained-session",
+                    "retained-message",
+                    (now - timedelta(days=2)).isoformat(timespec="seconds"),
+                    "retained runtime detail",
+                ),
+            ],
+        )
+        connection.commit()
+    protected_tables = (
+        "users",
+        "device_credential_families",
+        "config_releases",
+        "publications",
+        "security_audit_events",
+    )
+    with sqlite3.connect(database_path) as connection:
+        before = {
+            table: connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            for table in protected_tables
+        }
+    assert all(before[table] > 0 for table in protected_tables)
+
+    cleanup = session_store.cleanup_expired(now=now)
+    assert cleanup["retention_days"] == 3
+    assert cleanup["deleted_runtime_detail_count"] == 1
+    recorded = service.p1_3.record_runtime_detail_retention(
+        retention_days=cleanup["retention_days"],
+        deleted_runtime_detail_count=cleanup["deleted_runtime_detail_count"],
+    )
+    assert recorded["recorded"] is True
+    with sqlite3.connect(session_path) as connection:
+        remaining = connection.execute("SELECT session_id FROM session_logs ORDER BY session_id").fetchall()
+        assert remaining == [("retained-session",)]
+    with sqlite3.connect(database_path) as connection:
+        after = {
+            table: connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
+            for table in protected_tables
+        }
+        assert connection.execute(
+            """
+            SELECT retention_days, deleted_runtime_detail_count,
+                protected_control_plane_counts_hash
+            FROM retention_runs WHERE retention_run_id = ?
+            """,
+            (recorded["retention_run_id"],),
+        ).fetchone() == (
+            3,
+            1,
+            recorded["protected_control_plane_counts_hash"],
+        )
+    assert after["security_audit_events"] == before["security_audit_events"] + 1
+    for table in protected_tables[:-1]:
+        assert after[table] == before[table]

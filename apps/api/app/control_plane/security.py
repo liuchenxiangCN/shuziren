@@ -37,6 +37,7 @@ PURPOSES = (
     "HIGH_RISK_REQUEST_HMAC",
     "SENSITIVE_REQUEST_DIGEST_HMAC",
     "ONE_TIME_RESPONSE_ENCRYPTION",
+    "BACKUP_RECOVERY_ENCRYPTION",
 )
 
 
@@ -131,12 +132,36 @@ class PurposeKeyring:
         return hmac.compare_digest(self.digest(purpose, value), expected)
 
     def encrypt(self, plaintext: bytes, associated_data: bytes) -> Ciphertext:
-        nonce = secrets.token_bytes(12)
-        cipher = AESGCM(self._keys["ONE_TIME_RESPONSE_ENCRYPTION"])
-        return Ciphertext(nonce=nonce, value=cipher.encrypt(nonce, plaintext, associated_data))
+        return self.encrypt_for(
+            "ONE_TIME_RESPONSE_ENCRYPTION",
+            plaintext,
+            associated_data,
+        )
 
     def decrypt(self, ciphertext: Ciphertext, associated_data: bytes) -> bytes:
-        cipher = AESGCM(self._keys["ONE_TIME_RESPONSE_ENCRYPTION"])
+        return self.decrypt_for(
+            "ONE_TIME_RESPONSE_ENCRYPTION",
+            ciphertext,
+            associated_data,
+        )
+
+    def encrypt_for(
+        self,
+        purpose: str,
+        plaintext: bytes,
+        associated_data: bytes,
+    ) -> Ciphertext:
+        nonce = secrets.token_bytes(12)
+        cipher = AESGCM(self._keys[purpose])
+        return Ciphertext(nonce=nonce, value=cipher.encrypt(nonce, plaintext, associated_data))
+
+    def decrypt_for(
+        self,
+        purpose: str,
+        ciphertext: Ciphertext,
+        associated_data: bytes,
+    ) -> bytes:
+        cipher = AESGCM(self._keys[purpose])
         return cipher.decrypt(ciphertext.nonce, ciphertext.value, associated_data)
 
     @staticmethod

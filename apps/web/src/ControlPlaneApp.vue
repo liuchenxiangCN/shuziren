@@ -5,11 +5,21 @@ import {
   approveAction,
   claimEnrollment,
   ControlPlaneApiError,
+  createBackup,
+  createConfigDraft,
+  createConfigRelease,
   createDigitalHumanInstance,
+  createRestorePlan,
   createScreenGroup,
   createScreenInstance,
   createUser,
+  decideConfigDraft,
+  executeRestorePlan,
+  getConfigDraft,
+  getConfigRelease,
   getCredentialMetadata,
+  getRuntimeBinding,
+  getStorageProfile,
   issueEnrollment,
   listAuditEvents,
   listPendingActions,
@@ -19,25 +29,36 @@ import {
   listSites,
   listUsers,
   loadSession,
+  publishReleaseToGroup,
+  publishReleaseToScreen,
   randomIdempotencyKey,
   reauthenticate,
   rejectAction,
+  replaceConfigDraftSpec,
   revokeCredential,
+  rollbackGroupRelease,
+  rollbackScreenRelease,
   rotateCredential,
   signIn,
   signOut,
   type AuditEvent,
+  type BackupRecord,
+  type ConfigDraft,
+  type ConfigRelease,
   type ControlPlaneSession,
   type ControlPlaneUser,
   type HighRiskAction,
+  type RestorePlan,
   type ScreenGroupInventory,
   type ScreenInventory,
   type SiteInventory,
+  transitionConfigDraft,
   updateScreenGroup,
   updateScreenInstance,
+  verifyBackup,
 } from './controlPlaneApi';
 
-type View = 'inventory' | 'users' | 'approvals' | 'devices' | 'audit';
+type View = 'inventory' | 'releases' | 'users' | 'approvals' | 'devices' | 'audit';
 
 const session = ref<ControlPlaneSession | null>(null);
 const activeView = ref<View>('inventory');
@@ -55,6 +76,27 @@ const sites = ref<SiteInventory[]>([]);
 const screenGroups = ref<ScreenGroupInventory[]>([]);
 const screens = ref<ScreenInventory[]>([]);
 const groupMemberDrafts = ref<Record<string, string[]>>({});
+const releaseDraft = ref<ConfigDraft | null>(null);
+const releaseCandidate = ref<ConfigRelease | null>(null);
+const releasePublication = ref<Record<string, any> | null>(null);
+const storageProfile = ref<Record<string, any> | null>(null);
+const backupRecord = ref<BackupRecord | null>(null);
+const restorePlan = ref<RestorePlan | null>(null);
+const draftTargetType = ref<'SCREEN' | 'SCREEN_GROUP'>('SCREEN');
+const draftTargetId = ref('');
+const draftLookupId = ref('');
+const releaseLookupId = ref('');
+const draftWelcomeText = ref('您好，欢迎了解当前大屏数据。');
+const draftFvsRef = ref('https://fvs.example.test/mock-preview');
+const draftDecisionReason = ref('已独立核对 Mock 预览、目标指纹与变更内容');
+const releaseReason = ref('创建经审批的不可变配置版本');
+const publishReason = ref('发布经审批的不可变配置版本');
+const publishActionId = ref('');
+const rollbackReason = ref('前滚回退到选定历史版本内容');
+const rollbackActionId = ref('');
+const backupReason = ref('创建 P1.3 开发预览恢复检查点');
+const restoreReason = ref('恢复已验证的开发预览检查点');
+const restoreActionId = ref('');
 
 const newGroupSlug = ref('');
 const newGroupDisplayName = ref('');
@@ -90,6 +132,27 @@ const canEnroll = computed(() => permissions.value.has('device.enroll'));
 const canRevoke = computed(() => permissions.value.has('device.revoke'));
 const canReadScreens = computed(() => permissions.value.has('screen.read'));
 const canManageScreens = computed(() => permissions.value.has('screen.manage'));
+const canEditConfig = computed(
+  () =>
+    permissions.value.has('config.edit_business')
+    && permissions.value.has('config.edit_technical'),
+);
+const canApproveConfig = computed(() => permissions.value.has('config.approve'));
+const canPublish = computed(() => permissions.value.has('release.publish'));
+const canRollback = computed(() => permissions.value.has('release.rollback'));
+const canCreateBackup = computed(() => permissions.value.has('backup.create'));
+const canRestore = computed(() => permissions.value.has('backup.restore'));
+const draftTargetOptions = computed(() =>
+  draftTargetType.value === 'SCREEN'
+    ? screens.value.map((screen) => ({
+      id: screen.screen_id,
+      label: `${screen.display_name} · ${screen.slug}`,
+    }))
+    : screenGroups.value.map((group) => ({
+      id: group.screen_group_id,
+      label: `${group.display_name} · ${group.member_screen_ids.length} 屏`,
+    })),
+);
 
 onMounted(async () => {
   try {
@@ -138,6 +201,11 @@ async function logout() {
     screenGroups.value = [];
     screens.value = [];
     groupMemberDrafts.value = {};
+    releaseDraft.value = null;
+    releaseCandidate.value = null;
+    releasePublication.value = null;
+    backupRecord.value = null;
+    restorePlan.value = null;
     clearSensitiveState();
     message.value = '已退出并撤销当前会话。';
   });
@@ -181,6 +249,18 @@ async function loadActiveView() {
     groupMemberDrafts.value = Object.fromEntries(
       groupResult.items.map((group) => [group.screen_group_id, [...group.member_screen_ids]]),
     );
+  } else if (activeView.value === 'releases' && canReadScreens.value) {
+    const [groupResult, screenResult, profileResult] = await Promise.all([
+      listScreenGroups(),
+      listScreenInstances(),
+      getStorageProfile(),
+    ]);
+    screenGroups.value = groupResult.items;
+    screens.value = screenResult.items;
+    storageProfile.value = profileResult;
+    if (!draftTargetId.value) {
+      draftTargetId.value = screenResult.items[0]?.screen_id || '';
+    }
   } else if (activeView.value === 'users' && canManageUsers.value) {
     const [userResult, roleResult] = await Promise.all([listUsers(), listRoleDefinitions()]);
     users.value = userResult.items;
@@ -373,6 +453,235 @@ async function submitRevoke() {
   });
 }
 
+function resetDraftTarget() {
+  draftTargetId.value = draftTargetOptions.value[0]?.id || '';
+}
+
+function syncDraftForm(draft: ConfigDraft) {
+  releaseDraft.value = draft;
+  draftLookupId.value = draft.draft_id;
+  draftTargetType.value = draft.target.type;
+  draftTargetId.value = draft.target.screen_id || draft.target.screen_group_id || '';
+  draftWelcomeText.value = draft.spec.welcome_text || draftWelcomeText.value;
+  draftFvsRef.value = draft.spec.fvs_binding_ref || draftFvsRef.value;
+}
+
+async function startReleaseDraft() {
+  await run(async () => {
+    const draft = await createConfigDraft(draftTargetType.value, draftTargetId.value);
+    syncDraftForm(draft);
+    releaseCandidate.value = null;
+    releasePublication.value = null;
+    message.value = `草稿 ${draft.draft_id} 已创建；先完整替换配置，再验证与 Mock 预览。`;
+  });
+}
+
+async function loadReleaseDraft() {
+  await run(async () => {
+    const draft = await getConfigDraft(draftLookupId.value.trim());
+    syncDraftForm(draft);
+    message.value = `已读取草稿 ${draft.draft_id}；状态为 ${draft.state}。`;
+  });
+}
+
+async function saveReleaseDraftSpec() {
+  if (!releaseDraft.value) return;
+  await run(async () => {
+    const draft = await replaceConfigDraftSpec(releaseDraft.value!, {
+      welcome_text: draftWelcomeText.value,
+      fvs_binding_ref: draftFvsRef.value,
+    });
+    syncDraftForm(draft);
+    message.value = '完整配置已按强 ETag 写入；没有执行任何 FVS 请求。';
+  });
+}
+
+async function moveReleaseDraft(
+  operation: 'validate' | 'preview' | 'submit-for-approval' | 'revise' | 'abandon',
+) {
+  if (!releaseDraft.value) return;
+  await run(async () => {
+    const draft = await transitionConfigDraft(releaseDraft.value!, operation);
+    syncDraftForm(draft);
+    if (operation === 'preview') {
+      message.value = 'Mock 预览完成；此结果不代表真实 FVS 兼容性或生产可用性。';
+    } else if (operation === 'submit-for-approval') {
+      message.value = `草稿已冻结待异人审批；请将草稿 ID ${draft.draft_id} 交给管理员。`;
+    } else {
+      message.value = `草稿已执行 ${operation}；当前状态 ${draft.state}。`;
+    }
+  });
+}
+
+async function decideReleaseDraft(decision: 'approve' | 'reject') {
+  if (!releaseDraft.value) return;
+  await run(async () => {
+    const draft = await decideConfigDraft(
+      releaseDraft.value!,
+      decision,
+      draftDecisionReason.value,
+    );
+    syncDraftForm(draft);
+    message.value =
+      decision === 'approve'
+        ? '已记录异人审批；原编辑者可重新读取草稿并创建不可变 Release。'
+        : '草稿已拒绝，历史证据仍保留。';
+  });
+}
+
+async function buildConfigRelease() {
+  if (!releaseDraft.value) return;
+  await run(async () => {
+    releaseCandidate.value = await createConfigRelease(
+      releaseDraft.value!,
+      releaseReason.value,
+    );
+    releaseLookupId.value = releaseCandidate.value.release_id;
+    releaseDraft.value = await getConfigDraft(releaseDraft.value!.draft_id);
+    message.value = `不可变 NORMAL Release ${releaseCandidate.value.release_id} 已创建。`;
+  });
+}
+
+async function loadConfigReleaseById() {
+  await run(async () => {
+    releaseCandidate.value = await getConfigRelease(releaseLookupId.value.trim());
+    message.value = `已读取不可变 ${releaseCandidate.value.creation_kind} Release。`;
+  });
+}
+
+async function submitPublication() {
+  if (!releaseCandidate.value) return;
+  await run(async () => {
+    let result: Record<string, any>;
+    if (draftTargetType.value === 'SCREEN') {
+      const target = releaseCandidate.value!.targets.find(
+        (item) => item.screen_id === draftTargetId.value,
+      );
+      if (!target) throw new Error('当前 Release 不包含所选大屏');
+      const binding = await getRuntimeBinding(draftTargetId.value);
+      result = await publishReleaseToScreen(
+        draftTargetId.value,
+        releaseCandidate.value!,
+        target,
+        binding,
+        publishReason.value,
+        publishActionId.value,
+      );
+    } else {
+      const group = screenGroups.value.find(
+        (item) => item.screen_group_id === draftTargetId.value,
+      );
+      if (!group) throw new Error('未找到所选大屏组');
+      const bindings = await Promise.all(
+        group.member_screen_ids.map((id) => getRuntimeBinding(id)),
+      );
+      result = await publishReleaseToGroup(
+        group,
+        releaseCandidate.value!,
+        bindings,
+        publishReason.value,
+        publishActionId.value,
+      );
+    }
+    if (result.high_risk_action_id) {
+      publishActionId.value = String(result.high_risk_action_id);
+      message.value = `发布请求 ${publishActionId.value} 待另一管理员审批；尚未改变 desired。`;
+    } else {
+      releasePublication.value = result.publication;
+      publishActionId.value = '';
+      message.value = '发布计划已执行；applied 仍需目标设备确认准确 generation/hash。';
+    }
+  });
+}
+
+async function submitRollback() {
+  if (!releaseCandidate.value) return;
+  await run(async () => {
+    let result: Record<string, any>;
+    if (draftTargetType.value === 'SCREEN') {
+      const source = releaseCandidate.value!.targets.find(
+        (item) => item.screen_id === draftTargetId.value,
+      );
+      if (!source) throw new Error('历史 Release 不包含所选大屏');
+      const binding = await getRuntimeBinding(draftTargetId.value);
+      result = await rollbackScreenRelease(
+        draftTargetId.value,
+        source.release_target_id,
+        binding,
+        rollbackReason.value,
+        rollbackActionId.value,
+      );
+    } else {
+      const group = screenGroups.value.find(
+        (item) => item.screen_group_id === draftTargetId.value,
+      );
+      if (!group) throw new Error('未找到所选大屏组');
+      const bindings = await Promise.all(
+        group.member_screen_ids.map((id) => getRuntimeBinding(id)),
+      );
+      result = await rollbackGroupRelease(
+        group,
+        releaseCandidate.value!,
+        bindings,
+        rollbackReason.value,
+        rollbackActionId.value,
+      );
+    }
+    if (result.high_risk_action_id) {
+      rollbackActionId.value = String(result.high_risk_action_id);
+      message.value = `回滚请求 ${rollbackActionId.value} 待异人审批；历史未被修改。`;
+    } else {
+      releaseCandidate.value = result.release;
+      releasePublication.value = result.publication;
+      rollbackActionId.value = '';
+      message.value = '已创建并发布新的 ROLLBACK Release；历史版本保持不可变。';
+    }
+  });
+}
+
+async function makeBackup() {
+  await run(async () => {
+    backupRecord.value = await createBackup(backupReason.value);
+    restorePlan.value = null;
+    message.value = `加密备份 ${backupRecord.value.backup_id} 已创建并完成即时验证。`;
+  });
+}
+
+async function checkBackup() {
+  if (!backupRecord.value) return;
+  await run(async () => {
+    const result = await verifyBackup(backupRecord.value!.backup_id);
+    message.value = `备份重新验证：${result.outcome}；耗时 ${result.duration_ms} ms。`;
+  });
+}
+
+async function prepareRestore() {
+  if (!backupRecord.value) return;
+  await run(async () => {
+    restorePlan.value = await createRestorePlan(backupRecord.value!.backup_id);
+    message.value = `恢复计划 ${restorePlan.value.restore_plan_id} 已验证；执行仍需异人审批。`;
+  });
+}
+
+async function submitRestore() {
+  if (!restorePlan.value) return;
+  await run(async () => {
+    const result = await executeRestorePlan(
+      restorePlan.value!,
+      restoreReason.value,
+      restoreActionId.value,
+    );
+    if (result.high_risk_action_id) {
+      restoreActionId.value = String(result.high_risk_action_id);
+      message.value = `恢复请求 ${restoreActionId.value} 待异人审批；活动库尚未切换。`;
+    } else {
+      restoreActionId.value = '';
+      message.value = '恢复已完成并保留旧库；所有浏览器会话已失效，请重新登录。';
+      session.value = null;
+    }
+  });
+}
+
 function formatTime(value?: number | null) {
   return value ? new Date(value * 1000).toLocaleString() : '-';
 }
@@ -383,9 +692,9 @@ function formatTime(value?: number | null) {
     <section class="cp-frame">
       <header class="cp-header">
         <div>
-          <p class="cp-eyebrow">P1.2 · Three-Screen Inventory</p>
-          <h1>多屏资产与设备信任控制台</h1>
-          <p>开发预览；FVS 始终为 UNVERIFIED，运行配置始终为 NOT_CONFIGURED_P1_3。</p>
+          <p class="cp-eyebrow">P1.3 · Publish / Rollback / Recovery</p>
+          <h1>多屏发布与恢复控制台</h1>
+          <p>开发预览；Mock 预览不连接真实 FVS，生产恢复拓扑与客户 RPO/RTO 仍未验证。</p>
         </div>
         <div v-if="session" class="cp-session">
           <strong>{{ session.user.display_name }}</strong>
@@ -428,6 +737,9 @@ function formatTime(value?: number | null) {
         <nav class="cp-nav" aria-label="控制面功能">
           <button :class="{ active: activeView === 'inventory' }" @click="switchView('inventory')">
             多屏清单
+          </button>
+          <button :class="{ active: activeView === 'releases' }" @click="switchView('releases')">
+            发布中心
           </button>
           <button :class="{ active: activeView === 'users' }" @click="switchView('users')">
             用户与角色
@@ -565,6 +877,225 @@ function formatTime(value?: number | null) {
             <button :disabled="!newGroupSlug || !newGroupDisplayName" @click="submitGroup">
               创建空组
             </button>
+          </article>
+        </section>
+
+        <section v-else-if="activeView === 'releases'" class="cp-grid">
+          <article class="cp-card wide cp-boundary">
+            <div>
+              <p class="cp-eyebrow">Development preview boundary</p>
+              <h2>Mock 可验收，真实 FVS 未验证</h2>
+              <p>
+                配置预览固定标记为 <strong>MOCK_PASSED</strong>；FVS 引用只是非敏感标签，
+                不会发起 FineReport、FVS 或插件请求。
+              </p>
+            </div>
+            <div class="cp-stat-strip">
+              <span><strong>3 天</strong>运行明细</span>
+              <span><strong>AES-256-GCM</strong>备份</span>
+              <span><strong>UNVERIFIED</strong>生产恢复</span>
+            </div>
+          </article>
+
+          <article class="cp-card wide">
+            <div class="cp-card-title">
+              <div>
+                <p class="cp-eyebrow">Draft → validation → Mock preview → approval</p>
+                <h2>配置草稿与异人审批</h2>
+              </div>
+              <span v-if="releaseDraft" class="cp-pill">{{ releaseDraft.state }}</span>
+            </div>
+            <div class="cp-form-grid">
+              <label>
+                目标类型
+                <select v-model="draftTargetType" @change="resetDraftTarget">
+                  <option value="SCREEN">单屏</option>
+                  <option value="SCREEN_GROUP">大屏组</option>
+                </select>
+              </label>
+              <label>
+                目标
+                <select v-model="draftTargetId">
+                  <option v-for="item in draftTargetOptions" :key="item.id" :value="item.id">
+                    {{ item.label }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                草稿 ID（跨账号交接）
+                <input v-model="draftLookupId" placeholder="drf_..." />
+              </label>
+              <div class="cp-actions cp-align-end">
+                <button v-if="canEditConfig" :disabled="!draftTargetId" @click="startReleaseDraft">
+                  新建草稿
+                </button>
+                <button class="secondary" :disabled="!draftLookupId" @click="loadReleaseDraft">
+                  读取草稿
+                </button>
+              </div>
+            </div>
+
+            <template v-if="releaseDraft">
+              <div class="cp-hash-line">
+                <span>Draft {{ releaseDraft.draft_id }}</span>
+                <code>{{ releaseDraft.content_hash }}</code>
+              </div>
+              <div class="cp-form-grid">
+                <label>
+                  欢迎语
+                  <textarea v-model="draftWelcomeText" :readonly="releaseDraft.state !== 'DRAFT'"></textarea>
+                </label>
+                <label>
+                  非敏感 FVS 引用
+                  <textarea v-model="draftFvsRef" :readonly="releaseDraft.state !== 'DRAFT'"></textarea>
+                </label>
+              </div>
+              <div class="cp-actions cp-wrap">
+                <button
+                  v-if="canEditConfig && releaseDraft.state === 'DRAFT'"
+                  @click="saveReleaseDraftSpec"
+                >
+                  保存完整配置
+                </button>
+                <button
+                  v-if="permissions.has('config.validate') && releaseDraft.state === 'DRAFT'"
+                  class="secondary"
+                  @click="moveReleaseDraft('validate')"
+                >
+                  验证
+                </button>
+                <button
+                  v-if="permissions.has('config.preview') && releaseDraft.state === 'VALIDATED'"
+                  class="secondary"
+                  @click="moveReleaseDraft('preview')"
+                >
+                  生成 Mock 预览
+                </button>
+                <button
+                  v-if="canEditConfig && releaseDraft.state === 'PREVIEWED'"
+                  @click="moveReleaseDraft('submit-for-approval')"
+                >
+                  提交异人审批
+                </button>
+                <button
+                  v-if="canEditConfig && ['VALIDATED','PREVIEWED','APPROVAL_PENDING','REJECTED'].includes(releaseDraft.state)"
+                  class="secondary"
+                  @click="moveReleaseDraft('revise')"
+                >
+                  修订为新草稿
+                </button>
+              </div>
+              <div v-if="releaseDraft.preview" class="cp-evidence">
+                <strong>{{ releaseDraft.preview.outcome }}</strong>
+                <span>指纹 {{ releaseDraft.preview.fingerprint_hash }}</span>
+                <small>这是 Mock 证据，不是 FVS 实机兼容证明。</small>
+              </div>
+              <div v-if="releaseDraft.state === 'APPROVAL_PENDING'" class="cp-approval-box">
+                <label>审批原因<textarea v-model="draftDecisionReason"></textarea></label>
+                <div v-if="canApproveConfig" class="cp-actions">
+                  <button @click="decideReleaseDraft('approve')">批准草稿</button>
+                  <button class="secondary" @click="decideReleaseDraft('reject')">拒绝</button>
+                </div>
+                <p v-else>请由具备 `config.approve` 的另一位管理员读取此 Draft ID 后审批。</p>
+              </div>
+              <div v-if="releaseDraft.state === 'APPROVED'" class="cp-actions">
+                <label class="cp-grow">Release 原因<textarea v-model="releaseReason"></textarea></label>
+                <button v-if="canPublish" @click="buildConfigRelease">创建不可变 Release</button>
+              </div>
+            </template>
+          </article>
+
+          <article class="cp-card wide">
+            <div class="cp-card-title">
+              <div>
+                <p class="cp-eyebrow">Immutable release · typed four-eyes publication</p>
+                <h2>发布、设备待确认与前滚回滚</h2>
+              </div>
+              <span v-if="releaseCandidate" class="cp-pill">
+                {{ releaseCandidate.creation_kind }} #{{ releaseCandidate.release_sequence }}
+              </span>
+            </div>
+            <div class="cp-form-grid">
+              <label>Release ID<input v-model="releaseLookupId" placeholder="rel_..." /></label>
+              <div class="cp-actions cp-align-end">
+                <button class="secondary" :disabled="!releaseLookupId" @click="loadConfigReleaseById">
+                  读取 Release
+                </button>
+              </div>
+            </div>
+            <template v-if="releaseCandidate">
+              <div class="cp-hash-line">
+                <span>{{ releaseCandidate.release_id }} · {{ releaseCandidate.targets.length }} 个目标</span>
+                <code>{{ releaseCandidate.target_set_hash }}</code>
+              </div>
+              <div class="cp-target-list">
+                <div v-for="target in releaseCandidate.targets" :key="target.release_target_id">
+                  <strong>{{ target.screen_id }}</strong>
+                  <span>Target {{ target.release_target_id }}</span>
+                  <code>{{ target.content_hash }}</code>
+                </div>
+              </div>
+              <div class="cp-form-grid">
+                <label>发布原因<textarea v-model="publishReason"></textarea></label>
+                <label>已批准发布动作 ID<input v-model="publishActionId" placeholder="首次留空" /></label>
+                <label>回滚原因<textarea v-model="rollbackReason"></textarea></label>
+                <label>已批准回滚动作 ID<input v-model="rollbackActionId" placeholder="首次留空" /></label>
+              </div>
+              <div class="cp-actions cp-wrap">
+                <button v-if="canPublish" @click="submitPublication">
+                  {{ publishActionId ? '执行同一发布命令' : '提交发布审批' }}
+                </button>
+                <button v-if="canRollback" class="secondary" @click="submitRollback">
+                  {{ rollbackActionId ? '执行前滚回滚' : '提交回滚审批' }}
+                </button>
+              </div>
+            </template>
+            <pre v-if="releasePublication">{{ JSON.stringify(releasePublication, null, 2) }}</pre>
+          </article>
+
+          <article class="cp-card wide">
+            <div class="cp-card-title">
+              <div>
+                <p class="cp-eyebrow">Encrypted checkpoint · online-source staged restore</p>
+                <h2>备份与恢复</h2>
+              </div>
+              <span class="cp-pill">同设备开发路径</span>
+            </div>
+            <div v-if="storageProfile" class="cp-evidence warning">
+              <strong>{{ storageProfile.engine }} · {{ storageProfile.backup_backend }}</strong>
+              <span>默认运行明细 {{ storageProfile.runtime_detail_days_default }} 天</span>
+              <small>生产恢复拓扑：{{ storageProfile.production_recovery_topology_verified ? 'VERIFIED' : 'UNVERIFIED' }}</small>
+            </div>
+            <label>备份原因<textarea v-model="backupReason"></textarea></label>
+            <div class="cp-actions cp-wrap">
+              <button v-if="canCreateBackup" @click="makeBackup">创建并验证加密备份</button>
+              <button
+                v-if="canCreateBackup && backupRecord"
+                class="secondary"
+                @click="checkBackup"
+              >
+                重新验证
+              </button>
+              <button v-if="canRestore && backupRecord" class="secondary" @click="prepareRestore">
+                生成恢复计划
+              </button>
+            </div>
+            <div v-if="backupRecord" class="cp-hash-line">
+              <span>{{ backupRecord.backup_id }} · {{ backupRecord.state }}</span>
+              <code>{{ backupRecord.manifest_hash }}</code>
+            </div>
+            <template v-if="restorePlan">
+              <div class="cp-evidence warning">
+                <strong>{{ restorePlan.state }} · {{ restorePlan.recovery_source_mode }}</strong>
+                <span>Plan {{ restorePlan.restore_plan_id }}</span>
+                <small>恢复会失效全部浏览器会话，并在切换前保留旧库。</small>
+              </div>
+              <label>恢复原因<textarea v-model="restoreReason"></textarea></label>
+              <label>已批准恢复动作 ID<input v-model="restoreActionId" placeholder="首次留空" /></label>
+              <button v-if="canRestore" @click="submitRestore">
+                {{ restoreActionId ? '执行已批准恢复' : '提交恢复审批' }}
+              </button>
+            </template>
           </article>
         </section>
 
@@ -734,12 +1265,13 @@ function formatTime(value?: number | null) {
 .cp-reauth input { min-width: 0; }
 button { border: 0; border-radius: 10px; padding: 10px 15px; background: #176247; color: #fff; font-weight: 700; }
 button.secondary { background: #e5ece8; color: #27483d; }
+button:disabled { cursor: not-allowed; opacity: .55; }
 .cp-notice { margin: 14px 0; padding: 12px 16px; border-radius: 10px; font-weight: 650; }
 .cp-notice.success { background: #dff3e8; color: #145b3e; }
 .cp-notice.error, .cp-denied { background: #fff0ee; color: #9c332a; }
 .cp-login { max-width: 560px; margin: 56px auto; display: grid; gap: 18px; padding: 30px; border: 1px solid #cfd9d2; border-radius: 18px; background: #fff; }
 label { display: grid; gap: 7px; color: #354b43; font-size: 13px; font-weight: 750; }
-input, textarea { width: 100%; border: 1px solid #c7d2cb; border-radius: 9px; padding: 10px 12px; background: #fff; color: #17302a; font: inherit; }
+input, textarea, select { width: 100%; border: 1px solid #c7d2cb; border-radius: 9px; padding: 10px 12px; background: #fff; color: #17302a; font: inherit; }
 textarea { min-height: 72px; resize: vertical; }
 .cp-nav { display: flex; gap: 8px; margin: 18px 0; padding: 7px; border: 1px solid #d7dfda; border-radius: 13px; background: rgba(255,255,255,.78); }
 .cp-nav button { background: transparent; color: #53675f; }
@@ -748,6 +1280,7 @@ textarea { min-height: 72px; resize: vertical; }
 .cp-card { display: grid; align-content: start; gap: 15px; padding: 22px; border: 1px solid #d2dcd6; border-radius: 15px; background: #fff; box-shadow: 0 10px 30px rgba(28, 56, 47, .05); }
 .cp-card.wide { grid-column: 1 / -1; }
 .cp-site-card { display: flex; align-items: center; justify-content: space-between; }
+.cp-boundary { display: flex; align-items: center; justify-content: space-between; }
 .cp-stat-strip { display: flex; gap: 10px; }
 .cp-stat-strip span { min-width: 94px; padding: 12px; border-radius: 12px; background: #edf5f0; color: #456057; text-align: center; }
 .cp-stat-strip strong { display: block; color: #173d31; font-size: 24px; }
@@ -766,6 +1299,18 @@ legend { padding: 0 6px; color: #53675f; font-size: 12px; font-weight: 800; }
 .cp-check small { display: block; color: #72827b; font-weight: 500; }
 .cp-readonly-note { padding: 12px; border-radius: 9px; background: #f3f6f4; color: #60716a; }
 .cp-card-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.cp-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.cp-align-end { align-self: end; }
+.cp-wrap { flex-wrap: wrap; }
+.cp-grow { flex: 1 1 320px; }
+.cp-hash-line { display: grid; gap: 6px; min-width: 0; padding: 12px 14px; border-radius: 10px; background: #f1f6f3; color: #3f5b51; }
+.cp-hash-line code, .cp-target-list code { overflow-wrap: anywhere; color: #176247; font-size: 11px; }
+.cp-evidence { display: grid; gap: 5px; padding: 14px; border: 1px solid #bcdac9; border-radius: 11px; background: #eef8f2; color: #31584a; overflow-wrap: anywhere; }
+.cp-evidence.warning { border-color: #e2cf9d; background: #fff8e8; color: #755b1c; }
+.cp-approval-box { display: grid; gap: 12px; padding: 16px; border: 1px solid #ccd9d2; border-radius: 12px; background: #fafcfb; }
+.cp-target-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.cp-target-list > div { display: grid; gap: 4px; min-width: 0; padding: 11px; border: 1px solid #e0e8e3; border-radius: 9px; }
+.cp-target-list span { overflow-wrap: anywhere; color: #64776f; font-size: 11px; }
 .cp-denied { padding: 15px; border-radius: 9px; font-weight: 700; }
 .cp-table-wrap { overflow: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -784,12 +1329,12 @@ details code { display: block; margin-top: 10px; color: #53675f; line-height: 1.
 pre { overflow: auto; margin: 0; padding: 15px; border-radius: 10px; background: #10241e; color: #cfebdf; }
 @media (max-width: 760px) {
   .cp-shell { padding: 14px; }
-  .cp-header, .cp-row { flex-direction: column; }
+  .cp-header, .cp-row, .cp-boundary { flex-direction: column; }
   .cp-site-card { align-items: stretch; }
   .cp-stat-strip { overflow-x: auto; }
   .cp-session { border-left: 0; padding-left: 0; }
   .cp-grid { grid-template-columns: 1fr; }
-  .cp-screen-grid { grid-template-columns: 1fr; }
+  .cp-screen-grid, .cp-form-grid, .cp-target-list { grid-template-columns: 1fr; }
   .cp-nav { overflow-x: auto; }
 }
 </style>

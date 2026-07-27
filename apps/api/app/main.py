@@ -1,11 +1,9 @@
 import base64
 import json
 import logging
-import re
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from time import sleep
-from time import perf_counter
+from time import perf_counter, sleep
 from urllib.parse import urlsplit
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -14,17 +12,13 @@ import httpx
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.responses import JSONResponse
-from fastapi.responses import PlainTextResponse
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
 from app.control_plane.errors import ControlPlaneError
-from app.control_plane.router import control_plane_error_handler
+from app.control_plane.router import control_plane_error_handler, sanitized_validation_errors
 from app.control_plane.router import router as control_plane_router
-from app.control_plane.router import sanitized_validation_errors
 from app.control_plane.service import ControlPlaneService
 from app.models import (
     AsrTranscribeRequest,
@@ -55,8 +49,8 @@ from app.models import (
     TtsSynthesizeResponse,
     WakeConfigResponse,
 )
-from app.services.asr_provider import AsrProviderError, build_asr_provider
 from app.services.ask_metrics import AskMetricsService
+from app.services.asr_provider import AsrProviderError, build_asr_provider
 from app.services.config_overrides import ConfigOverrideService
 from app.services.config_snapshot import build_config_effective, build_config_schema
 from app.services.dora_client import DoraClient, DoraClientError
@@ -69,7 +63,6 @@ from app.services.screen_resolver import ScreenControlResolver
 from app.services.session_log import SessionLogStore
 from app.services.tts_provider import TtsProviderError, build_tts_provider
 from app.services.wake_words import WakeWordService
-
 
 settings = get_settings()
 logging.basicConfig(level=settings.log_level)
@@ -115,8 +108,11 @@ dora_client = DoraClient(
     channel_type=settings.dora_channel_type,
     timeout_seconds=settings.dora_timeout_seconds,
 )
-session_logs = SessionLogStore(settings.sqlite_path)
-session_logs.initialize()
+session_logs = SessionLogStore(
+    settings.sqlite_path,
+    retention_days=settings.session_log_retention_days,
+)
+session_log_retention_result = session_logs.initialize()
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 app.state.control_plane_allowed_origins = tuple(settings.control_plane_allowed_origins)
@@ -125,10 +121,16 @@ app.state.control_plane_service = (
         settings.control_plane_db_path,
         settings.control_plane_root_key_b64,
         preview_mode=settings.control_plane_preview_mode,
+        backup_root=settings.control_plane_backup_root,
     )
     if settings.control_plane_root_key_b64
     else None
 )
+if app.state.control_plane_service is not None:
+    app.state.control_plane_service.p1_3.record_runtime_detail_retention(
+        retention_days=session_log_retention_result["retention_days"],
+        deleted_runtime_detail_count=session_log_retention_result["deleted_runtime_detail_count"],
+    )
 app.include_router(control_plane_router)
 app.add_exception_handler(ControlPlaneError, control_plane_error_handler)
 
@@ -606,7 +608,9 @@ def _knowledge_or_dora_response(request: ChatRequest, *, message_id: str | None 
     return _dora_or_mock_response(request, message_id=message_id)
 
 
-def _safe_screen_control_response(request: ChatRequest, *, message_id: str | None = None) -> ChatResponse | None:
+def _safe_screen_control_response(
+    request: ChatRequest, *, message_id: str | None = None
+) -> ChatResponse | None:
     try:
         resolved = screen_resolver.resolve(request.text)
         if resolved is None:
@@ -711,10 +715,7 @@ def _ask_metrics_mode() -> str:
 
 
 def _should_auto_metrics_fallback(response: ChatResponse) -> bool:
-    if response.error and response.error.code.startswith("KNOWLEDGE_"):
-        return False
-    return True
-
+    return not (response.error and response.error.code.startswith("KNOWLEDGE_"))
 
 
 def _split_for_streaming(text: str, chunk_size: int = 5) -> list[str]:
@@ -802,7 +803,7 @@ def _chat_stream_events(request: ChatRequest):
                                 "mock": result.mock,
                             },
                         )
-                    except Exception as exc:  # pragma: no cover - external TTS failures are runtime dependent.
+                    except Exception as exc:  # noqa: BLE001  # pragma: no cover
                         message = (
                             exc.user_message
                             if isinstance(exc, TtsProviderError)
@@ -1559,7 +1560,9 @@ def _require_config_admin(request: Request, payload: ConfigOverridePayload) -> s
         if supplied != token:
             raise StarletteHTTPException(status_code=403, detail="Config admin token is required")
     elif not _is_local_config_request(request):
-        raise StarletteHTTPException(status_code=403, detail="Config writes require localhost access or CONFIG_ADMIN_TOKEN")
+        raise StarletteHTTPException(
+            status_code=403, detail="Config writes require localhost access or CONFIG_ADMIN_TOKEN"
+        )
     operator = request.headers.get("X-Config-Operator") or payload.operator or "local-admin"
     return _safe_operator(operator)
 
@@ -1602,7 +1605,7 @@ def _request_id(request: Request) -> str:
 def _safe_log_chat(**kwargs) -> None:
     try:
         session_logs.log_chat(**kwargs)
-    except Exception as exc:  # pragma: no cover - logging must not break the demo path.
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover
         logger.warning("Failed to write session log: %s", exc)
 
 

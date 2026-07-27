@@ -12,6 +12,7 @@ from app.control_plane.security import canonical_json, uuid7
 LOGICAL_SCHEMA_VERSION = "p1_control_plane_001"
 MIGRATION_001_VERSION = "001_initial_identity_device_trust"
 MIGRATION_002_VERSION = "002_three_screen_inventory"
+MIGRATION_003_VERSION = "003_publish_rollback_recovery"
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -428,12 +429,649 @@ END;
 """
 
 MIGRATION_002_CHECKSUM_SHA256 = hashlib.sha256(INVENTORY_SCHEMA_SQL.encode("utf-8")).hexdigest()
+
+PUBLISH_RECOVERY_SCHEMA_SQL = """
+CREATE UNIQUE INDEX idx_screen_instances_tenant_deployment_screen
+    ON screen_instances(tenant_id, deployment_id, screen_id);
+CREATE UNIQUE INDEX idx_screen_groups_tenant_deployment_group
+    ON screen_groups(tenant_id, deployment_id, screen_group_id);
+
+CREATE TABLE config_drafts (
+    draft_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    target_type TEXT NOT NULL CHECK (target_type IN ('SCREEN', 'SCREEN_GROUP')),
+    screen_id TEXT,
+    screen_group_id TEXT,
+    schema_version TEXT NOT NULL CHECK (schema_version = 'p1_screen_config_v1'),
+    working_spec_json TEXT NOT NULL DEFAULT '{}',
+    content_hash TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (
+        state IN (
+            'DRAFT', 'VALIDATED', 'PREVIEWED', 'APPROVAL_PENDING',
+            'APPROVED', 'REJECTED', 'RELEASED', 'ABANDONED'
+        )
+    ),
+    current_revision INTEGER NOT NULL DEFAULT 0 CHECK (current_revision >= 0),
+    last_editor_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    validation_record_id TEXT,
+    preview_record_id TEXT,
+    approval_record_id TEXT,
+    control_plane_epoch INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    CHECK (
+        (
+            target_type = 'SCREEN'
+            AND screen_id IS NOT NULL
+            AND screen_group_id IS NULL
+        )
+        OR (
+            target_type = 'SCREEN_GROUP'
+            AND screen_id IS NULL
+            AND screen_group_id IS NOT NULL
+        )
+    ),
+    UNIQUE (tenant_id, deployment_id, draft_id),
+    FOREIGN KEY (tenant_id, deployment_id, screen_id)
+        REFERENCES screen_instances(tenant_id, deployment_id, screen_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, screen_group_id)
+        REFERENCES screen_groups(tenant_id, deployment_id, screen_group_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE config_draft_revisions (
+    draft_id TEXT NOT NULL REFERENCES config_drafts(draft_id) ON DELETE RESTRICT,
+    draft_revision INTEGER NOT NULL CHECK (draft_revision >= 1),
+    schema_version TEXT NOT NULL CHECK (schema_version = 'p1_screen_config_v1'),
+    canonical_spec_json TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (draft_id, draft_revision)
+);
+
+CREATE TABLE resolution_fingerprints (
+    fingerprint_id TEXT PRIMARY KEY,
+    draft_id TEXT NOT NULL,
+    draft_revision INTEGER NOT NULL,
+    fingerprint_hash TEXT NOT NULL UNIQUE,
+    target_set_json TEXT NOT NULL,
+    target_set_hash TEXT NOT NULL,
+    group_revision INTEGER,
+    resolution_inputs_json TEXT NOT NULL,
+    effective_hashes_json TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    UNIQUE (fingerprint_id, draft_id, draft_revision),
+    FOREIGN KEY (draft_id, draft_revision)
+        REFERENCES config_draft_revisions(draft_id, draft_revision)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE validation_records (
+    validation_record_id TEXT PRIMARY KEY,
+    draft_id TEXT NOT NULL,
+    draft_revision INTEGER NOT NULL,
+    fingerprint_id TEXT NOT NULL,
+    fingerprint_hash TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('VALID', 'INVALID')),
+    findings_json TEXT NOT NULL,
+    findings_hash TEXT NOT NULL,
+    validator_version TEXT NOT NULL,
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    UNIQUE (validation_record_id, draft_id, draft_revision),
+    FOREIGN KEY (fingerprint_id, draft_id, draft_revision)
+        REFERENCES resolution_fingerprints(
+            fingerprint_id, draft_id, draft_revision
+        ) ON DELETE RESTRICT
+);
+
+CREATE TABLE preview_records (
+    preview_record_id TEXT PRIMARY KEY,
+    draft_id TEXT NOT NULL,
+    draft_revision INTEGER NOT NULL,
+    validation_record_id TEXT NOT NULL,
+    fingerprint_hash TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome = 'MOCK_PASSED'),
+    evidence_json TEXT NOT NULL,
+    evidence_hash TEXT NOT NULL,
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    UNIQUE (preview_record_id, draft_id, draft_revision),
+    FOREIGN KEY (validation_record_id, draft_id, draft_revision)
+        REFERENCES validation_records(
+            validation_record_id, draft_id, draft_revision
+        ) ON DELETE RESTRICT
+);
+
+CREATE TABLE config_approval_records (
+    approval_record_id TEXT PRIMARY KEY,
+    draft_id TEXT NOT NULL,
+    draft_revision INTEGER NOT NULL,
+    preview_record_id TEXT NOT NULL,
+    fingerprint_hash TEXT NOT NULL,
+    control_plane_epoch INTEGER NOT NULL,
+    decision TEXT NOT NULL CHECK (decision IN ('APPROVED', 'REJECTED')),
+    approver_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    last_editor_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    reason TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    CHECK (approver_user_id != last_editor_user_id),
+    UNIQUE (approval_record_id, draft_id, draft_revision),
+    FOREIGN KEY (preview_record_id, draft_id, draft_revision)
+        REFERENCES preview_records(
+            preview_record_id, draft_id, draft_revision
+        ) ON DELETE RESTRICT
+);
+
+CREATE TABLE config_releases (
+    release_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    release_sequence INTEGER NOT NULL CHECK (release_sequence >= 1),
+    creation_kind TEXT NOT NULL CHECK (creation_kind IN ('NORMAL', 'ROLLBACK')),
+    schema_version TEXT NOT NULL CHECK (schema_version = 'p1_screen_config_v1'),
+    normal_draft_id TEXT,
+    normal_draft_revision INTEGER,
+    normal_fingerprint_id TEXT,
+    normal_approval_record_id TEXT,
+    rollback_source_map_json TEXT,
+    rollback_source_map_hash TEXT,
+    rollback_high_risk_action_id TEXT,
+    target_set_hash TEXT NOT NULL,
+    group_revision INTEGER,
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    reason TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    CHECK (
+        (
+            creation_kind = 'NORMAL'
+            AND normal_draft_id IS NOT NULL
+            AND normal_draft_revision IS NOT NULL
+            AND normal_fingerprint_id IS NOT NULL
+            AND normal_approval_record_id IS NOT NULL
+            AND rollback_source_map_json IS NULL
+            AND rollback_source_map_hash IS NULL
+            AND rollback_high_risk_action_id IS NULL
+        )
+        OR (
+            creation_kind = 'ROLLBACK'
+            AND normal_draft_id IS NULL
+            AND normal_draft_revision IS NULL
+            AND normal_fingerprint_id IS NULL
+            AND normal_approval_record_id IS NULL
+            AND rollback_source_map_json IS NOT NULL
+            AND rollback_source_map_hash IS NOT NULL
+            AND rollback_high_risk_action_id IS NOT NULL
+        )
+    ),
+    UNIQUE (tenant_id, deployment_id, release_id),
+    UNIQUE (tenant_id, deployment_id, release_sequence),
+    FOREIGN KEY (normal_fingerprint_id, normal_draft_id, normal_draft_revision)
+        REFERENCES resolution_fingerprints(
+            fingerprint_id, draft_id, draft_revision
+        ) ON DELETE RESTRICT,
+    FOREIGN KEY (
+        normal_approval_record_id, normal_draft_id, normal_draft_revision
+    ) REFERENCES config_approval_records(
+        approval_record_id, draft_id, draft_revision
+    ) ON DELETE RESTRICT,
+    FOREIGN KEY (rollback_high_risk_action_id)
+        REFERENCES high_risk_actions(high_risk_action_id) ON DELETE RESTRICT
+);
+
+CREATE TABLE release_targets (
+    release_target_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    release_id TEXT NOT NULL,
+    screen_id TEXT NOT NULL,
+    canonical_effective_config_json TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    rollback_source_release_id TEXT,
+    rollback_source_target_id TEXT,
+    created_at REAL NOT NULL,
+    CHECK (
+        (
+            rollback_source_release_id IS NULL
+            AND rollback_source_target_id IS NULL
+        )
+        OR (
+            rollback_source_release_id IS NOT NULL
+            AND rollback_source_target_id IS NOT NULL
+        )
+    ),
+    UNIQUE (release_id, screen_id),
+    UNIQUE (
+        tenant_id, deployment_id, screen_id, release_target_id
+    ),
+    UNIQUE (
+        tenant_id, deployment_id, release_id, release_target_id, screen_id
+    ),
+    FOREIGN KEY (tenant_id, deployment_id, release_id)
+        REFERENCES config_releases(tenant_id, deployment_id, release_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, screen_id)
+        REFERENCES screen_instances(tenant_id, deployment_id, screen_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (
+        tenant_id, deployment_id, screen_id, rollback_source_target_id
+    ) REFERENCES release_targets(
+        tenant_id, deployment_id, screen_id, release_target_id
+    ) ON DELETE RESTRICT
+);
+
+ALTER TABLE runtime_bindings RENAME TO runtime_bindings_p1_2;
+
+CREATE TABLE runtime_bindings (
+    screen_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    digital_human_instance_id TEXT,
+    desired_release_target_id TEXT,
+    applied_release_target_id TEXT,
+    binding_generation INTEGER NOT NULL DEFAULT 0 CHECK (binding_generation >= 0),
+    last_acknowledged_marker TEXT,
+    last_acknowledged_at REAL,
+    inventory_status TEXT NOT NULL CHECK (
+        inventory_status IN (
+            'INVENTORY_INCOMPLETE', 'NOT_CONFIGURED_P1_3',
+            'PUBLISH_PENDING', 'ACTIVE'
+        )
+    ),
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    UNIQUE (
+        tenant_id, deployment_id, site_id, screen_id, digital_human_instance_id
+    ),
+    FOREIGN KEY (tenant_id, deployment_id, site_id, screen_id)
+        REFERENCES screen_instances(tenant_id, deployment_id, site_id, screen_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (
+        tenant_id, deployment_id, site_id, screen_id, digital_human_instance_id
+    ) REFERENCES digital_human_instances(
+        tenant_id, deployment_id, site_id, screen_id, digital_human_instance_id
+    ) ON DELETE RESTRICT,
+    FOREIGN KEY (
+        tenant_id, deployment_id, screen_id, desired_release_target_id
+    ) REFERENCES release_targets(
+        tenant_id, deployment_id, screen_id, release_target_id
+    ) ON DELETE RESTRICT,
+    FOREIGN KEY (
+        tenant_id, deployment_id, screen_id, applied_release_target_id
+    ) REFERENCES release_targets(
+        tenant_id, deployment_id, screen_id, release_target_id
+    ) ON DELETE RESTRICT,
+    CHECK (
+        (
+            digital_human_instance_id IS NULL
+            AND inventory_status = 'INVENTORY_INCOMPLETE'
+            AND desired_release_target_id IS NULL
+            AND applied_release_target_id IS NULL
+            AND binding_generation = 0
+            AND last_acknowledged_marker IS NULL
+            AND last_acknowledged_at IS NULL
+        )
+        OR (
+            digital_human_instance_id IS NOT NULL
+            AND (
+                (
+                    inventory_status = 'NOT_CONFIGURED_P1_3'
+                    AND desired_release_target_id IS NULL
+                    AND applied_release_target_id IS NULL
+                    AND binding_generation = 0
+                    AND last_acknowledged_marker IS NULL
+                    AND last_acknowledged_at IS NULL
+                )
+                OR (
+                    inventory_status = 'PUBLISH_PENDING'
+                    AND desired_release_target_id IS NOT NULL
+                    AND desired_release_target_id IS NOT applied_release_target_id
+                    AND binding_generation >= 1
+                )
+                OR (
+                    inventory_status = 'ACTIVE'
+                    AND desired_release_target_id IS NOT NULL
+                    AND desired_release_target_id = applied_release_target_id
+                    AND binding_generation >= 1
+                    AND last_acknowledged_marker IS NOT NULL
+                    AND last_acknowledged_at IS NOT NULL
+                )
+            )
+        )
+    )
+);
+
+INSERT INTO runtime_bindings(
+    screen_id, tenant_id, deployment_id, site_id,
+    digital_human_instance_id, desired_release_target_id,
+    applied_release_target_id, binding_generation,
+    last_acknowledged_marker, last_acknowledged_at,
+    inventory_status, created_at, updated_at, revision
+)
+SELECT
+    screen_id, tenant_id, deployment_id, site_id,
+    digital_human_instance_id, desired_release_target_id,
+    applied_release_target_id, binding_generation,
+    last_acknowledged_marker, last_acknowledged_at,
+    inventory_status, created_at, updated_at, revision
+FROM runtime_bindings_p1_2;
+
+DROP TABLE runtime_bindings_p1_2;
+
+CREATE TABLE publications (
+    publication_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    release_id TEXT NOT NULL,
+    screen_group_id TEXT,
+    target_set_hash TEXT NOT NULL,
+    group_revision INTEGER,
+    actor_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    high_risk_action_id TEXT NOT NULL
+        REFERENCES high_risk_actions(high_risk_action_id) ON DELETE RESTRICT,
+    reason TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (
+        state IN ('SUCCEEDED', 'PARTIAL_FAILURE', 'FAILED', 'CANCELLED')
+    ),
+    created_at REAL NOT NULL,
+    UNIQUE (tenant_id, deployment_id, publication_id),
+    FOREIGN KEY (tenant_id, deployment_id, release_id)
+        REFERENCES config_releases(tenant_id, deployment_id, release_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, screen_group_id)
+        REFERENCES screen_groups(tenant_id, deployment_id, screen_group_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE publication_targets (
+    publication_id TEXT NOT NULL,
+    release_id TEXT NOT NULL,
+    release_target_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    screen_id TEXT NOT NULL,
+    expected_runtime_revision INTEGER NOT NULL CHECK (expected_runtime_revision >= 1),
+    expected_binding_generation INTEGER NOT NULL CHECK (expected_binding_generation >= 0),
+    state TEXT NOT NULL CHECK (
+        state IN (
+            'QUEUED', 'WAITING_FOR_DEVICE', 'APPLYING',
+            'ACTIVE', 'SUPERSEDED', 'FAILED', 'CANCELLED'
+        )
+    ),
+    failure_code TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    PRIMARY KEY (publication_id, screen_id),
+    FOREIGN KEY (tenant_id, deployment_id, publication_id)
+        REFERENCES publications(tenant_id, deployment_id, publication_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (
+        tenant_id, deployment_id, release_id, release_target_id, screen_id
+    ) REFERENCES release_targets(
+        tenant_id, deployment_id, release_id, release_target_id, screen_id
+    ) ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_publication_targets_release_target
+    ON publication_targets(release_target_id, state);
+
+CREATE TABLE runtime_binding_history (
+    history_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    screen_id TEXT NOT NULL,
+    publication_id TEXT,
+    event_type TEXT NOT NULL CHECK (
+        event_type IN ('DESIRED_CHANGED', 'APPLIED_ACKNOWLEDGED')
+    ),
+    old_desired_release_target_id TEXT,
+    new_desired_release_target_id TEXT,
+    old_applied_release_target_id TEXT,
+    new_applied_release_target_id TEXT,
+    binding_generation INTEGER NOT NULL CHECK (binding_generation >= 1),
+    actor_type TEXT NOT NULL CHECK (actor_type IN ('USER', 'DEVICE')),
+    actor_id TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (tenant_id, deployment_id, publication_id)
+        REFERENCES publications(tenant_id, deployment_id, publication_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, site_id, screen_id)
+        REFERENCES screen_instances(tenant_id, deployment_id, site_id, screen_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE backup_records (
+    backup_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('VERIFIED', 'FAILED')),
+    bundle_name TEXT NOT NULL UNIQUE,
+    manifest_hash TEXT NOT NULL UNIQUE,
+    ciphertext_hash TEXT NOT NULL,
+    recovery_encryption_key_id TEXT NOT NULL,
+    logical_schema_version TEXT NOT NULL,
+    migration_versions_json TEXT NOT NULL,
+    safe_row_counts_json TEXT NOT NULL,
+    audit_head_hash TEXT,
+    ciphertext_size INTEGER NOT NULL CHECK (ciphertext_size >= 0),
+    duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+    reason TEXT NOT NULL,
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    verified_at REAL,
+    UNIQUE (tenant_id, deployment_id, backup_id)
+);
+
+CREATE TABLE restore_plans (
+    restore_plan_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    backup_id TEXT NOT NULL,
+    backup_manifest_hash TEXT NOT NULL,
+    recovery_source_mode TEXT NOT NULL CHECK (
+        recovery_source_mode = 'ONLINE_ACTIVE_STORE'
+    ),
+    authorization_mode TEXT NOT NULL CHECK (
+        authorization_mode = 'STANDARD_HIGH_RISK'
+    ),
+    expected_metadata_revision INTEGER NOT NULL CHECK (expected_metadata_revision >= 1),
+    findings_json TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (
+        state IN ('READY', 'EXECUTED', 'ABORTED', 'FAILED')
+    ),
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    UNIQUE (tenant_id, deployment_id, restore_plan_id),
+    FOREIGN KEY (tenant_id, deployment_id, backup_id)
+        REFERENCES backup_records(tenant_id, deployment_id, backup_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE restore_executions (
+    restore_execution_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    restore_plan_id TEXT NOT NULL,
+    backup_id TEXT NOT NULL,
+    high_risk_action_id TEXT NOT NULL,
+    retained_previous_store_name TEXT NOT NULL,
+    restored_runtime_binding_hash TEXT NOT NULL,
+    reconciled_security_hash TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+    result TEXT NOT NULL CHECK (result = 'COMPLETED'),
+    created_at REAL NOT NULL,
+    FOREIGN KEY (tenant_id, deployment_id, restore_plan_id)
+        REFERENCES restore_plans(tenant_id, deployment_id, restore_plan_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, backup_id)
+        REFERENCES backup_records(tenant_id, deployment_id, backup_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (high_risk_action_id)
+        REFERENCES high_risk_actions(high_risk_action_id) ON DELETE RESTRICT
+);
+
+CREATE TABLE retention_runs (
+    retention_run_id TEXT PRIMARY KEY,
+    retention_days INTEGER NOT NULL CHECK (retention_days >= 1),
+    deleted_runtime_detail_count INTEGER NOT NULL CHECK (
+        deleted_runtime_detail_count >= 0
+    ),
+    protected_control_plane_counts_hash TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
+CREATE TRIGGER config_draft_revisions_no_update
+BEFORE UPDATE ON config_draft_revisions
+BEGIN
+    SELECT RAISE(ABORT, 'config draft revisions are immutable');
+END;
+
+CREATE TRIGGER config_draft_revisions_no_delete
+BEFORE DELETE ON config_draft_revisions
+BEGIN
+    SELECT RAISE(ABORT, 'config draft revisions are immutable');
+END;
+
+CREATE TRIGGER resolution_fingerprints_no_update
+BEFORE UPDATE ON resolution_fingerprints
+BEGIN
+    SELECT RAISE(ABORT, 'resolution fingerprints are immutable');
+END;
+
+CREATE TRIGGER resolution_fingerprints_no_delete
+BEFORE DELETE ON resolution_fingerprints
+BEGIN
+    SELECT RAISE(ABORT, 'resolution fingerprints are immutable');
+END;
+
+CREATE TRIGGER validation_records_no_update
+BEFORE UPDATE ON validation_records
+BEGIN
+    SELECT RAISE(ABORT, 'validation records are immutable');
+END;
+
+CREATE TRIGGER validation_records_no_delete
+BEFORE DELETE ON validation_records
+BEGIN
+    SELECT RAISE(ABORT, 'validation records are immutable');
+END;
+
+CREATE TRIGGER preview_records_no_update
+BEFORE UPDATE ON preview_records
+BEGIN
+    SELECT RAISE(ABORT, 'preview records are immutable');
+END;
+
+CREATE TRIGGER preview_records_no_delete
+BEFORE DELETE ON preview_records
+BEGIN
+    SELECT RAISE(ABORT, 'preview records are immutable');
+END;
+
+CREATE TRIGGER config_approval_records_no_update
+BEFORE UPDATE ON config_approval_records
+BEGIN
+    SELECT RAISE(ABORT, 'config approval records are immutable');
+END;
+
+CREATE TRIGGER config_approval_records_no_delete
+BEFORE DELETE ON config_approval_records
+BEGIN
+    SELECT RAISE(ABORT, 'config approval records are immutable');
+END;
+
+CREATE TRIGGER config_releases_no_update
+BEFORE UPDATE ON config_releases
+BEGIN
+    SELECT RAISE(ABORT, 'config releases are immutable');
+END;
+
+CREATE TRIGGER config_releases_no_delete
+BEFORE DELETE ON config_releases
+BEGIN
+    SELECT RAISE(ABORT, 'config releases are immutable');
+END;
+
+CREATE TRIGGER release_targets_no_update
+BEFORE UPDATE ON release_targets
+BEGIN
+    SELECT RAISE(ABORT, 'release targets are immutable');
+END;
+
+CREATE TRIGGER release_targets_no_delete
+BEFORE DELETE ON release_targets
+BEGIN
+    SELECT RAISE(ABORT, 'release targets are immutable');
+END;
+
+CREATE TRIGGER publications_plan_fields_immutable
+BEFORE UPDATE OF
+    release_id, screen_group_id, target_set_hash, group_revision,
+    actor_user_id, high_risk_action_id, reason, created_at
+ON publications
+BEGIN
+    SELECT RAISE(ABORT, 'publication plans are immutable');
+END;
+
+CREATE TRIGGER publications_no_delete
+BEFORE DELETE ON publications
+BEGIN
+    SELECT RAISE(ABORT, 'publication plans are immutable');
+END;
+
+CREATE TRIGGER runtime_binding_history_no_update
+BEFORE UPDATE ON runtime_binding_history
+BEGIN
+    SELECT RAISE(ABORT, 'runtime binding history is immutable');
+END;
+
+CREATE TRIGGER runtime_binding_history_no_delete
+BEFORE DELETE ON runtime_binding_history
+BEGIN
+    SELECT RAISE(ABORT, 'runtime binding history is immutable');
+END;
+
+CREATE TRIGGER backup_records_no_delete
+BEFORE DELETE ON backup_records
+BEGIN
+    SELECT RAISE(ABORT, 'backup records are retained');
+END;
+
+CREATE TRIGGER restore_executions_no_update
+BEFORE UPDATE ON restore_executions
+BEGIN
+    SELECT RAISE(ABORT, 'restore executions are immutable');
+END;
+
+CREATE TRIGGER restore_executions_no_delete
+BEFORE DELETE ON restore_executions
+BEGIN
+    SELECT RAISE(ABORT, 'restore executions are immutable');
+END;
+"""
+
+MIGRATION_003_CHECKSUM_SHA256 = hashlib.sha256(PUBLISH_RECOVERY_SCHEMA_SQL.encode("utf-8")).hexdigest()
 MIGRATIONS = (
     (MIGRATION_001_VERSION, MIGRATION_001_CHECKSUM_SHA256, SCHEMA_SQL),
     (MIGRATION_002_VERSION, MIGRATION_002_CHECKSUM_SHA256, INVENTORY_SCHEMA_SQL),
+    (
+        MIGRATION_003_VERSION,
+        MIGRATION_003_CHECKSUM_SHA256,
+        PUBLISH_RECOVERY_SCHEMA_SQL,
+    ),
 )
-MIGRATION_VERSION = MIGRATION_002_VERSION
-MIGRATION_CHECKSUM_SHA256 = MIGRATION_002_CHECKSUM_SHA256
+MIGRATION_VERSION = MIGRATION_003_VERSION
+MIGRATION_CHECKSUM_SHA256 = MIGRATION_003_CHECKSUM_SHA256
 
 
 class ControlPlaneStore:
@@ -498,6 +1136,8 @@ class ControlPlaneStore:
                     self._execute_script(connection, script)
                     if version == MIGRATION_002_VERSION:
                         self._backfill_preview_inventory(connection, now)
+                    if version == MIGRATION_003_VERSION:
+                        self._append_p13_migration_audit(connection, now)
                     connection.execute(
                         """
                         INSERT INTO schema_migrations(version, checksum_sha256, applied_at)
@@ -746,6 +1386,76 @@ class ControlPlaneStore:
                 event_id,
                 deployment_id,
                 json.dumps(details, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+                previous_hash,
+                event_hash,
+                now,
+            ),
+        )
+
+    @staticmethod
+    def _append_p13_migration_audit(
+        connection: sqlite3.Connection,
+        now: float,
+    ) -> None:
+        metadata = connection.execute("SELECT * FROM control_plane_metadata WHERE singleton = 1").fetchone()
+        if metadata is None:
+            return
+        previous = connection.execute(
+            "SELECT event_hash FROM security_audit_events ORDER BY sequence DESC LIMIT 1"
+        ).fetchone()
+        previous_hash = previous["event_hash"] if previous else None
+        event_id = uuid7()
+        details = {
+            "migration_version": MIGRATION_003_VERSION,
+            "preserved_screen_count": connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM screen_instances
+                WHERE tenant_id = ? AND deployment_id = ?
+                """,
+                (metadata["tenant_id"], metadata["deployment_id"]),
+            ).fetchone()["count"],
+            "runtime_bindings_enabled_for_release": True,
+        }
+        payload = canonical_json(
+            {
+                "event_id": event_id,
+                "event_type": "PUBLISH_ROLLBACK_RECOVERY_SCHEMA_MIGRATED",
+                "actor_type": "LOCAL_MIGRATION",
+                "actor_id": None,
+                "target_type": "DEPLOYMENT",
+                "target_id": metadata["deployment_id"],
+                "outcome": "SUCCESS",
+                "reason": "named forward migration",
+                "details": details,
+                "previous_event_hash": previous_hash,
+                "created_at": now,
+            }
+        )
+        event_hash = hashlib.sha256(
+            b"shuziren:p1:security-audit-event:v1\0" + payload.encode("utf-8")
+        ).hexdigest()
+        connection.execute(
+            """
+            INSERT INTO security_audit_events(
+                event_id, event_type, actor_type, actor_id, target_type, target_id,
+                outcome, reason, details_json, previous_event_hash, event_hash,
+                event_hash_schema_version, created_at
+            ) VALUES (
+                ?, 'PUBLISH_ROLLBACK_RECOVERY_SCHEMA_MIGRATED',
+                'LOCAL_MIGRATION', NULL, 'DEPLOYMENT', ?, 'SUCCESS',
+                'named forward migration', ?, ?, ?,
+                'p1_security_audit_event_hash_v1', ?
+            )
+            """,
+            (
+                event_id,
+                metadata["deployment_id"],
+                json.dumps(
+                    details,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
                 previous_hash,
                 event_hash,
                 now,

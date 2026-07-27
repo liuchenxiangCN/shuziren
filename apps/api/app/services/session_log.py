@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel
 
-
 _SECRET_PATTERNS = [
     re.compile(
         r"\b(api[_-]?key|access[_-]?key|secret|token|password)\b\s*[:=]\s*[\"']?[^,\s\"'&]+",
@@ -21,10 +20,13 @@ _SECRET_PATTERNS = [
 
 
 class SessionLogStore:
-    def __init__(self, sqlite_path: str | Path) -> None:
+    def __init__(self, sqlite_path: str | Path, *, retention_days: int = 3) -> None:
+        if not 1 <= retention_days <= 3650:
+            raise ValueError("retention_days must be between 1 and 3650")
         self.sqlite_path = Path(sqlite_path)
+        self.retention_days = retention_days
 
-    def initialize(self) -> None:
+    def initialize(self) -> dict[str, Any]:
         self.sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             connection.execute(
@@ -43,7 +45,49 @@ class SessionLogStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_log_retention_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    retention_days INTEGER NOT NULL,
+                    cutoff_at TEXT NOT NULL,
+                    deleted_runtime_detail_count INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
             connection.commit()
+        return self.cleanup_expired()
+
+    def cleanup_expired(self, *, now: datetime | None = None) -> dict[str, Any]:
+        current = now or self._now_datetime()
+        if current.tzinfo is None:
+            raise ValueError("now must be timezone-aware")
+        cutoff = current - timedelta(days=self.retention_days)
+        cutoff_text = cutoff.isoformat(timespec="seconds")
+        created_at = current.isoformat(timespec="seconds")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM session_logs WHERE created_at < ?",
+                (cutoff_text,),
+            )
+            deleted = max(0, cursor.rowcount)
+            connection.execute(
+                """
+                INSERT INTO session_log_retention_runs(
+                    retention_days, cutoff_at,
+                    deleted_runtime_detail_count, created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (self.retention_days, cutoff_text, deleted, created_at),
+            )
+            connection.commit()
+        return {
+            "retention_days": self.retention_days,
+            "cutoff_at": cutoff_text,
+            "deleted_runtime_detail_count": deleted,
+            "created_at": created_at,
+        }
 
     def is_available(self) -> bool:
         try:
@@ -259,11 +303,15 @@ class SessionLogStore:
 
     @staticmethod
     def _now() -> str:
+        return SessionLogStore._now_datetime().isoformat(timespec="seconds")
+
+    @staticmethod
+    def _now_datetime() -> datetime:
         try:
             tz = ZoneInfo("Asia/Shanghai")
         except ZoneInfoNotFoundError:
             tz = timezone(timedelta(hours=8), name="Asia/Shanghai")
-        return datetime.now(tz).isoformat(timespec="seconds")
+        return datetime.now(tz)
 
     @staticmethod
     def _to_json(value: BaseModel | dict[str, Any] | None) -> str | None:

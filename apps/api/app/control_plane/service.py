@@ -8,12 +8,14 @@ import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote_plus, urlsplit
 
 from cryptography.exceptions import InvalidTag
 
 from app.control_plane.errors import ControlPlaneError
+from app.control_plane.p1_3 import P13ControlPlane
 from app.control_plane.security import (
     Ciphertext,
     PasswordPolicy,
@@ -93,6 +95,11 @@ OPERATION_PERMISSION = {
     "createUser": "user.manage",
     "issueDeviceEnrollment": "device.enroll",
     "revokeDeviceCredential": "device.revoke",
+    "publishToScreen": "release.publish",
+    "publishToScreenGroup": "release.publish",
+    "rollbackScreen": "release.rollback",
+    "rollbackScreenGroup": "release.rollback",
+    "executeRestorePlan": "backup.restore",
 }
 
 IDEMPOTENCY_OPERATION_ROUTES = {
@@ -140,6 +147,78 @@ IDEMPOTENCY_OPERATION_ROUTES = {
     "createDigitalHumanInstance": (
         "createDigitalHumanInstance",
         "/api/v1/control-plane/screen-instances/{screen_id}/digital-human-instances",
+    ),
+    "createConfigDraft": (
+        "createConfigDraft",
+        "/api/v1/control-plane/config-drafts",
+    ),
+    "reviseConfigDraft": (
+        "reviseConfigDraft",
+        "/api/v1/control-plane/config-drafts/{draft_id}:revise",
+    ),
+    "abandonConfigDraft": (
+        "abandonConfigDraft",
+        "/api/v1/control-plane/config-drafts/{draft_id}:abandon",
+    ),
+    "validateConfigDraft": (
+        "validateConfigDraft",
+        "/api/v1/control-plane/config-drafts/{draft_id}:validate",
+    ),
+    "previewConfigDraft": (
+        "previewConfigDraft",
+        "/api/v1/control-plane/config-drafts/{draft_id}:preview",
+    ),
+    "submitConfigDraftApproval": (
+        "submitConfigDraftApproval",
+        "/api/v1/control-plane/config-drafts/{draft_id}:submit-for-approval",
+    ),
+    "approveConfigDraft": (
+        "approveConfigDraft",
+        "/api/v1/control-plane/config-drafts/{draft_id}:approve",
+    ),
+    "rejectConfigDraft": (
+        "rejectConfigDraft",
+        "/api/v1/control-plane/config-drafts/{draft_id}:reject",
+    ),
+    "createConfigRelease": (
+        "createConfigRelease",
+        "/api/v1/control-plane/config-drafts/{draft_id}:release",
+    ),
+    "request:publishToScreen": (
+        "publishToScreen",
+        "/api/v1/control-plane/screen-instances/{screen_id}/publications",
+    ),
+    "request:publishToScreenGroup": (
+        "publishToScreenGroup",
+        "/api/v1/control-plane/screen-groups/{screen_group_id}/publications",
+    ),
+    "request:rollbackScreen": (
+        "rollbackScreen",
+        "/api/v1/control-plane/screen-instances/{screen_id}/rollbacks",
+    ),
+    "request:rollbackScreenGroup": (
+        "rollbackScreenGroup",
+        "/api/v1/control-plane/screen-groups/{screen_group_id}/rollbacks",
+    ),
+    "acknowledgeDeviceRelease": (
+        "acknowledgeDeviceRelease",
+        "/api/v1/device/config-releases/{release_target_id}:ack",
+    ),
+    "createBackup": (
+        "createBackup",
+        "/api/v1/control-plane/backups",
+    ),
+    "verifyBackup": (
+        "verifyBackup",
+        "/api/v1/control-plane/backups/{backup_id}:verify",
+    ),
+    "createRestorePlan": (
+        "createRestorePlan",
+        "/api/v1/control-plane/restore-plans",
+    ),
+    "request:executeRestorePlan": (
+        "executeRestorePlan",
+        "/api/v1/control-plane/restore-plans/{restore_plan_id}:execute",
     ),
 }
 
@@ -231,6 +310,7 @@ class ControlPlaneService:
         root_key_b64: str,
         *,
         preview_mode: bool,
+        backup_root: str | Path | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.store = ControlPlaneStore(database_path)
@@ -240,6 +320,12 @@ class ControlPlaneService:
         self.preview_mode = preview_mode
         self.clock = clock
         self.store.initialize(self.clock())
+        self.p1_3 = P13ControlPlane(
+            self,
+            backup_root
+            if backup_root is not None
+            else Path(database_path).resolve().parent / "control-plane-backups",
+        )
 
     def status(self) -> dict[str, Any]:
         with self.store.connect() as connection:
@@ -260,7 +346,7 @@ class ControlPlaneService:
             "migration_version": migration["version"] if migration else None,
             "migration_checksum_sha256": migration["checksum_sha256"] if migration else None,
             "production_ready": False,
-            "production_readiness_reason": "P1.2 development preview is not production activation evidence",
+            "production_readiness_reason": "P1.3 development preview is not production activation evidence",
         }
 
     def initialize_preview(
@@ -3022,7 +3108,14 @@ class ControlPlaneService:
                 or approver["authorization_epoch"] != action["approver_authorization_epoch"]
             ):
                 raise ControlPlaneError(409, "HIGH_RISK_ACTION_MISMATCH", "Approver authorization changed")
-            result = self._execute_protected_effect(connection, operation_id, command, context.principal, now)
+            result = self._execute_protected_effect(
+                connection,
+                operation_id,
+                command,
+                context.principal,
+                now,
+                high_risk_action_id=high_risk_action_id,
+            )
             stored_result = result
             if operation_id == "issueDeviceEnrollment" and one_time_principal is not None:
                 self._store_one_time_replay(
@@ -3072,6 +3165,8 @@ class ControlPlaneService:
         command: dict[str, Any],
         principal: Principal,
         now: float,
+        *,
+        high_risk_action_id: str | None = None,
     ) -> dict[str, Any]:
         if operation_id == "createUser":
             user_id = opaque_id("usr")
@@ -3213,7 +3308,27 @@ class ControlPlaneService:
                 "family_etag": self._etag("device-family", row["revision"] + 1),
                 "state": "REVOKED",
             }
-        raise ControlPlaneError(501, "NOT_IMPLEMENTED", "Protected operation is not implemented in P1.1")
+        if operation_id in {
+            "publishToScreen",
+            "publishToScreenGroup",
+            "rollbackScreen",
+            "rollbackScreenGroup",
+        }:
+            if high_risk_action_id is None:
+                raise ControlPlaneError(
+                    409,
+                    "HIGH_RISK_ACTION_MISMATCH",
+                    "Protected operation evidence is missing",
+                )
+            return self.p1_3.execute_protected_effect(
+                connection,
+                operation_id,
+                command,
+                principal,
+                now,
+                high_risk_action_id,
+            )
+        raise ControlPlaneError(501, "NOT_IMPLEMENTED", "Protected operation is not implemented")
 
     def _issue_session(self, connection: sqlite3.Connection, user_id: str, now: float) -> SessionIssue:
         user = connection.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
