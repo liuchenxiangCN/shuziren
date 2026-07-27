@@ -3,16 +3,21 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE_VERIFYING`
+- State: `AWAITING_EXPLICIT_USER_DECISION`
 - Result: target control-plane contract result pack
-- Base accepted version: `226e2d48d0731f989c3895e4abc5237cee2b2d10` (G0)
-- Candidate: working-tree target-contract candidate based on `226e2d48d0731f989c3895e4abc5237cee2b2d10`; fingerprint recorded in `manifest.json`
-- Database schema / migration: `N/A` — target design only; no runtime database changes
+- Base accepted version: commit `226e2d48d0731f989c3895e4abc5237cee2b2d10`, tree `f2846576b1184fcf522151057215fb41a9efc4d0` (G0)
+- Candidate: commit `d78de0cfce64777678ec606b03470d6ffd5e970f`, tree `8538a8b89b789ebac7ff436ec17c51d1fa86bb47`
+- Candidate fingerprint: `8B894F9EAF0A491A3F5DA3B367B4D03DBD56C63A0470B5840E354CA06160C633` over 26 non-evidence files
+- Scope: 31 changed documentation and validation-script files; runtime unchanged
+- Database schema / migration: `N/A` — target design only; no runtime database or migration changed
+- Gate summary: `PASS`
 - User decision: Pending
+
+The candidate is ready for an explicit user decision. It is not accepted until the user records `通过`, `条件通过`, `不通过` or `Blocked`.
 
 ## Observable Outcome
 
-P1.0 will let a reviewer understand, without reading runtime source code:
+P1.0 lets a reviewer understand, without reading runtime source code:
 
 - how one Site owns three isolated screens and digital-human instances;
 - how control-plane users, screen devices and FineReport data identities stay separate;
@@ -31,6 +36,7 @@ Nothing in this result card claims those target capabilities are implemented.
 - Entry point: [../../../product/contracts/README.md](../../../product/contracts/README.md)
 - Machine contract: [../../../product/contracts/p1-target-contract.json](../../../product/contracts/p1-target-contract.json)
 - Test data: `three_screen_fixture` in the machine contract: one reference Site, three screens, three DigitalHumanInstances and three distinct RuntimeBindings.
+- Evidence root: `logs/productization/P1.0-20260727T064034Z`
 - Base accepted version: G0 commit `226e2d48d0731f989c3895e4abc5237cee2b2d10`.
 
 ## Frozen User Scenarios
@@ -52,7 +58,7 @@ Nothing in this result card claims those target capabilities are implemented.
    - Safe failure: screens 1 and 3 remain unchanged, and no historical release can be edited.
 6. Review backup and restore.
    - Expected: hourly separate-mount encrypted bundles target one-hour RPO / two-hour RTO; restore stages, verifies, checks an independently anchored RecoverySecurityLedger and reconciles security before completion.
-   - Safe failure: missing hashes/keys/ledger anchor, in-place overwrite or old account/password/device credential resurrection fails closed and leaves the accepted store recoverable.
+   - Safe failure: missing hashes, keys or ledger anchors, in-place overwrite, or old account/password/device credential resurrection fails closed and leaves the accepted store recoverable.
 7. Match API examples to the same operations.
    - Expected: separate user/device namespaces, per-request authorization, idempotency, ETags, target generations and safe errors.
    - Safe failure: client-selected ownership, missing preconditions or one idempotency key with different content is rejected.
@@ -64,20 +70,19 @@ Nothing in this result card claims those target capabilities are implemented.
 - No FineReport plugin or Provider implementation.
 - No real backup, restore, authentication or three-screen execution claim.
 - No P1.1, P1.2 or P1.3 implementation.
+- ADR-0028 remains `Proposed`; P1.1 remains queued.
 
-## Required Gates
+## Gate Results
 
-Current candidate gates:
-
-- Contract and machine-artifact validation: `PASS`.
-- Domain / data / identity consistency: `PASS`.
-- RBAC and Secret negative fixtures: `PASS`.
-- Enrollment and release state-machine negative fixtures: `PASS`.
-- Three-screen targeting and immutable-release fixtures: `PASS`.
-- Storage / recovery decision completeness: `PASS` for design; real recovery is `N/A` in this design-only batch.
-- Documentation lifecycle and diff checks: `PASS`.
-- Independent Codex review: in progress; final result is recorded in `manifest.json`.
-- Rollback proof to the accepted G0 version: in progress; final result is recorded in `manifest.json`.
+- Machine contract and Markdown consistency on PowerShell 7 and PowerShell 5.1: `PASS` — 2,722 checks, 86 operations, 32 entities and 5 roles on each host.
+- Registry consistency: `PASS` — 23 permissions, 16 state machines, 31 internal security records, 40 errors, 18 key purposes and 20 four-eyes operations.
+- Contract negative-fixture self-test: `PASS` — 191 cases: 1 baseline, 166 semantic mutations on PowerShell 5.1 and 12 raw-JSON mutations on each host (24 executions).
+- Documentation lifecycle on both hosts: `PASS` — 298 checks, 135 links, 108 files and 1 plugin file.
+- Candidate scope and Secret scan: `PASS` — 31 changed documentation/script files, no runtime changes and 0 Secret findings.
+- Independent Codex review: `PASS` — zero blocking findings; the report is hash-bound in `manifest.json`.
+- Rollback proof: `PASS` — exact G0 recovery tree, both-host lifecycle result of 267 checks / 122 links / 97 files / 0 plugin files, and all P1-only paths absent.
+- Lifecycle-lint self-test: `N/A` — the lifecycle lint implementation did not change.
+- Runtime, database, real IAM, real three-screen, RPO/RTO, PostgreSQL and FineReport execution gates: `N/A` with reasons recorded in `manifest.json`.
 
 ## Immediate Failure Conditions
 
@@ -93,4 +98,4 @@ Current candidate gates:
 
 ## Decision
 
-After verification, record `通过`, `条件通过`, `不通过` or `Blocked` in `USER_DECISION.md`.
+Record `通过`, `条件通过`, `不通过` or `Blocked` in `USER_DECISION.md`. Until that explicit decision, P1.0 remains `AWAITING_EXPLICIT_USER_DECISION` and P1.1 remains queued.

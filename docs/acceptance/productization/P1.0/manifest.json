@@ -2,15 +2,27 @@
   "schema_version": 1,
   "batch": "P1.0",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
-  "generated_at": "2026-07-27T00:40:18.8520544Z",
-  "gate_summary": "PASS_PENDING_INDEPENDENT_REVIEW_AND_ROLLBACK",
-  "acceptance_state": "CANDIDATE_VERIFYING",
+  "generated_at": "2026-07-27T06:59:52.2406653Z",
+  "candidate_evidence_generated_at": "2026-07-27T06:59:52.2406653Z",
+  "gate_summary": "PASS",
+  "acceptance_state": "AWAITING_EXPLICIT_USER_DECISION",
   "candidate": {
-    "kind": "working_tree",
+    "kind": "commit",
+    "commit": "d78de0cfce64777678ec606b03470d6ffd5e970f",
+    "tree": "8538a8b89b789ebac7ff436ec17c51d1fa86bb47",
     "base_accepted_commit": "226e2d48d0731f989c3895e4abc5237cee2b2d10",
-    "fingerprint_sha256": "DE13234D6DDC51F2A34F4FFFD4AFF020A0BB0EF53B4704D118EF4DAFF6632E71",
+    "base_accepted_tree": "f2846576b1184fcf522151057215fb41a9efc4d0",
+    "fingerprint_sha256": "8B894F9EAF0A491A3F5DA3B367B4D03DBD56C63A0470B5840E354CA06160C633",
     "file_count": 26,
-    "scope": "P1.0 target contracts, proposed ADR, governance synchronization and validation scripts; runtime unchanged"
+    "fingerprint_file_count": 26,
+    "changed_file_count": 31,
+    "scope": "P1.0 target contracts, proposed ADR, governance synchronization and validation scripts; runtime unchanged",
+    "fingerprint_scope": "candidate files excluding docs/acceptance/productization/P1.0 and logs",
+    "runtime_changed": false,
+    "image_digest": {
+      "status": "N/A",
+      "reason": "No image or runtime package was built"
+    }
   },
   "database": {
     "logical_schema_version": "p1_control_plane_001",
@@ -18,40 +30,217 @@
     "migration_version": "N/A",
     "reason": "Target design only; no runtime database or migration changed"
   },
+  "contract_counts": {
+    "operations": 86,
+    "entities": 32,
+    "roles": 5,
+    "permissions": 23,
+    "state_machines": 16,
+    "internal_security_records": 31,
+    "errors": 40,
+    "key_purposes": 18,
+    "four_eyes_operations": 20
+  },
   "gates": [
     {
-      "name": "p1_contract_validation",
+      "id": "p1_contract_validation_pwsh7",
       "status": "PASS",
-      "summary": "P1_CONTRACT_OK checks=1439 operations=70 entities=31 roles=5"
+      "command": "pwsh -File scripts/validate-p1-target-contracts.ps1",
+      "result": "P1_CONTRACT_OK checks=2722 operations=86 entities=32 roles=5",
+      "evidence_sha256": "17E9FE5AA228204A559E15995CC800CCCB5D3E8CE6C6C924C3BDB13461919106"
     },
     {
-      "name": "p1_negative_fixture_self_test",
+      "id": "p1_contract_validation_powershell51",
       "status": "PASS",
-      "summary": "P1_CONTRACT_SELF_TEST_OK cases=70"
+      "command": "powershell.exe -File scripts/validate-p1-target-contracts.ps1",
+      "result": "P1_CONTRACT_OK checks=2722 operations=86 entities=32 roles=5",
+      "evidence_sha256": "17E9FE5AA228204A559E15995CC800CCCB5D3E8CE6C6C924C3BDB13461919106"
     },
     {
-      "name": "documentation_lifecycle",
+      "id": "p1_negative_fixture_self_test",
       "status": "PASS",
-      "summary": "DOC_LIFECYCLE_OK checks=298 links=136 files=108 plugin_files=1"
+      "command": "powershell.exe -File scripts/test-p1-target-contracts.ps1",
+      "result": "P1_CONTRACT_SELF_TEST_OK cases=191",
+      "evidence": {
+        "baseline_cases": 1,
+        "semantic_rejections_powershell51": 166,
+        "raw_fixture_count": 12,
+        "raw_rejections_powershell51": 12,
+        "raw_rejections_pwsh7": 12,
+        "total_rejected_executions": 190
+      },
+      "evidence_sha256": "CBFC906C08BA44F2CC88505CA5934AB7C84D03A77B20497B8DCDE14434979058"
     },
     {
-      "name": "diff_checks",
+      "id": "strict_json_dual_host",
       "status": "PASS",
-      "summary": "git diff --check and git diff --cached --check returned no findings"
+      "result": "12 raw JSON fixtures were rejected under both Windows PowerShell 5.1 and PowerShell 7",
+      "evidence_sha256": "CBFC906C08BA44F2CC88505CA5934AB7C84D03A77B20497B8DCDE14434979058"
     },
     {
-      "name": "runtime_and_database",
+      "id": "authorization_secret_and_four_eyes_negative_rules",
+      "status": "PASS",
+      "result": "Default-deny field authorization, Secret redaction, direct-operation authorization and exact four-eyes invariants rejected unsafe mutations",
+      "evidence_sha256": "CBFC906C08BA44F2CC88505CA5934AB7C84D03A77B20497B8DCDE14434979058"
+    },
+    {
+      "id": "immutability_three_screen_restore_and_fence_negative_rules",
+      "status": "PASS",
+      "result": "Immutable release, cross-screen isolation, recovery-ledger, local authority and operational-fence mutations were rejected",
+      "evidence_sha256": "CBFC906C08BA44F2CC88505CA5934AB7C84D03A77B20497B8DCDE14434979058"
+    },
+    {
+      "id": "contract_registry_consistency",
+      "status": "PASS",
+      "result": "23 permissions; 16 state machines; 31 internal security records; 40 errors; 18 key purposes; 20 four-eyes operations",
+      "evidence_sha256": "B23214E074ED7582AD3E90109B9B2A181FDB408D9E738B093AED16E04ED66323"
+    },
+    {
+      "id": "documentation_lifecycle_pwsh7",
+      "status": "PASS",
+      "command": "pwsh -File scripts/lint-doc-lifecycle.ps1",
+      "result": "DOC_LIFECYCLE_OK checks=298 links=135 files=108 plugin_files=1",
+      "evidence_sha256": "2125FA2232F5A66882FD1BC4FF5B9CE52E29BCF669B13282C074B59B07A92485"
+    },
+    {
+      "id": "documentation_lifecycle_powershell51",
+      "status": "PASS",
+      "command": "powershell.exe -File scripts/lint-doc-lifecycle.ps1",
+      "result": "DOC_LIFECYCLE_OK checks=298 links=135 files=108 plugin_files=1",
+      "evidence_sha256": "2125FA2232F5A66882FD1BC4FF5B9CE52E29BCF669B13282C074B59B07A92485"
+    },
+    {
+      "id": "lifecycle_lint_self_test",
       "status": "N/A",
-      "reason": "P1.0 is target-contract design only and changes no runtime, implemented POC contract or database migration"
+      "reason": "The lifecycle lint implementation did not change"
+    },
+    {
+      "id": "candidate_scope",
+      "status": "PASS",
+      "result": "26 fingerprint files; 31 changed documentation/script paths; runtime_changed=false",
+      "evidence_sha256": "F4D1372E4654EC604AAC3E95FA471722EF023E519E12CBEFEDEF0971B71BD701"
+    },
+    {
+      "id": "secret_scan",
+      "status": "PASS",
+      "result": "31 changed files scanned; findings=0",
+      "evidence_sha256": "23B9F486FB486974953CF7C15B018E6DC86AE5ACEAD754058C2C5EB133277251"
+    },
+    {
+      "id": "diff_checks",
+      "status": "PASS",
+      "result": "Whitespace and changed-path checks returned no findings",
+      "evidence_sha256": "9D8E79E4C8C428FA8A21B0F4699BAF0C9868F48E2E6290DFB8045D3EFAD04B48"
+    },
+    {
+      "id": "independent_codex_review",
+      "status": "PASS",
+      "result": "Frozen commit and fingerprint are bound; blocking findings=0; non-blocking findings requiring candidate change=0",
+      "evidence_sha256": "720E1025275BF3F99DBD529A351D1EA0DC229110BDF32917F45577F5887DFDB6"
+    },
+    {
+      "id": "rollback_to_accepted_g0",
+      "status": "PASS",
+      "result": "Exact G0 recovery tree passed lifecycle on PowerShell 5.1 and PowerShell 7 with checks=267 links=122 files=97 plugin_files=0; P1-only paths absent",
+      "evidence_sha256": "4108046C46FFF3B0E2AFA42903D28E8D9376EDC0949F7373B23A6AAC7B2AAC8E"
+    },
+    {
+      "id": "runtime_build_and_functional_tests",
+      "status": "N/A",
+      "reason": "P1.0 is target-contract design only; no runtime file changed"
+    },
+    {
+      "id": "database_migration_and_restore_execution",
+      "status": "N/A",
+      "reason": "No runtime database or migration exists in this batch"
+    },
+    {
+      "id": "real_local_iam_and_device_credentials",
+      "status": "N/A",
+      "reason": "Identity and device trust are target contracts for P1.1"
+    },
+    {
+      "id": "real_three_screen_execution",
+      "status": "N/A",
+      "reason": "Three-screen target behavior belongs to P1.2-P1.3"
+    },
+    {
+      "id": "real_backup_rpo_rto_drill",
+      "status": "N/A",
+      "reason": "RPO and RTO targets are frozen here and measured in P1.3"
+    },
+    {
+      "id": "postgresql_certification",
+      "status": "N/A",
+      "reason": "PostgreSQL 16 remains UNVERIFIED until later implementation evidence"
+    },
+    {
+      "id": "finereport_plugin",
+      "status": "N/A",
+      "reason": "The P2 external gate remains blocked and unchanged"
     }
   ],
-  "independent_reviews": [],
-  "evidence": {},
+  "independent_reviews": [
+    {
+      "task_id": "/root/p1_final_independent_review",
+      "reviewer": "independent Codex reviewer",
+      "status": "PASS",
+      "conclusion": "Frozen core commit d78de0cfce64777678ec606b03470d6ffd5e970f and fingerprint 8B894F9EAF0A491A3F5DA3B367B4D03DBD56C63A0470B5840E354CA06160C633 are independently bound with no blocking finding",
+      "report_sha256": "720E1025275BF3F99DBD529A351D1EA0DC229110BDF32917F45577F5887DFDB6",
+      "binding_state": "BOUND"
+    }
+  ],
+  "evidence": {
+    "root": "logs/productization/P1.0-20260727T064034Z",
+    "raw_evidence_manifest_sha256": "48DBDE5B08E62B6F0ED58DC2197FB6A433CA6C6C9F6A9B9C58AB68E567FDDE88",
+    "gate_results_sha256": "99856505D8B3ABDDAE5761DFD307186BAAD0F9EFE4294B4443C1AF771AEBECAB",
+    "candidate_binding_sha256": "A08E3D460EBA16CC3E5E310E3A392B0F8E918E5D7EC6FC9CABB483C0EDB13C90",
+    "candidate_fingerprint_json_sha256": "BBD75AC8EF52C495A9F9AD61CBFF5A2CC2128DA104E49ED2A8729093E0CCF453",
+    "candidate_diff_file_list_sha256": "74A5A959822E1F579B70F05DE1C7999610F81CB57B4EDFB9EF786D82644A00CC",
+    "candidate_fingerprint_file_list_sha256": "13872D1F51EF02FC4D80EAD510C799C29CD8D33CA723699329A0EAD0A10251C2",
+    "machine_contract_sha256": "B23214E074ED7582AD3E90109B9B2A181FDB408D9E738B093AED16E04ED66323",
+    "validator_sha256": "19393E93E1D4222D6E2D0801BB6EAF4ABCAF4ED8B868E6C0480B6A02F28F15EF",
+    "self_test_sha256": "B9B61094DB43357879C72542E2020C2EE4239F493C2CD98507E40C4174E031D8",
+    "validator_ps5_log_sha256": "17E9FE5AA228204A559E15995CC800CCCB5D3E8CE6C6C924C3BDB13461919106",
+    "validator_ps7_log_sha256": "17E9FE5AA228204A559E15995CC800CCCB5D3E8CE6C6C924C3BDB13461919106",
+    "self_test_log_sha256": "CBFC906C08BA44F2CC88505CA5934AB7C84D03A77B20497B8DCDE14434979058",
+    "lifecycle_ps5_log_sha256": "2125FA2232F5A66882FD1BC4FF5B9CE52E29BCF669B13282C074B59B07A92485",
+    "lifecycle_ps7_log_sha256": "2125FA2232F5A66882FD1BC4FF5B9CE52E29BCF669B13282C074B59B07A92485",
+    "diff_checks_log_sha256": "9D8E79E4C8C428FA8A21B0F4699BAF0C9868F48E2E6290DFB8045D3EFAD04B48",
+    "scope_sha256": "F4D1372E4654EC604AAC3E95FA471722EF023E519E12CBEFEDEF0971B71BD701",
+    "secret_scan_sha256": "23B9F486FB486974953CF7C15B018E6DC86AE5ACEAD754058C2C5EB133277251",
+    "independent_review_report_sha256": "720E1025275BF3F99DBD529A351D1EA0DC229110BDF32917F45577F5887DFDB6",
+    "rollback_proof_sha256": "4108046C46FFF3B0E2AFA42903D28E8D9376EDC0949F7373B23A6AAC7B2AAC8E",
+    "final_package_validator_ps5_log_sha256": "17E9FE5AA228204A559E15995CC800CCCB5D3E8CE6C6C924C3BDB13461919106",
+    "final_package_validator_ps7_log_sha256": "17E9FE5AA228204A559E15995CC800CCCB5D3E8CE6C6C924C3BDB13461919106",
+    "final_package_lifecycle_ps5_log_sha256": "2125FA2232F5A66882FD1BC4FF5B9CE52E29BCF669B13282C074B59B07A92485",
+    "final_package_lifecycle_ps7_log_sha256": "2125FA2232F5A66882FD1BC4FF5B9CE52E29BCF669B13282C074B59B07A92485",
+    "final_package_diff_checks_log_sha256": "9110779B8C2FB85A3D25AD0D7739B6D7A5DB90B029C0B071ED1538D699AC4234",
+    "final_package_secret_scan_sha256": "9A65626F1B03C54754AE5A7C12BEF3C7CD5367C3A8A887FBDAF76B619A9A7DD5",
+    "binding_state": "BOUND"
+  },
   "rollback": {
-    "status": "IN_PROGRESS"
+    "status": "PASS",
+    "target": "Exact accepted G0 recovery tree",
+    "accepted_commit": "226e2d48d0731f989c3895e4abc5237cee2b2d10",
+    "accepted_tree": "f2846576b1184fcf522151057215fb41a9efc4d0",
+    "archive_sha256": "597F26E1263E870A6F9517019A9F862233E0505AFB3201E3B689DE5A64DCC439",
+    "raw_proof_sha256": "4108046C46FFF3B0E2AFA42903D28E8D9376EDC0949F7373B23A6AAC7B2AAC8E",
+    "g0_external_manifest_sha256": "AD77F1C8D9061418845A296AC3CBC96D5A17F4EA8EF137CEE82ADC2FBCB8C96F",
+    "g0_external_user_decision_sha256": "60934E5163BC97A05141EAC64665ED4B5221FA470AB633C3E19220F0FDBEFFA9",
+    "recovery_lifecycle_pwsh7": "DOC_LIFECYCLE_OK checks=267 links=122 files=97 plugin_files=0",
+    "recovery_lifecycle_powershell51": "DOC_LIFECYCLE_OK checks=267 links=122 files=97 plugin_files=0",
+    "p1_only_paths_absent": true,
+    "workspace_restore_performed": false,
+    "reason_workspace_restore_not_performed": "Recovery was proven in an isolated tree; switching the active workspace requires a separately approved operation"
+  },
+  "governance": {
+    "adr_0028_status": "Proposed",
+    "p1_1_status": "QUEUED"
   },
   "user_decision": {
     "status": "PENDING",
+    "decision": null,
     "date": null,
     "conversation_reference": null
   }
