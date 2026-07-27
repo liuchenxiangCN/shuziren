@@ -21,6 +21,11 @@ from fastapi.responses import StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
+from app.control_plane.errors import ControlPlaneError
+from app.control_plane.router import control_plane_error_handler
+from app.control_plane.router import router as control_plane_router
+from app.control_plane.router import sanitized_validation_errors
+from app.control_plane.service import ControlPlaneService
 from app.models import (
     AsrTranscribeRequest,
     AsrTranscribeResponse,
@@ -114,13 +119,26 @@ session_logs = SessionLogStore(settings.sqlite_path)
 session_logs.initialize()
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
+app.state.control_plane_allowed_origins = tuple(settings.control_plane_allowed_origins)
+app.state.control_plane_service = (
+    ControlPlaneService(
+        settings.control_plane_db_path,
+        settings.control_plane_root_key_b64,
+        preview_mode=settings.control_plane_preview_mode,
+    )
+    if settings.control_plane_root_key_b64
+    else None
+)
+app.include_router(control_plane_router)
+app.add_exception_handler(ControlPlaneError, control_plane_error_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=sorted(set(settings.cors_origins) | set(settings.control_plane_allowed_origins)),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["ETag", "X-CSRF-Token", "X-Request-ID"],
 )
 
 
@@ -154,7 +172,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "error": {
                 "code": "VALIDATION_ERROR",
                 "message": "Request validation failed",
-                "details": exc.errors(),
+                "details": sanitized_validation_errors(exc),
             },
             "request_id": _request_id(request),
         },

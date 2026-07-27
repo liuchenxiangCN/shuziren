@@ -5,7 +5,7 @@
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
 - State: `IMPLEMENTATION_IN_PROGRESS`
 - Result: local identity and screen-device trust
-- Base accepted version: P1.0 acceptance-transition commit to be recorded before runtime implementation
+- Base accepted version: commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`, tree `33752e13a385b4980cd3ecca309ad0f27d9307ae`
 - Candidate: Pending
 - Database schema / migration: `p1_control_plane_001`; implementation and rollback evidence pending
 - Gate summary: Pending
@@ -29,6 +29,9 @@ The management UI and API must explain safe failures without exposing password, 
 - Management UI: `/manage`
 - Control-plane API: `/api/v1/control-plane`
 - Device API: `/api/v1/device`
+- Candidate API truth: [IMPLEMENTED_API.md](IMPLEMENTED_API.md)
+- Candidate data truth: [IMPLEMENTED_DATA.md](IMPLEMENTED_DATA.md)
+- Local preview procedure: [RUNBOOK.md](RUNBOOK.md)
 - Local preview setup: an explicit development-only initializer creates two separate administrator identities, one auditor and one implementation engineer plus one trust-only screen fixture.
 - Production startup must not auto-create users, passwords, roles, device targets or cryptographic keys.
 - Exact preview credentials are generated outside Git and never enter logs or evidence.
@@ -77,4 +80,4 @@ The management UI and API must explain safe failures without exposing password, 
 
 ## Rollback
 
-Target: the P1.0 acceptance-transition commit recorded before runtime implementation. Rollback procedure and post-restore verification remain Pending until the P1.1 candidate is frozen.
+Target: P1.0 acceptance-transition commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`. Rollback procedure and post-restore verification remain Pending until the P1.1 candidate is frozen.

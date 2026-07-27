@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Mock gateway API for the local digital human POC."
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "argon2-cffi>=25.1.0",
+    "cryptography>=45.0.0",
     "fastapi>=0.115.0",
     "httpx>=0.28.0",
     "pydantic-settings>=2.6.0",
@@ -14,3 +16,16 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+    "ruff>=0.12.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"

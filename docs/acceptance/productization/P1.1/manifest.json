@@ -3,10 +3,14 @@
   "batch": "P1.1",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
   "acceptance_state": "IMPLEMENTATION_IN_PROGRESS",
+  "base_accepted": {
+    "commit": "6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758",
+    "tree": "33752e13a385b4980cd3ecca309ad0f27d9307ae"
+  },
   "candidate": null,
   "database": {
     "logical_schema_version": "p1_control_plane_001",
-    "migration_version": "pending"
+    "migration_version": "001_initial_identity_device_trust"
   },
   "gates": [],
   "independent_reviews": [],

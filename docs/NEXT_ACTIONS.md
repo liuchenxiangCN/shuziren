@@ -35,6 +35,9 @@ P1.1 must provide:
 - [acceptance/productization/P1.1/KNOWN_LIMITATIONS.md](acceptance/productization/P1.1/KNOWN_LIMITATIONS.md)
 - [acceptance/productization/P1.1/manifest.json](acceptance/productization/P1.1/manifest.json)
 - [acceptance/productization/P1.1/USER_DECISION.md](acceptance/productization/P1.1/USER_DECISION.md)
+- [acceptance/productization/P1.1/IMPLEMENTED_API.md](acceptance/productization/P1.1/IMPLEMENTED_API.md)
+- [acceptance/productization/P1.1/IMPLEMENTED_DATA.md](acceptance/productization/P1.1/IMPLEMENTED_DATA.md)
+- [acceptance/productization/P1.1/RUNBOOK.md](acceptance/productization/P1.1/RUNBOOK.md)
 
 The user decision remains Pending until an explicit result decision is received.
 

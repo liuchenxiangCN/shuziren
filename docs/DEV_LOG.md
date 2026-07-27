@@ -18,6 +18,28 @@
 - P1.0 became the accepted rollback baseline and P1.1 Identity And Device Trust became the sole active result batch.
 - The P1.1 result card and non-scope were frozen before runtime implementation.
 
+### P1.1 Identity And Device Trust
+
+#### Completed Facts To Date
+
+- Added a separate P1.1 SQLite control-plane store at logical schema `p1_control_plane_001`; the POC `sessions.db` and existing POC route meanings are unchanged.
+- Added Argon2id local-password verification, progressive lockout, opaque server-side browser sessions, exact-Origin / CSRF enforcement, idle / absolute expiry and session rotation on reauthentication.
+- Added the exact accepted five-role permission catalog and API-side authorization; auditors can read sanitized audit events but cannot read user administration or device credential metadata.
+- Added typed high-risk action request, different-user approval / rejection and original-initiator exact-command resubmission for user creation, device enrollment and device-family revocation. Approval records evidence but cannot execute the effect.
+- Added one-time screen-bound enrollment, HMAC-only token / credential storage, AES-GCM five-minute exact response replay, device credential rotation with pending-successor activation and atomic whole-family revocation.
+- Added HMAC-chained append-only security audit records with SQLite update/delete denial triggers and sanitized API-denial events.
+- Added `/manage` as a separate management preview without changing the existing conversation, Ops or POC configuration views.
+- Added an explicit development-only initializer. Production startup does not auto-create identities, passwords, roles, screen targets or cryptographic keys.
+- Kept Site / ScreenGroup / production ScreenInstance inventory, publication, rollback, recovery, Secret and FineReport identity behavior outside P1.1.
+
+#### Verification To Date
+
+- Backend Ruff formatting/check and four integration scenarios pass, covering schema repeatability, password/session/CSRF/lockout, auditor denial, different-user command binding, enrollment replay, rotation activation, predecessor rejection, whole-family revocation and database/audit plaintext scans.
+- The Vue TypeScript check and Vite production build pass.
+- Browser DOM verification at 1280 by 720 confirms the `/manage` login view has no horizontal overflow, exposes an accessible username/password/login structure and uses a password input; no browser console warning/error was present.
+- A browser screenshot attempt timed out and is not counted as screenshot evidence.
+- Docker / Compose preview is Blocked on the current host because the Docker CLI is unavailable. The existing POC precheck also emitted unavailable-service property-access errors after reporting that environmental blocker; no container result is claimed.
+
 ### P1.0 Target Contract Result Pack
 
 #### Completed Facts

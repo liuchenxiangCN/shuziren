@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     tts_cache_dir: str = Field(default=str(PROJECT_ROOT / "data" / "tts-cache"))
     config_overrides_dir: str = Field(default=str(PROJECT_ROOT / "data" / "config-overrides"))
     config_admin_token: str = ""
+    control_plane_db_path: str = Field(default=str(PROJECT_ROOT / "data" / "control-plane.db"))
+    control_plane_root_key_b64: str = ""
+    control_plane_preview_mode: bool = False
+    control_plane_allowed_origins: list[str] = [
+        "http://localhost:18000",
+        "http://127.0.0.1:18000",
+    ]
 
     dora_base_url: str = ""
     dora_api_key: str = ""
