@@ -39,6 +39,8 @@ class BackupIntegrityError(RuntimeError):
 @dataclass(frozen=True)
 class VerifiedSnapshot:
     manifest: dict[str, Any]
+    manifest_hash: str
+    ciphertext_hash: str
     native_snapshot: bytes
     logical_export: bytes
     safe_row_counts: dict[str, int]
@@ -182,6 +184,8 @@ class BackupManager:
         return {
             "outcome": "VERIFIED",
             "manifest": snapshot.manifest,
+            "manifest_hash": snapshot.manifest_hash,
+            "ciphertext_hash": snapshot.ciphertext_hash,
             "safe_row_counts": snapshot.safe_row_counts,
             "duration_ms": max(0, int((perf_counter() - started) * 1000)),
         }
@@ -218,12 +222,14 @@ class BackupManager:
         encryption = manifest.get("encryption")
         if not isinstance(header, dict) or not isinstance(encryption, dict):
             raise BackupIntegrityError("Backup authenticated metadata is missing")
+        manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
+        ciphertext_hash = hashlib.sha256(payload).hexdigest()
         if header.get("recovery_encryption_key_id") != self.keys.key_id(BACKUP_PURPOSE):
             raise BackupIntegrityError("Backup recovery key is unavailable")
         aad = canonical_json(header).encode("utf-8")
         if hashlib.sha256(aad).hexdigest() != manifest.get("authenticated_header_sha256"):
             raise BackupIntegrityError("Backup authenticated metadata changed")
-        if hashlib.sha256(payload).hexdigest() != encryption.get("ciphertext_sha256"):
+        if ciphertext_hash != encryption.get("ciphertext_sha256"):
             raise BackupIntegrityError("Backup ciphertext changed")
         try:
             nonce = base64.b64decode(encryption["nonce_base64"], validate=True)
@@ -242,10 +248,18 @@ class BackupManager:
         safe_row_counts = self._validate_snapshot(native_snapshot)
         if safe_row_counts != manifest.get("safe_row_counts"):
             raise BackupIntegrityError("Backup row-count evidence changed")
-        if verification.get("manifest_sha256") != hashlib.sha256(manifest_bytes).hexdigest():
+        if verification.get("manifest_sha256") != manifest_hash:
             raise BackupIntegrityError("Backup verification does not bind the manifest")
+        if (
+            verification.get("backup_id") != header.get("backup_id")
+            or verification.get("ciphertext_sha256") != ciphertext_hash
+            or verification.get("logical_schema_version") != header.get("logical_schema_version")
+        ):
+            raise BackupIntegrityError("Backup verification identity is inconsistent")
         return VerifiedSnapshot(
             manifest=manifest,
+            manifest_hash=manifest_hash,
+            ciphertext_hash=ciphertext_hash,
             native_snapshot=native_snapshot,
             logical_export=logical_export,
             safe_row_counts=safe_row_counts,

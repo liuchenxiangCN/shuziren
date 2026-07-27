@@ -37,6 +37,12 @@ SECURITY_RECONCILIATION_TABLES = (
 )
 
 
+class DraftValidationFailure(ControlPlaneError):
+    def __init__(self, finding_code: str, message: str) -> None:
+        super().__init__(422, "SCHEMA_VALIDATION_FAILED", message)
+        self.finding_code = finding_code
+
+
 class P13ControlPlane:
     def __init__(self, owner: Any, backup_root: str | Path) -> None:
         self.owner = owner
@@ -168,16 +174,17 @@ class P13ControlPlane:
         spec: dict[str, Any],
         if_match: str,
     ) -> dict[str, Any]:
-        canonical_spec = self._validate_spec(principal, spec)
+        self._require_any_edit_permission(principal)
+        canonical_spec = self._validate_spec(spec)
+        normalized_spec = json.loads(canonical_spec)
         now = self.owner.clock()
         with self.owner.store.transaction() as connection:
             draft = self._load_draft(
                 connection,
                 principal,
                 draft_id,
-                "config.edit_business",
+                self._available_edit_permission(principal),
             )
-            self.owner.require_permission(principal, "config.edit_technical")
             self.owner._require_resource_etag(
                 if_match,
                 "config-draft",
@@ -190,6 +197,18 @@ class P13ControlPlane:
                     "INVALID_STATE_TRANSITION",
                     "Draft content is editable only in DRAFT",
                 )
+            current_spec = json.loads(draft["working_spec_json"])
+            changed_fields = sorted(
+                field for field in CONFIG_FIELDS if current_spec.get(field) != normalized_spec[field]
+            )
+            required_permissions = {
+                "welcome_text": "config.edit_business",
+                "fvs_binding_ref": "config.edit_technical",
+            }
+            for field in changed_fields:
+                self.owner.require_permission(principal, required_permissions[field])
+            if not changed_fields:
+                return self._draft_response(connection, draft)
             next_draft_revision = draft["current_revision"] + 1
             content_hash = hashlib.sha256(canonical_spec.encode("utf-8")).hexdigest()
             connection.execute(
@@ -241,7 +260,7 @@ class P13ControlPlane:
                 details={
                     "draft_revision": next_draft_revision,
                     "content_hash": content_hash,
-                    "field_paths": ["/fvs_binding_ref", "/welcome_text"],
+                    "field_paths": [f"/{field}" for field in changed_fields],
                 },
                 now=now,
             )
@@ -1299,7 +1318,7 @@ class P13ControlPlane:
             operation_id,
             {"reason": reason},
         )
-        with self._backup_lock:
+        with self._backup_lock, self.owner.store.mutation_lock:
             with self.owner.store.connect() as connection:
                 replay = self.owner._idempotency_lookup(
                     connection,
@@ -1426,6 +1445,13 @@ class P13ControlPlane:
                 backup = self._backup_row(connection, principal, backup_id)
             try:
                 verified = self.backups.verify_bundle(backup["bundle_name"])
+                self._require_backup_record_match(
+                    backup,
+                    manifest=verified["manifest"],
+                    manifest_hash=verified["manifest_hash"],
+                    ciphertext_hash=verified["ciphertext_hash"],
+                    safe_row_counts=verified["safe_row_counts"],
+                )
             except BackupIntegrityError as exc:
                 raise ControlPlaneError(
                     503,
@@ -1496,6 +1522,13 @@ class P13ControlPlane:
                 metadata = self.owner._metadata(connection)
             try:
                 verified = self.backups.verify_bundle(backup["bundle_name"])
+                self._require_backup_record_match(
+                    backup,
+                    manifest=verified["manifest"],
+                    manifest_hash=verified["manifest_hash"],
+                    ciphertext_hash=verified["ciphertext_hash"],
+                    safe_row_counts=verified["safe_row_counts"],
+                )
             except BackupIntegrityError as exc:
                 raise ControlPlaneError(
                     503,
@@ -1669,78 +1702,128 @@ class P13ControlPlane:
                         "INVALID_STATE_TRANSITION",
                         "Only a populated DRAFT can be validated",
                     )
-                resolution = self._resolve_draft(connection, principal, draft)
-                fingerprint_id = opaque_id("rfp")
-                fingerprint_hash = resolution["fingerprint_hash"]
-                connection.execute(
-                    """
-                    INSERT INTO resolution_fingerprints(
-                        fingerprint_id, draft_id, draft_revision,
-                        fingerprint_hash, target_set_json, target_set_hash,
-                        group_revision, resolution_inputs_json,
-                        effective_hashes_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        fingerprint_id,
-                        draft_id,
-                        draft["current_revision"],
-                        fingerprint_hash,
-                        canonical_json(resolution["target_set"]),
-                        resolution["target_set_hash"],
-                        resolution["group_revision"],
-                        canonical_json(resolution["inputs"]),
-                        canonical_json(resolution["effective_hashes"]),
-                        now,
-                    ),
-                )
-                findings = [
-                    {
-                        "severity": "WARNING",
-                        "code": "FVS_UNVERIFIED_MOCK_PREVIEW_ONLY",
-                        "message": "FVS remains unverified; preview uses Mock evidence only.",
+                try:
+                    resolution = self._resolve_draft(connection, principal, draft)
+                except DraftValidationFailure as failure:
+                    findings = [
+                        {
+                            "severity": "ERROR",
+                            "code": failure.finding_code,
+                            "message": failure.message,
+                        }
+                    ]
+                    findings_json = canonical_json(findings)
+                    validation_id = opaque_id("val")
+                    connection.execute(
+                        """
+                        INSERT INTO validation_records(
+                            validation_record_id, draft_id, draft_revision,
+                            fingerprint_id, fingerprint_hash, outcome,
+                            findings_json, findings_hash, validator_version,
+                            created_by_user_id, created_at
+                        ) VALUES (?, ?, ?, NULL, NULL, 'INVALID', ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            validation_id,
+                            draft_id,
+                            draft["current_revision"],
+                            findings_json,
+                            hashlib.sha256(findings_json.encode("utf-8")).hexdigest(),
+                            "p1_3_preview_validator_v1",
+                            principal.user_id,
+                            now,
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        UPDATE config_drafts SET state = 'DRAFT',
+                            validation_record_id = ?, preview_record_id = NULL,
+                            approval_record_id = NULL, updated_at = ?,
+                            revision = revision + 1
+                        WHERE draft_id = ?
+                        """,
+                        (validation_id, now, draft_id),
+                    )
+                    event_type = "CONFIG_DRAFT_VALIDATION_FAILED"
+                    event_details = {
+                        "draft_revision": draft["current_revision"],
+                        "finding_codes": [failure.finding_code],
+                        "outcome": "INVALID",
                     }
-                ]
-                findings_json = canonical_json(findings)
-                validation_id = opaque_id("val")
-                connection.execute(
-                    """
-                    INSERT INTO validation_records(
-                        validation_record_id, draft_id, draft_revision,
-                        fingerprint_id, fingerprint_hash, outcome,
-                        findings_json, findings_hash, validator_version,
-                        created_by_user_id, created_at
-                    ) VALUES (?, ?, ?, ?, ?, 'VALID', ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        validation_id,
-                        draft_id,
-                        draft["current_revision"],
-                        fingerprint_id,
-                        fingerprint_hash,
-                        findings_json,
-                        hashlib.sha256(findings_json.encode("utf-8")).hexdigest(),
-                        "p1_3_preview_validator_v1",
-                        principal.user_id,
-                        now,
-                    ),
-                )
-                connection.execute(
-                    """
-                    UPDATE config_drafts SET state = 'VALIDATED',
-                        validation_record_id = ?, updated_at = ?,
-                        revision = revision + 1
-                    WHERE draft_id = ?
-                    """,
-                    (validation_id, now, draft_id),
-                )
-                event_type = "CONFIG_DRAFT_VALIDATED"
-                event_details = {
-                    "draft_revision": draft["current_revision"],
-                    "fingerprint_hash": fingerprint_hash,
-                    "target_set_hash": resolution["target_set_hash"],
-                    "outcome": "VALID",
-                }
+                    audit_outcome = "REJECTED"
+                else:
+                    fingerprint_id = opaque_id("rfp")
+                    fingerprint_hash = resolution["fingerprint_hash"]
+                    connection.execute(
+                        """
+                        INSERT INTO resolution_fingerprints(
+                            fingerprint_id, draft_id, draft_revision,
+                            fingerprint_hash, target_set_json, target_set_hash,
+                            group_revision, resolution_inputs_json,
+                            effective_hashes_json, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            fingerprint_id,
+                            draft_id,
+                            draft["current_revision"],
+                            fingerprint_hash,
+                            canonical_json(resolution["target_set"]),
+                            resolution["target_set_hash"],
+                            resolution["group_revision"],
+                            canonical_json(resolution["inputs"]),
+                            canonical_json(resolution["effective_hashes"]),
+                            now,
+                        ),
+                    )
+                    findings = [
+                        {
+                            "severity": "WARNING",
+                            "code": "FVS_UNVERIFIED_MOCK_PREVIEW_ONLY",
+                            "message": "FVS remains unverified; preview uses Mock evidence only.",
+                        }
+                    ]
+                    findings_json = canonical_json(findings)
+                    validation_id = opaque_id("val")
+                    connection.execute(
+                        """
+                        INSERT INTO validation_records(
+                            validation_record_id, draft_id, draft_revision,
+                            fingerprint_id, fingerprint_hash, outcome,
+                            findings_json, findings_hash, validator_version,
+                            created_by_user_id, created_at
+                        ) VALUES (?, ?, ?, ?, ?, 'VALID', ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            validation_id,
+                            draft_id,
+                            draft["current_revision"],
+                            fingerprint_id,
+                            fingerprint_hash,
+                            findings_json,
+                            hashlib.sha256(findings_json.encode("utf-8")).hexdigest(),
+                            "p1_3_preview_validator_v1",
+                            principal.user_id,
+                            now,
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        UPDATE config_drafts SET state = 'VALIDATED',
+                            validation_record_id = ?, updated_at = ?,
+                            revision = revision + 1
+                        WHERE draft_id = ?
+                        """,
+                        (validation_id, now, draft_id),
+                    )
+                    event_type = "CONFIG_DRAFT_VALIDATED"
+                    event_details = {
+                        "draft_revision": draft["current_revision"],
+                        "fingerprint_hash": fingerprint_hash,
+                        "target_set_hash": resolution["target_set_hash"],
+                        "outcome": "VALID",
+                    }
+                    audit_outcome = "SUCCESS"
             else:
                 if draft["state"] != "VALIDATED" or not draft["validation_record_id"]:
                     raise ControlPlaneError(
@@ -1816,6 +1899,7 @@ class P13ControlPlane:
                     "outcome": "MOCK_PASSED",
                     "real_provider_verified": False,
                 }
+                audit_outcome = "SUCCESS"
             self.owner._append_audit(
                 connection,
                 event_type=event_type,
@@ -1823,13 +1907,16 @@ class P13ControlPlane:
                 actor_id=principal.user_id,
                 target_type="CONFIG_DRAFT",
                 target_id=draft_id,
-                outcome="SUCCESS",
+                outcome=audit_outcome,
                 reason=None,
                 details=event_details,
                 now=now,
             )
             updated = self._load_draft(connection, principal, draft_id, "config.read")
             result = self._draft_response(connection, updated)
+            if phase == "validateConfigDraft":
+                result["outcome"] = result["validation"]["outcome"]
+                result["findings"] = result["validation"]["findings"]
             self.owner._idempotency_store(
                 connection,
                 phase=phase,
@@ -1928,9 +2015,8 @@ class P13ControlPlane:
     ) -> dict[str, Any]:
         spec = json.loads(draft["working_spec_json"])
         if set(spec) != CONFIG_FIELDS:
-            raise ControlPlaneError(
-                422,
-                "SCHEMA_VALIDATION_FAILED",
+            raise DraftValidationFailure(
+                "DRAFT_SPEC_INCOMPLETE",
                 "Draft spec is incomplete",
             )
         group_revision: int | None = None
@@ -1966,9 +2052,8 @@ class P13ControlPlane:
                 ),
             ).fetchall()
             if not screen_rows:
-                raise ControlPlaneError(
-                    422,
-                    "SCHEMA_VALIDATION_FAILED",
+                raise DraftValidationFailure(
+                    "TARGET_GROUP_EMPTY",
                     "Screen group has no targets",
                 )
             for screen in screen_rows:
@@ -2015,9 +2100,8 @@ class P13ControlPlane:
                 or digital_human is None
                 or binding["digital_human_instance_id"] != digital_human["digital_human_instance_id"]
             ):
-                raise ControlPlaneError(
-                    422,
-                    "SCHEMA_VALIDATION_FAILED",
+                raise DraftValidationFailure(
+                    "TARGET_INVENTORY_INCOMPLETE",
                     "Draft target inventory is incomplete",
                 )
             effective = {
@@ -2758,7 +2842,7 @@ class P13ControlPlane:
         reason = self._reason(reason)
         operation_id = "executeRestorePlan"
         digest = self.owner._protected_digest(operation_id, command, reason)
-        with self._restore_lock:
+        with self._restore_lock, self.owner.store.mutation_lock:
             with self.owner.store.connect() as connection:
                 action = connection.execute(
                     """
@@ -2805,6 +2889,13 @@ class P13ControlPlane:
                     staged_path,
                     snapshot,
                 ):
+                    self._require_backup_record_match(
+                        backup,
+                        manifest=snapshot.manifest,
+                        manifest_hash=snapshot.manifest_hash,
+                        ciphertext_hash=snapshot.ciphertext_hash,
+                        safe_row_counts=snapshot.safe_row_counts,
+                    )
                     now = self.owner.clock()
                     self._prepare_staged_restore(
                         staged_path,
@@ -3718,6 +3809,59 @@ class P13ControlPlane:
             raise ControlPlaneError(404, "RESOURCE_NOT_FOUND", "Backup was not found")
         return row
 
+    @staticmethod
+    def _require_backup_record_match(
+        backup: sqlite3.Row,
+        *,
+        manifest: dict[str, Any],
+        manifest_hash: str,
+        ciphertext_hash: str,
+        safe_row_counts: dict[str, int],
+    ) -> None:
+        header = manifest.get("authenticated_header")
+        encryption = manifest.get("encryption")
+        if not isinstance(header, dict) or not isinstance(encryption, dict):
+            raise BackupIntegrityError("Backup registered identity is unavailable")
+        migrations = header.get("migration_versions")
+        if not isinstance(migrations, list) or not all(isinstance(item, dict) for item in migrations):
+            raise BackupIntegrityError("Backup registered migration identity is invalid")
+        try:
+            registered_migrations = json.loads(backup["migration_versions_json"])
+            registered_row_counts = json.loads(backup["safe_row_counts_json"])
+            observed_migrations = [item["version"] for item in migrations]
+            registered_identity = {
+                "backup_id": backup["backup_id"],
+                "tenant_id": backup["tenant_id"],
+                "deployment_id": backup["deployment_id"],
+                "logical_schema_version": backup["logical_schema_version"],
+                "migration_versions": registered_migrations,
+                "safe_row_counts": registered_row_counts,
+                "audit_head_hash": backup["audit_head_hash"],
+                "recovery_encryption_key_id": backup["recovery_encryption_key_id"],
+                "ciphertext_size": backup["ciphertext_size"],
+                "created_at": backup["created_at"],
+            }
+            observed_identity = {
+                "backup_id": header["backup_id"],
+                "tenant_id": header["tenant_id"],
+                "deployment_id": header["deployment_id"],
+                "logical_schema_version": header["logical_schema_version"],
+                "migration_versions": observed_migrations,
+                "safe_row_counts": safe_row_counts,
+                "audit_head_hash": header["audit_head_hash"],
+                "recovery_encryption_key_id": header["recovery_encryption_key_id"],
+                "ciphertext_size": encryption["ciphertext_size"],
+                "created_at": header["created_at"],
+            }
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise BackupIntegrityError("Backup registered identity is invalid") from exc
+        if (
+            not secrets.compare_digest(manifest_hash, backup["manifest_hash"])
+            or not secrets.compare_digest(ciphertext_hash, backup["ciphertext_hash"])
+            or canonical_json(observed_identity) != canonical_json(registered_identity)
+        ):
+            raise BackupIntegrityError("Backup bundle does not match its registered record")
+
     def _backup_response(
         self,
         connection: sqlite3.Connection,
@@ -3796,14 +3940,13 @@ class P13ControlPlane:
             "updated_at": row["updated_at"],
         }
 
-    def _validate_spec(self, principal: Any, spec: dict[str, Any]) -> str:
+    def _validate_spec(self, spec: dict[str, Any]) -> str:
         if set(spec) != CONFIG_FIELDS:
             raise ControlPlaneError(
                 422,
                 "SCHEMA_VALIDATION_FAILED",
                 "Config spec must contain exactly welcome_text and fvs_binding_ref",
             )
-        self._require_all_spec_edit_permissions(principal)
         welcome = spec["welcome_text"]
         if not isinstance(welcome, str) or not 1 <= len(welcome.strip()) <= 500 or not welcome.isprintable():
             raise ControlPlaneError(

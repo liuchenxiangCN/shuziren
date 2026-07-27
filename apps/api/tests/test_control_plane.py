@@ -6,6 +6,7 @@ import json
 import secrets
 import shutil
 import sqlite3
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -3141,6 +3142,51 @@ def test_p1_3_draft_guards_stale_fingerprint_self_approval_and_idempotency(
     )
     assert mixed_field_denied.status_code == 403
     assert mixed_field_denied.json()["error"]["code"] == "FORBIDDEN"
+    admin_populated = admin_a.put(
+        f"/api/v1/control-plane/config-drafts/{business_draft.json()['draft_id']}/spec",
+        headers=mutation_headers(
+            csrf_a,
+            **{"If-Match": business_draft.json()["etag"]},
+        ),
+        json={
+            "welcome_text": "implementation-owned initial text",
+            "fvs_binding_ref": "https://fvs.example.test/business-leaf-diff",
+        },
+    )
+    assert admin_populated.status_code == 200, admin_populated.text
+    business_leaf_edit = business.put(
+        f"/api/v1/control-plane/config-drafts/{business_draft.json()['draft_id']}/spec",
+        headers=mutation_headers(
+            csrf_business,
+            **{"If-Match": admin_populated.json()["etag"]},
+        ),
+        json={
+            "welcome_text": "business-owned text only",
+            "fvs_binding_ref": "https://fvs.example.test/business-leaf-diff",
+        },
+    )
+    assert business_leaf_edit.status_code == 200, business_leaf_edit.text
+    assert business_leaf_edit.json()["spec"]["welcome_text"] == "business-owned text only"
+    technical_leaf_denied = business.put(
+        f"/api/v1/control-plane/config-drafts/{business_draft.json()['draft_id']}/spec",
+        headers=mutation_headers(
+            csrf_business,
+            **{"If-Match": business_leaf_edit.json()["etag"]},
+        ),
+        json={
+            "welcome_text": "business-owned text only",
+            "fvs_binding_ref": "https://fvs.example.test/technical-denied",
+        },
+    )
+    assert technical_leaf_denied.status_code == 403
+    unchanged_leaf_draft = business.get(
+        f"/api/v1/control-plane/config-drafts/{business_draft.json()['draft_id']}"
+    )
+    assert unchanged_leaf_draft.json()["etag"] == business_leaf_edit.json()["etag"]
+    assert (
+        unchanged_leaf_draft.json()["spec"]["fvs_binding_ref"]
+        == "https://fvs.example.test/business-leaf-diff"
+    )
     target_screen = screens[2]
     created = admin_a.post(
         "/api/v1/control-plane/config-drafts",
@@ -3330,8 +3376,109 @@ def test_p1_3_draft_guards_stale_fingerprint_self_approval_and_idempotency(
     assert terminal_edit.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
 
 
+def test_p1_3_validation_failure_is_recorded_as_invalid_draft(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, service, _ = control_plane
+    admin_a, csrf_a = login(app, "admin-a")
+    site = admin_a.get("/api/v1/control-plane/sites").json()["items"][0]
+    created_screen = admin_a.post(
+        f"/api/v1/control-plane/sites/{site['site_id']}/screen-instances",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "invalid-validation-screen"},
+        ),
+        json={
+            "slug": "invalid-validation-screen",
+            "display_name": "Invalid validation screen",
+            "fvs_binding_ref": "fvs-invalid-validation-screen",
+        },
+    )
+    assert created_screen.status_code == 201, created_screen.text
+    assert created_screen.json()["digital_human_instance"] is None
+    created_draft = admin_a.post(
+        "/api/v1/control-plane/config-drafts",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "invalid-validation-draft"},
+        ),
+        json={
+            "target_type": "SCREEN",
+            "target_id": created_screen.json()["screen_id"],
+            "schema_version": "p1_screen_config_v1",
+        },
+    )
+    assert created_draft.status_code == 201, created_draft.text
+    populated = admin_a.put(
+        f"/api/v1/control-plane/config-drafts/{created_draft.json()['draft_id']}/spec",
+        headers=mutation_headers(
+            csrf_a,
+            **{"If-Match": created_draft.json()["etag"]},
+        ),
+        json={
+            "welcome_text": "valid fields on an incomplete target",
+            "fvs_binding_ref": "https://fvs.example.test/invalid-target",
+        },
+    )
+    assert populated.status_code == 200, populated.text
+    validation_headers = mutation_headers(
+        csrf_a,
+        **{
+            "If-Match": populated.json()["etag"],
+            "Idempotency-Key": "invalid-validation-attempt",
+        },
+    )
+    invalid = admin_a.post(
+        f"/api/v1/control-plane/config-drafts/{created_draft.json()['draft_id']}:validate",
+        headers=validation_headers,
+    )
+    assert invalid.status_code == 200, invalid.text
+    assert invalid.json()["state"] == "DRAFT"
+    assert invalid.json()["outcome"] == "INVALID"
+    assert invalid.json()["validation"]["outcome"] == "INVALID"
+    assert invalid.json()["validation"]["fingerprint_hash"] is None
+    assert invalid.json()["findings"] == [
+        {
+            "severity": "ERROR",
+            "code": "TARGET_INVENTORY_INCOMPLETE",
+            "message": "Draft target inventory is incomplete",
+        }
+    ]
+    replay = admin_a.post(
+        f"/api/v1/control-plane/config-drafts/{created_draft.json()['draft_id']}:validate",
+        headers=validation_headers,
+    )
+    assert replay.status_code == 200
+    assert replay.json() == invalid.json()
+    persisted = admin_a.get(f"/api/v1/control-plane/config-drafts/{created_draft.json()['draft_id']}")
+    assert persisted.status_code == 200
+    assert persisted.json()["state"] == "DRAFT"
+    assert persisted.json()["validation"] == invalid.json()["validation"]
+    denied_preview = admin_a.post(
+        f"/api/v1/control-plane/config-drafts/{created_draft.json()['draft_id']}:preview",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "If-Match": persisted.json()["etag"],
+                "Idempotency-Key": "invalid-validation-preview-denied",
+            },
+        ),
+    )
+    assert denied_preview.status_code == 409
+    with service.store.connect() as connection:
+        record = connection.execute(
+            """
+            SELECT outcome, fingerprint_id, fingerprint_hash
+            FROM validation_records WHERE validation_record_id = ?
+            """,
+            (invalid.json()["validation"]["validation_record_id"],),
+        ).fetchone()
+        assert tuple(record) == ("INVALID", None, None)
+
+
 def test_p1_3_encrypted_backup_tamper_wrong_key_and_staged_restore(
     control_plane: tuple[FastAPI, ControlPlaneService, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app, service, database_path = control_plane
     admin_a, csrf_a = login(app, "admin-a")
@@ -3413,6 +3560,103 @@ def test_p1_3_encrypted_backup_tamper_wrong_key_and_staged_restore(
     )
     assert verified.status_code == 200, verified.text
     assert verified.json()["outcome"] == "VERIFIED"
+    original_bundle_files = {
+        name: (bundle_dir / name).read_bytes()
+        for name in (
+            "manifest.json",
+            "payload.aes256gcm",
+            "checksums.sha256",
+            "verification.json",
+        )
+    }
+    pre_substitution_plan = admin_a.post(
+        "/api/v1/control-plane/restore-plans",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p13-pre-substitution-plan"},
+        ),
+        json={"backup_id": backup["backup_id"]},
+    )
+    assert pre_substitution_plan.status_code == 201, pre_substitution_plan.text
+    pre_substitution_payload = {
+        "confirmation": "RESTORE_VERIFIED_BACKUP",
+        "reason": "prove registered backup identity is enforced",
+    }
+    pre_substitution_action = request_action(
+        admin_a,
+        csrf_a,
+        (f"/api/v1/control-plane/restore-plans/{pre_substitution_plan.json()['restore_plan_id']}:execute"),
+        pre_substitution_payload,
+        "p13-pre-substitution-request",
+        extra_headers={"If-Match": pre_substitution_plan.json()["etag"]},
+    )
+    approve_action(
+        admin_b,
+        csrf_b,
+        pre_substitution_action,
+        key="p13-pre-substitution-approve",
+    )
+    second_backup_response = admin_a.post(
+        "/api/v1/control-plane/backups",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p13-second-valid-backup"},
+        ),
+        json={"reason": "valid bundle used for substitution negative test"},
+    )
+    assert second_backup_response.status_code == 201, second_backup_response.text
+    second_bundle_dir = (
+        service.p1_3.backups.backup_root / f"backup-{second_backup_response.json()['backup_id']}"
+    )
+    for name in original_bundle_files:
+        shutil.copy2(second_bundle_dir / name, bundle_dir / name)
+    substituted_verify = admin_a.post(
+        f"/api/v1/control-plane/backups/{backup['backup_id']}:verify",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p13-substituted-verify"},
+        ),
+    )
+    assert substituted_verify.status_code == 503
+    assert substituted_verify.json()["error"]["code"] == "CRYPTOGRAPHIC_INTEGRITY_FAILURE"
+    substituted_plan = admin_a.post(
+        "/api/v1/control-plane/restore-plans",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p13-substituted-plan"},
+        ),
+        json={"backup_id": backup["backup_id"]},
+    )
+    assert substituted_plan.status_code == 503
+    assert substituted_plan.json()["error"]["code"] == "CRYPTOGRAPHIC_INTEGRITY_FAILURE"
+    substituted_restore = admin_a.post(
+        (f"/api/v1/control-plane/restore-plans/{pre_substitution_plan.json()['restore_plan_id']}:execute"),
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "If-Match": pre_substitution_plan.json()["etag"],
+                "Idempotency-Key": "p13-pre-substitution-execute",
+                "High-Risk-Action-ID": pre_substitution_action["high_risk_action_id"],
+            },
+        ),
+        json=pre_substitution_payload,
+    )
+    assert substituted_restore.status_code == 503
+    assert substituted_restore.json()["error"]["code"] == "CRYPTOGRAPHIC_INTEGRITY_FAILURE"
+    assert {
+        screen_id: admin_a.get(f"/api/v1/control-plane/screen-instances/{screen_id}/runtime-binding").json()
+        for screen_id in group["member_screen_ids"]
+    } == backup_bindings
+    for name, content in original_bundle_files.items():
+        (bundle_dir / name).write_bytes(content)
+    restored_identity_verify = admin_a.post(
+        f"/api/v1/control-plane/backups/{backup['backup_id']}:verify",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p13-restored-identity-verify"},
+        ),
+    )
+    assert restored_identity_verify.status_code == 200, restored_identity_verify.text
     changed_release = create_p1_3_release(
         admin_a,
         csrf_a,
@@ -3604,19 +3848,78 @@ def test_p1_3_encrypted_backup_tamper_wrong_key_and_staged_restore(
         for screen_id in group["member_screen_ids"]
     } == changed_bindings
     payload_path.write_bytes(original_payload)
-    restored = admin_a.post(
-        f"/api/v1/control-plane/restore-plans/{plan['restore_plan_id']}:execute",
-        headers=mutation_headers(
-            csrf_a,
-            **{
-                "If-Match": plan["etag"],
-                "Idempotency-Key": "p13-restore-execute",
-                "High-Risk-Action-ID": restore_action["high_risk_action_id"],
-            },
-        ),
-        json=restore_payload,
+    concurrent_admin, csrf_concurrent = login(app, "admin-a")
+    race_user_payload = {
+        "normalized_username": "restore-race-user",
+        "display_name": "Restore Race User",
+        "reason": "must commit after restore cutover without being lost",
+    }
+    race_user_action = request_action(
+        concurrent_admin,
+        csrf_concurrent,
+        "/api/v1/control-plane/users",
+        race_user_payload,
+        "restore-race-user-request",
     )
+    approve_action(admin_b, csrf_b, race_user_action, key="restore-race-user-approve")
+    race_cookie = concurrent_admin.cookies.get("__Host-shuziren_session")
+    assert race_cookie
+    race_context = service.authenticate_session(race_cookie)
+    original_capture = service.p1_3._capture_live_reconciliation
+    capture_completed = threading.Event()
+    release_capture = threading.Event()
+    mutation_started = threading.Event()
+
+    def blocking_capture(connection: sqlite3.Connection) -> dict[str, Any]:
+        captured = original_capture(connection)
+        capture_completed.set()
+        assert release_capture.wait(10)
+        return captured
+
+    def execute_restore() -> Any:
+        return admin_a.post(
+            f"/api/v1/control-plane/restore-plans/{plan['restore_plan_id']}:execute",
+            headers=mutation_headers(
+                csrf_a,
+                **{
+                    "If-Match": plan["etag"],
+                    "Idempotency-Key": "p13-restore-execute",
+                    "High-Risk-Action-ID": restore_action["high_risk_action_id"],
+                },
+            ),
+            json=restore_payload,
+        )
+
+    def execute_racing_user_creation() -> Any:
+        mutation_started.set()
+        try:
+            return service.request_or_execute_user_creation(
+                race_context,
+                normalized_username=race_user_payload["normalized_username"],
+                display_name=race_user_payload["display_name"],
+                reason=race_user_payload["reason"],
+                idempotency_key="restore-race-user-execute",
+                high_risk_action_id=race_user_action["high_risk_action_id"],
+            )
+        except ControlPlaneError as exc:
+            return exc
+
+    monkeypatch.setattr(service.p1_3, "_capture_live_reconciliation", blocking_capture)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        restore_future = executor.submit(execute_restore)
+        assert capture_completed.wait(10)
+        mutation_future = executor.submit(execute_racing_user_creation)
+        assert mutation_started.wait(2)
+        threading.Event().wait(0.2)
+        assert not mutation_future.done()
+        release_capture.set()
+        restored = restore_future.result(timeout=30)
+        raced_user_created = mutation_future.result(timeout=30)
+    monkeypatch.setattr(service.p1_3, "_capture_live_reconciliation", original_capture)
     assert restored.status_code == 200, restored.text
+    assert isinstance(raced_user_created, ControlPlaneError)
+    assert raced_user_created.status_code == 409
+    assert raced_user_created.code == "INVALID_STATE_TRANSITION"
     result = restored.json()
     assert result["kind"] == "RESTORE_COMPLETED"
     assert result["recovery_source_mode"] == "ONLINE_ACTIVE_STORE"
@@ -3637,7 +3940,9 @@ def test_p1_3_encrypted_backup_tamper_wrong_key_and_staged_restore(
     assert restored_bindings == backup_bindings
     users_after = relogged.get("/api/v1/control-plane/users")
     assert users_after.status_code == 200, users_after.text
-    assert post_backup_user_id in {user["user_id"] for user in users_after.json()["items"]}
+    user_ids_after = {user["user_id"] for user in users_after.json()["items"]}
+    assert post_backup_user_id in user_ids_after
+    assert "restore-race-user" not in {user["normalized_username"] for user in users_after.json()["items"]}
     active_device_after = device.get(
         "/api/v1/device/runtime-binding",
         headers={"Authorization": f"DeviceCredential {active_device_credential}"},

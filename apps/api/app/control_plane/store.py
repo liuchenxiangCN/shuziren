@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -514,14 +515,18 @@ CREATE TABLE validation_records (
     validation_record_id TEXT PRIMARY KEY,
     draft_id TEXT NOT NULL,
     draft_revision INTEGER NOT NULL,
-    fingerprint_id TEXT NOT NULL,
-    fingerprint_hash TEXT NOT NULL,
+    fingerprint_id TEXT,
+    fingerprint_hash TEXT,
     outcome TEXT NOT NULL CHECK (outcome IN ('VALID', 'INVALID')),
     findings_json TEXT NOT NULL,
     findings_hash TEXT NOT NULL,
     validator_version TEXT NOT NULL,
     created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
     created_at REAL NOT NULL,
+    CHECK (
+        (outcome = 'VALID' AND fingerprint_id IS NOT NULL AND fingerprint_hash IS NOT NULL)
+        OR (outcome = 'INVALID' AND fingerprint_id IS NULL AND fingerprint_hash IS NULL)
+    ),
     UNIQUE (validation_record_id, draft_id, draft_revision),
     FOREIGN KEY (fingerprint_id, draft_id, draft_revision)
         REFERENCES resolution_fingerprints(
@@ -1077,6 +1082,7 @@ MIGRATION_CHECKSUM_SHA256 = MIGRATION_003_CHECKSUM_SHA256
 class ControlPlaneStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        self.mutation_lock = threading.RLock()
 
     def initialize(self, now: float) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -1464,16 +1470,17 @@ class ControlPlaneStore:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
-        connection = self.connect()
-        try:
-            connection.execute("BEGIN IMMEDIATE")
-            yield connection
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
+        with self.mutation_lock:
+            connection = self.connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                yield connection
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+            finally:
+                connection.close()
 
     def connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=30.0, factory=ClosingConnection)
