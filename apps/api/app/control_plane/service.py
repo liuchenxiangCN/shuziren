@@ -154,6 +154,7 @@ class ControlPlaneService:
         self.store = ControlPlaneStore(database_path)
         self.keys = PurposeKeyring.from_base64(root_key_b64)
         self.passwords = PasswordPolicy()
+        self._dummy_password_verifier = self.passwords.hash(opaque_secret())
         self.preview_mode = preview_mode
         self.clock = clock
         self.store.initialize(self.clock())
@@ -229,7 +230,7 @@ class ControlPlaneService:
                         deployment_id,
                         username,
                         identity["display_name"].strip(),
-                        self.passwords.hash(identity["password"]),
+                        self.passwords.hash(identity["password"], username=username),
                         now,
                         now,
                     ),
@@ -267,7 +268,10 @@ class ControlPlaneService:
         }
 
     def login(self, username: str, password: str) -> SessionIssue:
-        normalized_username = normalize_username(username)
+        try:
+            normalized_username = normalize_username(username)
+        except ValueError:
+            normalized_username = ""
         now = self.clock()
         failure: ControlPlaneError | None = None
         issue: SessionIssue | None = None
@@ -276,6 +280,12 @@ class ControlPlaneService:
                 "SELECT * FROM users WHERE normalized_username = ?",
                 (normalized_username,),
             ).fetchone()
+            verifier = (
+                user["password_verifier"]
+                if user is not None and user["password_verifier"]
+                else self._dummy_password_verifier
+            )
+            password_matches = self.passwords.verify(verifier, password)
             if user is None:
                 self._append_audit(
                     connection,
@@ -306,22 +316,33 @@ class ControlPlaneService:
                     target_id=user["user_id"],
                     outcome="DENIED",
                     reason="account temporarily locked",
-                    details={"locked_until": user["locked_until"]},
+                    details={},
                     now=now,
                 )
-                failure = ControlPlaneError(
-                    423,
-                    "ACCOUNT_LOCKED",
-                    "Account is temporarily locked",
-                    details={"locked_until": user["locked_until"]},
-                )
-            elif user["account_state"] != "ACTIVE" or not user["password_verifier"]:
                 failure = ControlPlaneError(
                     401,
                     "AUTHENTICATION_REQUIRED",
                     "Invalid username or password",
                 )
-            elif not self.passwords.verify(user["password_verifier"], password):
+            elif user["account_state"] != "ACTIVE" or not user["password_verifier"]:
+                self._append_audit(
+                    connection,
+                    event_type="AUTHENTICATION",
+                    actor_type="USER",
+                    actor_id=user["user_id"],
+                    target_type="USER",
+                    target_id=user["user_id"],
+                    outcome="DENIED",
+                    reason="invalid credentials",
+                    details={},
+                    now=now,
+                )
+                failure = ControlPlaneError(
+                    401,
+                    "AUTHENTICATION_REQUIRED",
+                    "Invalid username or password",
+                )
+            elif not password_matches:
                 self._record_login_failure(connection, user, now)
                 failure = ControlPlaneError(
                     401,
@@ -458,7 +479,7 @@ class ControlPlaneService:
         token = opaque_secret()
         now = self.clock()
         with self.store.transaction() as connection:
-            connection.execute(
+            updated = connection.execute(
                 """
                 UPDATE auth_sessions SET csrf_verifier_hmac = ?, csrf_verifier_key_id = ?,
                     revision = revision + 1 WHERE auth_session_id = ? AND state = 'ACTIVE'
@@ -469,6 +490,12 @@ class ControlPlaneService:
                     context.auth_session_id,
                 ),
             )
+            if updated.rowcount != 1:
+                raise ControlPlaneError(
+                    401,
+                    "AUTHENTICATION_REQUIRED",
+                    "Session is no longer valid",
+                )
         refreshed_context = SessionContext(
             principal=context.principal,
             auth_session_id=context.auth_session_id,
@@ -480,33 +507,57 @@ class ControlPlaneService:
     def reauthenticate(self, context: SessionContext, password: str, if_match: str) -> SessionIssue:
         self._require_etag(if_match, "session", context.revision)
         now = self.clock()
+        issue: SessionIssue | None = None
+        failed = False
         with self.store.transaction() as connection:
             user = connection.execute(
                 "SELECT * FROM users WHERE user_id = ?", (context.principal.user_id,)
             ).fetchone()
-            if user is None or not self.passwords.verify(user["password_verifier"], password):
-                raise ControlPlaneError(401, "AUTHENTICATION_REQUIRED", "Password confirmation failed")
-            connection.execute(
-                """
-                UPDATE auth_sessions SET state = 'REVOKED', revoked_at = ?, revision = revision + 1
-                WHERE auth_session_id = ? AND state = 'ACTIVE'
-                """,
-                (now, context.auth_session_id),
-            )
-            issue = self._issue_session(connection, user["user_id"], now)
-            self._append_audit(
-                connection,
-                event_type="SESSION_REAUTHENTICATED",
-                actor_type="USER",
-                actor_id=user["user_id"],
-                target_type="AUTH_SESSION",
-                target_id=issue.response["auth_session_id"],
-                outcome="SUCCESS",
-                reason=None,
-                details={"predecessor_session_id": context.auth_session_id},
-                now=now,
-            )
-            return issue
+            if (
+                user is None
+                or user["account_state"] != "ACTIVE"
+                or not user["password_verifier"]
+                or not self.passwords.verify(user["password_verifier"], password)
+            ):
+                self._append_audit(
+                    connection,
+                    event_type="SESSION_REAUTHENTICATION",
+                    actor_type="USER",
+                    actor_id=context.principal.user_id,
+                    target_type="AUTH_SESSION",
+                    target_id=context.auth_session_id,
+                    outcome="DENIED",
+                    reason="invalid credentials",
+                    details={},
+                    now=now,
+                )
+                failed = True
+            else:
+                connection.execute(
+                    """
+                    UPDATE auth_sessions SET state = 'REVOKED', revoked_at = ?, revision = revision + 1
+                    WHERE auth_session_id = ? AND state = 'ACTIVE'
+                    """,
+                    (now, context.auth_session_id),
+                )
+                issue = self._issue_session(connection, user["user_id"], now)
+                self._append_audit(
+                    connection,
+                    event_type="SESSION_REAUTHENTICATED",
+                    actor_type="USER",
+                    actor_id=user["user_id"],
+                    target_type="AUTH_SESSION",
+                    target_id=issue.response["auth_session_id"],
+                    outcome="SUCCESS",
+                    reason=None,
+                    details={"predecessor_session_id": context.auth_session_id},
+                    now=now,
+                )
+        if failed:
+            raise ControlPlaneError(401, "AUTHENTICATION_REQUIRED", "Password confirmation failed")
+        if issue is None:
+            raise RuntimeError("Reauthentication transaction produced no result")
+        return issue
 
     def logout(self, context: SessionContext) -> None:
         now = self.clock()
@@ -560,8 +611,12 @@ class ControlPlaneService:
         idempotency_key: str,
         high_risk_action_id: str | None,
     ) -> dict[str, Any]:
+        try:
+            username = normalize_username(normalized_username)
+        except ValueError as exc:
+            raise ControlPlaneError(422, "VALIDATION_ERROR", str(exc)) from exc
         command = {
-            "normalized_username": normalize_username(normalized_username),
+            "normalized_username": username,
             "display_name": display_name.strip(),
         }
         if not command["display_name"] or len(command["display_name"]) > 128:
@@ -632,6 +687,7 @@ class ControlPlaneService:
         self.require_permission(context.principal, "risk.approve")
         self._require_recent_reauthentication(context)
         now = self.clock()
+        self._expire_due_actions(now, action_id=action_id)
         request_digest = self.keys.digest(
             "HIGH_RISK_REQUEST_HMAC",
             canonical_json(
@@ -721,6 +777,7 @@ class ControlPlaneService:
         self.require_permission(context.principal, "risk.approve")
         self._require_recent_reauthentication(context)
         now = self.clock()
+        self._expire_due_actions(now, action_id=action_id)
         request_digest = self.keys.digest(
             "HIGH_RISK_REQUEST_HMAC",
             canonical_json(
@@ -790,6 +847,7 @@ class ControlPlaneService:
             return result
 
     def get_action(self, principal: Principal, action_id: str) -> dict[str, Any]:
+        self._expire_due_actions(self.clock(), action_id=action_id)
         with self.store.connect() as connection:
             action = connection.execute(
                 "SELECT * FROM high_risk_actions WHERE high_risk_action_id = ?",
@@ -804,6 +862,7 @@ class ControlPlaneService:
 
     def list_pending_actions(self, principal: Principal) -> list[dict[str, Any]]:
         self.require_permission(principal, "risk.approve")
+        self._expire_due_actions(self.clock())
         with self.store.connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM high_risk_actions WHERE state = 'PENDING' ORDER BY requested_at"
@@ -838,6 +897,7 @@ class ControlPlaneService:
         if replay is not None:
             return replay
         now = self.clock()
+        self._expire_enrollment_if_needed(enrollment_id, now)
         with self.store.transaction() as connection:
             enrollment = connection.execute(
                 "SELECT * FROM device_enrollments WHERE enrollment_id = ?",
@@ -964,6 +1024,8 @@ class ControlPlaneService:
     def authenticate_device(self, authorization: str) -> DeviceContext:
         credential_id, secret_value = self._parse_device_authorization(authorization)
         now = self.clock()
+        failure: ControlPlaneError | None = None
+        context: DeviceContext | None = None
         with self.store.transaction() as connection:
             credential = connection.execute(
                 """
@@ -985,8 +1047,12 @@ class ControlPlaneService:
                 )
                 or credential["family_state"] != "ACTIVE"
             ):
-                raise ControlPlaneError(401, "AUTHENTICATION_REQUIRED", "Device credential is invalid")
-            if credential["state"] == "PENDING_ACTIVATION":
+                failure = ControlPlaneError(
+                    401,
+                    "AUTHENTICATION_REQUIRED",
+                    "Device credential is invalid",
+                )
+            elif credential["state"] == "PENDING_ACTIVATION":
                 if credential["activation_expires_at"] is None or credential["activation_expires_at"] <= now:
                     connection.execute(
                         """
@@ -1002,57 +1068,84 @@ class ControlPlaneService:
                         """,
                         (now, credential["family_id"]),
                     )
-                    raise ControlPlaneError(401, "AUTHENTICATION_REQUIRED", "Device credential is invalid")
-                predecessor = credential["active_credential_id"]
-                connection.execute(
-                    """
-                    UPDATE device_credentials SET state = 'REVOKED', revoked_at = ?,
-                        revision = revision + 1 WHERE credential_id = ? AND state = 'ACTIVE'
-                    """,
-                    (now, predecessor),
-                )
-                connection.execute(
-                    """
-                    UPDATE device_credentials SET state = 'ACTIVE', activated_at = ?,
-                        revision = revision + 1 WHERE credential_id = ?
-                    """,
-                    (now, credential_id),
-                )
-                connection.execute(
-                    """
-                    UPDATE device_credential_families SET active_credential_id = ?,
-                        pending_credential_id = NULL, updated_at = ?, revision = revision + 1
-                    WHERE family_id = ?
-                    """,
-                    (credential_id, now, credential["family_id"]),
-                )
-                self._append_audit(
-                    connection,
-                    event_type="DEVICE_CREDENTIAL_SUCCESSOR_ACTIVATED",
-                    actor_type="DEVICE",
-                    actor_id=credential_id,
-                    target_type="SCREEN",
-                    target_id=credential["screen_id"],
-                    outcome="SUCCESS",
-                    reason=None,
-                    details={"credential_version": credential["credential_version"]},
-                    now=now,
-                )
-                family_revision = credential["family_revision"] + 1
+                    self._append_audit(
+                        connection,
+                        event_type="DEVICE_CREDENTIAL_SUCCESSOR_EXPIRED",
+                        actor_type="DEVICE",
+                        actor_id=credential_id,
+                        target_type="SCREEN",
+                        target_id=credential["screen_id"],
+                        outcome="DENIED",
+                        reason="activation window expired",
+                        details={"credential_version": credential["credential_version"]},
+                        now=now,
+                    )
+                    failure = ControlPlaneError(
+                        401,
+                        "AUTHENTICATION_REQUIRED",
+                        "Device credential is invalid",
+                    )
+                else:
+                    predecessor = credential["active_credential_id"]
+                    connection.execute(
+                        """
+                        UPDATE device_credentials SET state = 'REVOKED', revoked_at = ?,
+                            revision = revision + 1 WHERE credential_id = ? AND state = 'ACTIVE'
+                        """,
+                        (now, predecessor),
+                    )
+                    connection.execute(
+                        """
+                        UPDATE device_credentials SET state = 'ACTIVE', activated_at = ?,
+                            revision = revision + 1 WHERE credential_id = ?
+                        """,
+                        (now, credential_id),
+                    )
+                    connection.execute(
+                        """
+                        UPDATE device_credential_families SET active_credential_id = ?,
+                            pending_credential_id = NULL, updated_at = ?, revision = revision + 1
+                        WHERE family_id = ?
+                        """,
+                        (credential_id, now, credential["family_id"]),
+                    )
+                    self._append_audit(
+                        connection,
+                        event_type="DEVICE_CREDENTIAL_SUCCESSOR_ACTIVATED",
+                        actor_type="DEVICE",
+                        actor_id=credential_id,
+                        target_type="SCREEN",
+                        target_id=credential["screen_id"],
+                        outcome="SUCCESS",
+                        reason=None,
+                        details={"credential_version": credential["credential_version"]},
+                        now=now,
+                    )
+                    family_revision = credential["family_revision"] + 1
             elif credential["state"] != "ACTIVE":
-                raise ControlPlaneError(401, "AUTHENTICATION_REQUIRED", "Device credential is invalid")
+                failure = ControlPlaneError(
+                    401,
+                    "AUTHENTICATION_REQUIRED",
+                    "Device credential is invalid",
+                )
             else:
                 family_revision = credential["family_revision"]
-            return DeviceContext(
-                credential_id=credential_id,
-                credential_version=credential["credential_version"],
-                family_id=credential["family_id"],
-                family_revision=family_revision,
-                credential_epoch=credential["credential_epoch"],
-                tenant_id=credential["tenant_id"],
-                deployment_id=credential["deployment_id"],
-                screen_id=credential["screen_id"],
-            )
+            if failure is None:
+                context = DeviceContext(
+                    credential_id=credential_id,
+                    credential_version=credential["credential_version"],
+                    family_id=credential["family_id"],
+                    family_revision=family_revision,
+                    credential_epoch=credential["credential_epoch"],
+                    tenant_id=credential["tenant_id"],
+                    deployment_id=credential["deployment_id"],
+                    screen_id=credential["screen_id"],
+                )
+        if failure is not None:
+            raise failure
+        if context is None:
+            raise RuntimeError("Device authentication transaction produced no result")
+        return context
 
     def rotate_device(
         self,
@@ -1092,8 +1185,11 @@ class ControlPlaneService:
             if family["pending_credential_id"]:
                 raise ControlPlaneError(409, "SUCCESSOR_ALREADY_PENDING", "A successor is already pending")
             current = connection.execute(
-                "SELECT credential_version FROM device_credentials WHERE credential_id = ?",
-                (context.credential_id,),
+                """
+                SELECT MAX(credential_version) AS credential_version
+                FROM device_credentials WHERE family_id = ?
+                """,
+                (context.family_id,),
             ).fetchone()
             successor_id = opaque_id("dvc")
             successor_secret = opaque_secret()
@@ -1291,6 +1387,8 @@ class ControlPlaneService:
             if replay is not None:
                 return replay
         now = self.clock()
+        if high_risk_action_id is not None:
+            self._expire_due_actions(now, action_id=high_risk_action_id)
         with self.store.transaction() as connection:
             if high_risk_action_id is None:
                 record = self._idempotency_lookup(
@@ -1738,15 +1836,83 @@ class ControlPlaneService:
         if action is None:
             raise ControlPlaneError(404, "NOT_FOUND", "High-risk action was not found")
         if action["state"] in ("PENDING", "APPROVED") and action["expires_at"] <= now:
-            connection.execute(
-                """
-                UPDATE high_risk_actions SET state = 'EXPIRED', revision = revision + 1
-                WHERE high_risk_action_id = ?
-                """,
-                (action_id,),
-            )
+            raise ControlPlaneError(409, "HIGH_RISK_ACTION_EXPIRED", "High-risk action expired")
+        if action["state"] == "EXPIRED":
             raise ControlPlaneError(409, "HIGH_RISK_ACTION_EXPIRED", "High-risk action expired")
         return action
+
+    def _expire_due_actions(self, now: float, *, action_id: str | None = None) -> None:
+        with self.store.transaction() as connection:
+            if action_id is None:
+                rows = connection.execute(
+                    """
+                    SELECT high_risk_action_id, operation_id
+                    FROM high_risk_actions
+                    WHERE state IN ('PENDING', 'APPROVED') AND expires_at <= ?
+                    """,
+                    (now,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT high_risk_action_id, operation_id
+                    FROM high_risk_actions
+                    WHERE high_risk_action_id = ?
+                        AND state IN ('PENDING', 'APPROVED') AND expires_at <= ?
+                    """,
+                    (action_id, now),
+                ).fetchall()
+            for row in rows:
+                connection.execute(
+                    """
+                    UPDATE high_risk_actions SET state = 'EXPIRED', revision = revision + 1
+                    WHERE high_risk_action_id = ?
+                    """,
+                    (row["high_risk_action_id"],),
+                )
+                self._append_audit(
+                    connection,
+                    event_type="HIGH_RISK_ACTION_EXPIRED",
+                    actor_type="SYSTEM",
+                    actor_id=None,
+                    target_type="HIGH_RISK_ACTION",
+                    target_id=row["high_risk_action_id"],
+                    outcome="DENIED",
+                    reason="approval window expired",
+                    details={"operation_id": row["operation_id"]},
+                    now=now,
+                )
+
+    def _expire_enrollment_if_needed(self, enrollment_id: str, now: float) -> None:
+        with self.store.transaction() as connection:
+            enrollment = connection.execute(
+                """
+                SELECT enrollment_id, screen_id FROM device_enrollments
+                WHERE enrollment_id = ? AND state = 'ISSUED' AND expires_at <= ?
+                """,
+                (enrollment_id, now),
+            ).fetchone()
+            if enrollment is None:
+                return
+            connection.execute(
+                """
+                UPDATE device_enrollments SET state = 'EXPIRED', revision = revision + 1
+                WHERE enrollment_id = ?
+                """,
+                (enrollment_id,),
+            )
+            self._append_audit(
+                connection,
+                event_type="DEVICE_ENROLLMENT_EXPIRED",
+                actor_type="SYSTEM",
+                actor_id=None,
+                target_type="SCREEN",
+                target_id=enrollment["screen_id"],
+                outcome="DENIED",
+                reason="claim window expired",
+                details={"enrollment_id": enrollment_id},
+                now=now,
+            )
 
     def _require_recent_reauthentication(self, context: SessionContext) -> None:
         if (
@@ -1774,7 +1940,7 @@ class ControlPlaneService:
         idempotency_key: str,
         request_digest: str,
     ) -> sqlite3.Row | None:
-        key_digest = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+        key_digest = self._idempotency_key_digest(idempotency_key)
         row = connection.execute(
             """
             SELECT * FROM idempotency_records
@@ -1782,6 +1948,14 @@ class ControlPlaneService:
             """,
             (phase, principal_key, key_digest),
         ).fetchone()
+        if row is not None and row["idempotency_hmac_key_id"] != self.keys.key_id(
+            "SENSITIVE_IDEMPOTENCY_HMAC"
+        ):
+            raise ControlPlaneError(
+                409,
+                "IDEMPOTENCY_DIGEST_KEY_EPOCH_CHANGED",
+                "Idempotency evidence uses an unavailable key generation",
+            )
         if row is not None and not secrets.compare_digest(row["request_digest"], request_digest):
             raise ControlPlaneError(
                 409, "IDEMPOTENCY_KEY_REUSED", "Idempotency key was reused with different content"
@@ -1803,14 +1977,15 @@ class ControlPlaneService:
             """
             INSERT INTO idempotency_records(
                 record_id, phase, principal_key, idempotency_key_digest,
-                request_digest, result_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                idempotency_hmac_key_id, request_digest, result_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 opaque_id("idem"),
                 phase,
                 principal_key,
-                hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest(),
+                self._idempotency_key_digest(idempotency_key),
+                self.keys.key_id("SENSITIVE_IDEMPOTENCY_HMAC"),
                 request_digest,
                 canonical_json(result),
                 now,
@@ -1824,7 +1999,8 @@ class ControlPlaneService:
         idempotency_key: str,
         request_digest: str,
     ) -> dict[str, Any] | None:
-        with self.store.connect() as connection:
+        expired = False
+        with self.store.transaction() as connection:
             row = self._idempotency_lookup(
                 connection,
                 phase=phase,
@@ -1832,9 +2008,21 @@ class ControlPlaneService:
                 idempotency_key=idempotency_key,
                 request_digest=request_digest,
             )
+            if row is not None and (
+                row["response_expires_at"] is None or row["response_expires_at"] <= self.clock()
+            ):
+                connection.execute(
+                    """
+                    UPDATE idempotency_records
+                    SET response_nonce = NULL, response_ciphertext = NULL
+                    WHERE record_id = ?
+                    """,
+                    (row["record_id"],),
+                )
+                expired = True
         if row is None:
             return None
-        if row["response_expires_at"] is None or row["response_expires_at"] <= self.clock():
+        if expired:
             raise ControlPlaneError(
                 409,
                 "ONE_TIME_RESPONSE_REPLAY_EXPIRED",
@@ -1866,7 +2054,7 @@ class ControlPlaneService:
         now: float,
     ) -> None:
         record_id = opaque_id("idem")
-        key_digest = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+        key_digest = self._idempotency_key_digest(idempotency_key)
         expires_at = now + 5 * 60
         aad = self._one_time_aad(
             phase,
@@ -1880,15 +2068,17 @@ class ControlPlaneService:
         connection.execute(
             """
             INSERT INTO idempotency_records(
-                record_id, phase, principal_key, idempotency_key_digest, request_digest,
-                response_nonce, response_ciphertext, response_expires_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                record_id, phase, principal_key, idempotency_key_digest,
+                idempotency_hmac_key_id, request_digest, response_nonce,
+                response_ciphertext, response_expires_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
                 phase,
                 principal_key,
                 key_digest,
+                self.keys.key_id("SENSITIVE_IDEMPOTENCY_HMAC"),
                 request_digest,
                 encrypted.nonce,
                 encrypted.value,
@@ -1896,6 +2086,15 @@ class ControlPlaneService:
                 now,
             ),
         )
+
+    def _idempotency_key_digest(self, idempotency_key: str) -> str:
+        if len(idempotency_key) < 8 or len(idempotency_key) > 200 or not idempotency_key.isprintable():
+            raise ControlPlaneError(
+                422,
+                "VALIDATION_ERROR",
+                "Idempotency-Key must contain 8 to 200 printing characters",
+            )
+        return self.keys.digest("SENSITIVE_IDEMPOTENCY_HMAC", idempotency_key)
 
     @staticmethod
     def _one_time_aad(

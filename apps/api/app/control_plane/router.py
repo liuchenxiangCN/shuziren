@@ -57,6 +57,13 @@ class DeviceRevokeRequest(StrictModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+IdempotencyKeyHeader = Annotated[
+    str,
+    Header(alias="Idempotency-Key", min_length=8, max_length=200),
+]
+IfMatchHeader = Annotated[str, Header(alias="If-Match", min_length=5, max_length=200)]
+
+
 def service_from_request(request: Request) -> ControlPlaneService:
     service = getattr(request.app.state, "control_plane_service", None)
     if service is None:
@@ -143,8 +150,8 @@ def reauthenticate_auth_session(
     payload: ReauthenticateRequest,
     request: Request,
     response: Response,
-    if_match: Annotated[str, Header(alias="If-Match")],
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
 ) -> dict[str, Any]:
     context = mutating_session(request)
     issue = service_from_request(request).reauthenticate(context, payload.password, if_match)
@@ -184,7 +191,7 @@ def create_user(
     payload: UserCreateRequest,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    idempotency_key: IdempotencyKeyHeader,
     high_risk_action_id: Annotated[str | None, Header(alias="High-Risk-Action-ID")] = None,
 ) -> dict[str, Any]:
     context = mutating_session(request)
@@ -222,8 +229,8 @@ def approve_high_risk_action(
     payload: ApprovalRequest,
     request: Request,
     response: Response,
-    if_match: Annotated[str, Header(alias="If-Match")],
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
 ) -> dict[str, Any]:
     context = mutating_session(request)
     result = service_from_request(request).approve_action(
@@ -244,8 +251,8 @@ def reject_high_risk_action(
     payload: ApprovalRequest,
     request: Request,
     response: Response,
-    if_match: Annotated[str, Header(alias="If-Match")],
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
 ) -> dict[str, Any]:
     context = mutating_session(request)
     result = service_from_request(request).reject_action(
@@ -266,7 +273,7 @@ def issue_device_enrollment(
     payload: ReasonRequest,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    idempotency_key: IdempotencyKeyHeader,
     high_risk_action_id: Annotated[str | None, Header(alias="High-Risk-Action-ID")] = None,
 ) -> dict[str, Any]:
     context = mutating_session(request)
@@ -318,8 +325,8 @@ def revoke_device_credential(
     payload: DeviceRevokeRequest,
     request: Request,
     response: Response,
-    if_match: Annotated[str, Header(alias="If-Match")],
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
     high_risk_action_id: Annotated[str | None, Header(alias="High-Risk-Action-ID")] = None,
 ) -> dict[str, Any]:
     context = mutating_session(request)
@@ -352,7 +359,7 @@ def claim_device_enrollment(
     payload: EnrollmentClaimRequest,
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    idempotency_key: IdempotencyKeyHeader,
 ) -> dict[str, Any]:
     result = service_from_request(request).claim_enrollment(payload.enrollment_token, idempotency_key)
     response.headers["Cache-Control"] = "no-store"
@@ -363,7 +370,7 @@ def claim_device_enrollment(
 def rotate_device_credential(
     request: Request,
     response: Response,
-    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+    idempotency_key: IdempotencyKeyHeader,
 ) -> dict[str, Any]:
     context = device_from_request(request)
     result = service_from_request(request).rotate_device(context, idempotency_key=idempotency_key)

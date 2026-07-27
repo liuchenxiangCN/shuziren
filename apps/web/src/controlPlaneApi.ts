@@ -11,6 +11,7 @@ export interface ControlPlaneUser {
   display_name: string;
   account_state: string;
   locked_until?: number | null;
+  last_login_at?: number | null;
   etag: string;
   role_assignments: Array<{ role_id: string; scope_type: string; scope_id: string }>;
 }
@@ -91,6 +92,7 @@ async function controlPlaneRequest<T>(
   if (responseCsrf) csrfToken = responseCsrf;
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
+    if (response.status === 401) csrfToken = '';
     throw new ControlPlaneApiError(
       response.status,
       payload?.error?.code || `HTTP_${response.status}`,
@@ -109,11 +111,29 @@ export async function signIn(username: string, password: string): Promise<Contro
 }
 
 export async function loadSession(): Promise<ControlPlaneSession> {
-  const session = await controlPlaneRequest<ControlPlaneSession>('/api/v1/control-plane/auth/session');
+  await controlPlaneRequest<ControlPlaneSession>('/api/v1/control-plane/auth/session');
   return controlPlaneRequest<ControlPlaneSession>(
     '/api/v1/control-plane/auth/session:refresh-csrf',
     { method: 'POST' },
-  ).catch(() => session);
+  );
+}
+
+export async function reauthenticate(
+  password: string,
+  sessionEtag: string,
+): Promise<ControlPlaneSession> {
+  return controlPlaneRequest<ControlPlaneSession>(
+    '/api/v1/control-plane/auth/session:reauthenticate',
+    {
+      method: 'POST',
+      headers: {
+        'Idempotency-Key': randomIdempotencyKey('reauthenticate'),
+        'If-Match': sessionEtag,
+      },
+      body: JSON.stringify({ password }),
+    },
+    { csrf: true },
+  );
 }
 
 export async function signOut(): Promise<void> {

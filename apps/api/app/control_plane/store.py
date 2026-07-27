@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS idempotency_records (
     phase TEXT NOT NULL,
     principal_key TEXT NOT NULL,
     idempotency_key_digest TEXT NOT NULL,
+    idempotency_hmac_key_id TEXT NOT NULL,
     request_digest TEXT NOT NULL,
     result_json TEXT,
     response_nonce BLOB,

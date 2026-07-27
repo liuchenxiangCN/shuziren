@@ -64,7 +64,6 @@ def main() -> int:
                 "# Generated P1.1 development preview settings. Never commit this file.",
                 "CONTROL_PLANE_PREVIEW_MODE=true",
                 f"CONTROL_PLANE_ROOT_KEY_B64={root_key_b64}",
-                "CONTROL_PLANE_DB_PATH=/app/data/control-plane.db",
                 'CONTROL_PLANE_ALLOWED_ORIGINS=["http://localhost:18000","http://127.0.0.1:18000"]',
                 "",
             )
@@ -80,7 +79,9 @@ def main() -> int:
     print(f"Environment file: {env_path}")
     print(f"Trust-only screen fixture: {result['fixture_screen_id']}")
     print("Passwords and root key were not written to stdout.")
-    print(f"Start with: docker compose --env-file {env_path.name} up --build")
+    print("Local API: scripts\\start-p1-1-local-api.ps1")
+    print("Local web: cd apps\\web; pnpm dev")
+    print(f"Docker alternative: docker compose --env-file {env_path.name} up --build")
     return 0
 
 

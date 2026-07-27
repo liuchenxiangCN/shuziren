@@ -14,6 +14,7 @@ import {
   listUsers,
   loadSession,
   randomIdempotencyKey,
+  reauthenticate,
   rejectAction,
   revokeCredential,
   rotateCredential,
@@ -34,6 +35,7 @@ const message = ref('');
 const error = ref('');
 const username = ref('');
 const password = ref('');
+const reauthenticationPassword = ref('');
 const users = ref<ControlPlaneUser[]>([]);
 const roles = ref<Array<{ role_id: string; permissions: string[] }>>([]);
 const actions = ref<HighRiskAction[]>([]);
@@ -83,6 +85,10 @@ async function run(task: () => Promise<void>) {
     await task();
   } catch (caught) {
     const apiError = caught as ControlPlaneApiError;
+    if (apiError.status === 401) {
+      session.value = null;
+      clearSensitiveState();
+    }
     error.value = `${apiError.code || 'REQUEST_FAILED'}：${apiError.message}`;
   } finally {
     busy.value = false;
@@ -105,8 +111,28 @@ async function logout() {
     users.value = [];
     actions.value = [];
     auditEvents.value = [];
+    clearSensitiveState();
     message.value = '已退出并撤销当前会话。';
   });
+}
+
+async function confirmPassword() {
+  if (!session.value) return;
+  await run(async () => {
+    session.value = await reauthenticate(
+      reauthenticationPassword.value,
+      session.value!.etag,
+    );
+    reauthenticationPassword.value = '';
+    message.value = '密码已重新确认；会话 Cookie 与 CSRF 已同步轮换。';
+  });
+}
+
+function clearSensitiveState() {
+  password.value = '';
+  reauthenticationPassword.value = '';
+  enrollmentToken.value = '';
+  deviceCredential.value = '';
 }
 
 async function switchView(view: View) {
@@ -262,6 +288,16 @@ function formatTime(value?: number | null) {
         <div v-if="session" class="cp-session">
           <strong>{{ session.user.display_name }}</strong>
           <span>{{ session.user.roles.join(' / ') || '无角色' }}</span>
+          <form class="cp-reauth" @submit.prevent="confirmPassword">
+            <input
+              v-model="reauthenticationPassword"
+              type="password"
+              autocomplete="current-password"
+              aria-label="重新确认当前密码"
+              placeholder="高风险操作前重新确认密码"
+            />
+            <button type="submit" :disabled="busy || !reauthenticationPassword">重新验证</button>
+          </form>
           <button type="button" :disabled="busy" @click="logout">退出</button>
         </div>
       </header>
@@ -322,7 +358,7 @@ function formatTime(value?: number | null) {
                     <td><strong>{{ user.display_name }}</strong><small>{{ user.normalized_username }}</small></td>
                     <td><span class="cp-pill">{{ user.account_state }}</span></td>
                     <td>{{ user.role_assignments.map((item) => item.role_id).join(' / ') || '空角色集' }}</td>
-                    <td>{{ formatTime(user.locked_until) }}</td>
+                    <td>{{ formatTime(user.last_login_at) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -464,6 +500,8 @@ function formatTime(value?: number | null) {
 .cp-eyebrow { color: #237156 !important; font-size: 12px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .cp-session { min-width: 220px; display: grid; align-content: center; gap: 5px; padding-left: 22px; border-left: 1px solid #dfe7e2; }
 .cp-session span { color: #60716a; font-size: 13px; }
+.cp-reauth { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 8px; margin-top: 6px; }
+.cp-reauth input { min-width: 0; }
 button { border: 0; border-radius: 10px; padding: 10px 15px; background: #176247; color: #fff; font-weight: 700; }
 button.secondary { background: #e5ece8; color: #27483d; }
 .cp-notice { margin: 14px 0; padding: 12px 16px; border-radius: 10px; font-weight: 650; }

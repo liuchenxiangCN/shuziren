@@ -25,13 +25,42 @@ The script:
 
 Do not commit, attach, upload or place `.env.p1-1-preview` in an evidence package.
 
-## Start
+## Start Locally
+
+Docker is not required for the P1.1 development preview. Start the API in the
+first PowerShell terminal:
+
+```powershell
+scripts\start-p1-1-local-api.ps1
+```
+
+The launcher reads only the allowlisted preview settings, overrides the
+container database path with the absolute local `data/control-plane.db` path
+and never prints the root key.
+
+Start the web application in a second PowerShell terminal:
+
+```powershell
+Set-Location apps/web
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Open:
+
+```text
+http://localhost:18000/manage
+```
+
+Stop both foreground processes with `Ctrl+C`.
+
+## Optional Docker Preview
 
 ```powershell
 docker compose --env-file .env.p1-1-preview up --build
 ```
 
-Open:
+The same entry point is used:
 
 ```text
 http://localhost:18000/manage
@@ -55,7 +84,7 @@ The browser uses a `Secure` host-only cookie. Standard production must run behin
 
 Created network users intentionally remain non-authoritative `PROVISIONING` records in this batch. Production custodian/person binding, credential setup, role replacement and enabling are not simulated by a privileged fallback endpoint.
 
-## Stop
+Stop the Docker alternative with:
 
 ```powershell
 docker compose --env-file .env.p1-1-preview down

@@ -33,6 +33,7 @@ PURPOSES = (
     "ONE_TIME_TOKEN_VERIFIER_PEPPER",
     "DEVICE_CREDENTIAL_VERIFIER_PEPPER",
     "HIGH_RISK_REQUEST_HMAC",
+    "SENSITIVE_IDEMPOTENCY_HMAC",
     "ONE_TIME_RESPONSE_ENCRYPTION",
     "AUDIT_EVENT_CHAIN_HMAC",
 )
@@ -51,16 +52,20 @@ def normalize_username(value: str) -> str:
     return normalized
 
 
-def validate_password(value: str) -> None:
+def validate_password(value: str, *, username: str | None = None) -> None:
     length = len(value)
     if length < PASSWORD_MIN_CODE_POINTS or length > PASSWORD_MAX_CODE_POINTS:
         raise ValueError(
             f"Password must contain {PASSWORD_MIN_CODE_POINTS} to "
             f"{PASSWORD_MAX_CODE_POINTS} Unicode code points"
         )
+    if not value.isprintable():
+        raise ValueError("Password may contain printing characters and spaces only")
     normalized = normalize("NFKC", value).casefold()
     if normalized in COMMON_PASSWORDS:
         raise ValueError("Password is blocked because it is common or compromised")
+    if username is not None and normalized == normalize("NFKC", username).strip().casefold():
+        raise ValueError("Password cannot equal the username")
 
 
 class PasswordPolicy:
@@ -74,8 +79,8 @@ class PasswordPolicy:
             type=Type.ID,
         )
 
-    def hash(self, password: str) -> str:
-        validate_password(password)
+    def hash(self, password: str, *, username: str | None = None) -> str:
+        validate_password(password, username=username)
         return self._hasher.hash(password)
 
     def verify(self, verifier: str, password: str) -> bool:
