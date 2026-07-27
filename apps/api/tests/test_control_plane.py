@@ -20,14 +20,38 @@ from app.control_plane.router import (
     router,
     sanitized_validation_errors,
 )
-from app.control_plane.security import PurposeKeyring, canonical_json, validate_password
+from app.control_plane.security import PURPOSES, PurposeKeyring, canonical_json, validate_password
 from app.control_plane.service import ROLE_PERMISSIONS, ControlPlaneService
-from app.control_plane.store import LOGICAL_SCHEMA_VERSION
+from app.control_plane.store import (
+    LOGICAL_SCHEMA_VERSION,
+    MIGRATION_CHECKSUM_SHA256,
+    MIGRATION_VERSION,
+)
 
 ORIGIN = "https://manage.test"
 PASSWORDS = {
     username: f"test-only-{secrets.token_urlsafe(18)}"
     for username in ("admin-a", "admin-b", "implementation", "auditor")
+}
+FROZEN_KEY_PURPOSES = {
+    "HIGH_RISK_REQUEST_HMAC",
+    "SENSITIVE_REQUEST_DIGEST_HMAC",
+    "RESTORE_CONTINUITY_ENVELOPE_HMAC",
+    "RECOVERY_LEDGER_CHAIN_HMAC",
+    "RECOVERY_LEDGER_RECORD_AEAD",
+    "AUTH_SESSION_VERIFIER_PEPPER",
+    "CSRF_TOKEN_VERIFIER_PEPPER",
+    "ONE_TIME_TOKEN_VERIFIER_PEPPER",
+    "ONE_TIME_RESPONSE_ENCRYPTION",
+    "DEVICE_CREDENTIAL_VERIFIER_PEPPER",
+    "SECRET_ENVELOPE_ENCRYPTION",
+    "BACKUP_RECOVERY_ENCRYPTION",
+    "OFFLINE_RECOVERY_AUTHENTICATION",
+    "HUMAN_OPERATOR_ATTESTATION_SIGNATURE",
+    "DISASTER_ENVELOPE_NONCE_HMAC",
+    "OPERATIONAL_FENCE_HMAC",
+    "PRODUCTION_READINESS_NONCE_HMAC",
+    "EMERGENCY_AUTHORITY_REDUCTION_NONCE_HMAC",
 }
 
 
@@ -162,8 +186,16 @@ def test_schema_is_repeatable_and_preview_is_explicit(
     _, service, database_path = control_plane
     service.store.initialize(service.clock())
     assert service.status()["logical_schema_version"] == LOGICAL_SCHEMA_VERSION
+    assert service.status()["migration_version"] == MIGRATION_VERSION
+    assert service.status()["migration_checksum_sha256"] == MIGRATION_CHECKSUM_SHA256
     assert service.status()["profile"] == "DEVELOPMENT_PREVIEW"
     assert service.status()["production_ready"] is False
+    assert set(PURPOSES) <= FROZEN_KEY_PURPOSES
+    assert {
+        "HIGH_RISK_REQUEST_HMAC",
+        "SENSITIVE_REQUEST_DIGEST_HMAC",
+        "ONE_TIME_RESPONSE_ENCRYPTION",
+    } <= set(PURPOSES)
     with pytest.raises(ValueError):
         service.initialize_preview(
             tenant_id="tenant-test",
@@ -190,6 +222,12 @@ def test_schema_is_repeatable_and_preview_is_explicit(
         assert connection.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM control_plane_metadata").fetchone()[0] == 0
     with sqlite3.connect(database_path) as connection:
+        migration = connection.execute(
+            """
+            SELECT version, checksum_sha256 FROM schema_migrations
+            """
+        ).fetchone()
+        assert migration == (MIGRATION_VERSION, MIGRATION_CHECKSUM_SHA256)
         verifier = connection.execute(
             "SELECT password_verifier FROM users WHERE normalized_username = 'admin-a'"
         ).fetchone()[0]
@@ -202,6 +240,25 @@ def test_schema_is_repeatable_and_preview_is_explicit(
                 "UPDATE security_audit_events SET reason = 'tamper' WHERE event_id = ?",
                 (event_id,),
             )
+    tampered_path = tmp_path / "tampered-migration.db"
+    tampered_root_key = PurposeKeyring.generate_root_base64()
+    ControlPlaneService(
+        str(tampered_path),
+        tampered_root_key,
+        preview_mode=False,
+    )
+    with sqlite3.connect(tampered_path) as connection:
+        connection.execute(
+            "UPDATE schema_migrations SET checksum_sha256 = ?",
+            ("0" * 64,),
+        )
+        connection.commit()
+    with pytest.raises(RuntimeError, match="migration checksum mismatch"):
+        ControlPlaneService(
+            str(tampered_path),
+            tampered_root_key,
+            preview_mode=False,
+        )
 
 
 @pytest.mark.parametrize(
@@ -218,7 +275,7 @@ def test_password_policy_rejects_short_common_or_nonprinting_values(password: st
 def test_exact_origin_secure_session_csrf_rbac_and_lockout(
     control_plane: tuple[FastAPI, ControlPlaneService, Path],
 ) -> None:
-    app, _, database_path = control_plane
+    app, service, database_path = control_plane
     client = TestClient(app, base_url="https://manage.test")
     missing_origin = client.post(
         "/api/v1/control-plane/auth/sessions",
@@ -237,6 +294,9 @@ def test_exact_origin_secure_session_csrf_rbac_and_lockout(
     assert session.status_code == 200
     assert "csrf" not in session.text.casefold()
     assert PASSWORDS["admin-a"] not in session.text
+    predecessor_cookie = admin.cookies.get("__Host-shuziren_session")
+    assert predecessor_cookie
+    predecessor_context = service.authenticate_session(predecessor_cookie)
     reauthenticated = admin.post(
         "/api/v1/control-plane/auth/session:reauthenticate",
         headers=mutation_headers(
@@ -251,6 +311,57 @@ def test_exact_origin_secure_session_csrf_rbac_and_lockout(
     assert reauthenticated.status_code == 200, reauthenticated.text
     assert reauthenticated.json()["auth_session_id"] != session.json()["auth_session_id"]
     admin_csrf = reauthenticated.headers["x-csrf-token"]
+    successor_cookie = admin.cookies.get("__Host-shuziren_session")
+    assert successor_cookie and successor_cookie != predecessor_cookie
+    reauthentication_replay = admin.post(
+        "/api/v1/control-plane/auth/session:reauthenticate",
+        headers=mutation_headers(
+            admin_csrf,
+            **{
+                "Idempotency-Key": "reauthenticate-session",
+                "If-Match": session.json()["etag"],
+            },
+        ),
+        json={"password": PASSWORDS["admin-a"]},
+    )
+    assert reauthentication_replay.status_code == 200
+    assert reauthentication_replay.json()["auth_session_id"] == reauthenticated.json()["auth_session_id"]
+    assert "x-csrf-token" not in reauthentication_replay.headers
+    assert admin.cookies.get("__Host-shuziren_session") == successor_cookie
+    changed_reauthentication_precondition = admin.post(
+        "/api/v1/control-plane/auth/session:reauthenticate",
+        headers=mutation_headers(
+            admin_csrf,
+            **{
+                "Idempotency-Key": "reauthenticate-session",
+                "If-Match": '"session:999"',
+            },
+        ),
+        json={"password": PASSWORDS["admin-a"]},
+    )
+    assert changed_reauthentication_precondition.status_code == 409
+    assert changed_reauthentication_precondition.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+    changed_reauthentication = admin.post(
+        "/api/v1/control-plane/auth/session:reauthenticate",
+        headers=mutation_headers(
+            admin_csrf,
+            **{
+                "Idempotency-Key": "reauthenticate-session",
+                "If-Match": session.json()["etag"],
+            },
+        ),
+        json={"password": f"{PASSWORDS['admin-a']}-changed"},
+    )
+    assert changed_reauthentication.status_code == 409
+    assert changed_reauthentication.json()["error"]["code"] == "IDEMPOTENCY_KEY_REUSED"
+    with pytest.raises(ControlPlaneError) as revoked_context:
+        service.reauthenticate(
+            predecessor_context,
+            PASSWORDS["admin-a"],
+            session.json()["etag"],
+            "reauthenticate-revoked-context",
+        )
+    assert revoked_context.value.code == "AUTHENTICATION_REQUIRED"
 
     no_csrf = admin.post(
         "/api/v1/control-plane/users",
@@ -405,17 +516,19 @@ def test_different_user_approval_binds_exact_user_creation(
     with sqlite3.connect(database_path) as connection:
         stored_idempotency = connection.execute(
             """
-            SELECT idempotency_key_digest, idempotency_hmac_key_id
+            SELECT idempotency_key_digest, sensitive_request_digest,
+                sensitive_digest_key_id
             FROM idempotency_records
             WHERE phase = 'request:createUser'
             """
         ).fetchone()
     stored_key_digest = stored_idempotency[0]
-    assert stored_key_digest == service.keys.digest(
-        "SENSITIVE_IDEMPOTENCY_HMAC",
-        "create-user-request",
+    assert (
+        stored_key_digest
+        == hashlib.sha256(b"shuziren:p1:idempotency-key:v1\0create-user-request").hexdigest()
     )
-    assert stored_idempotency[1] == service.keys.key_id("SENSITIVE_IDEMPOTENCY_HMAC")
+    assert stored_idempotency[1]
+    assert stored_idempotency[2] == service.keys.key_id("SENSITIVE_REQUEST_DIGEST_HMAC")
     assert stored_key_digest != hashlib.sha256(b"create-user-request").hexdigest()
     changed_idempotency = admin_a.post(
         "/api/v1/control-plane/users",
@@ -559,6 +672,134 @@ def test_different_user_approval_binds_exact_user_creation(
         assert expired_state == "EXPIRED"
 
 
+def test_unreachable_one_time_device_material_fails_closed(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, service, database_path = control_plane
+    implementation, csrf_impl = login(app, "implementation")
+    admin, csrf_admin = login(app, "admin-a")
+
+    first_payload = {"reason": "prove unreachable enrollment cleanup"}
+    first_action = request_action(
+        implementation,
+        csrf_impl,
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        first_payload,
+        "request-unreachable-enrollment",
+    )
+    approve_action(admin, csrf_admin, first_action, key="approve-unreachable-enrollment")
+    first_headers = mutation_headers(
+        csrf_impl,
+        **{
+            "Idempotency-Key": "execute-unreachable-enrollment",
+            "High-Risk-Action-ID": first_action["high_risk_action_id"],
+        },
+    )
+    first_issue = implementation.post(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        headers=first_headers,
+        json=first_payload,
+    )
+    assert first_issue.status_code == 201
+    first_enrollment_id = first_issue.json()["enrollment"]["enrollment_id"]
+    with sqlite3.connect(database_path) as connection:
+        first_response_expires_at = connection.execute(
+            """
+            SELECT response_expires_at FROM idempotency_records
+            WHERE phase = 'execute:issueDeviceEnrollment'
+            """
+        ).fetchone()[0]
+    original_clock = service.clock
+    service.clock = lambda: first_response_expires_at + 1
+    try:
+        expired_issue = implementation.post(
+            "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+            headers=first_headers,
+            json=first_payload,
+        )
+    finally:
+        service.clock = original_clock
+    assert expired_issue.status_code == 409
+    assert expired_issue.json()["error"]["code"] == "ONE_TIME_RESPONSE_REPLAY_EXPIRED"
+    with sqlite3.connect(database_path) as connection:
+        first_state = connection.execute(
+            """
+            SELECT state FROM device_enrollments WHERE enrollment_id = ?
+            """,
+            (first_enrollment_id,),
+        ).fetchone()
+        assert first_state == ("REVOKED",)
+
+    claim_payload = {"reason": "prove unreachable claim cleanup"}
+    claim_action = request_action(
+        implementation,
+        csrf_impl,
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        claim_payload,
+        "request-unreachable-claim",
+    )
+    approve_action(admin, csrf_admin, claim_action, key="approve-unreachable-claim")
+    claim_issue = implementation.post(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "Idempotency-Key": "execute-unreachable-claim",
+                "High-Risk-Action-ID": claim_action["high_risk_action_id"],
+            },
+        ),
+        json=claim_payload,
+    )
+    assert claim_issue.status_code == 201
+    enrollment_token = claim_issue.json()["enrollment_token"]
+    device = TestClient(app, base_url="https://device.test")
+    claimed = device.post(
+        "/api/v1/device/enrollments:claim",
+        headers={"Idempotency-Key": "claim-unreachable-credential"},
+        json={"enrollment_token": enrollment_token},
+    )
+    assert claimed.status_code == 200
+    credential = claimed.json()["credential"]
+    credential_id = claimed.json()["credential_id"]
+    with sqlite3.connect(database_path) as connection:
+        claim_response_expires_at = connection.execute(
+            """
+            SELECT response_expires_at FROM idempotency_records
+            WHERE phase = 'claimDeviceEnrollment'
+            """
+        ).fetchone()[0]
+    service.clock = lambda: claim_response_expires_at + 1
+    try:
+        expired_claim = device.post(
+            "/api/v1/device/enrollments:claim",
+            headers={"Idempotency-Key": "claim-unreachable-credential"},
+            json={"enrollment_token": enrollment_token},
+        )
+    finally:
+        service.clock = original_clock
+    assert expired_claim.status_code == 409
+    assert expired_claim.json()["error"]["code"] == "ONE_TIME_RESPONSE_REPLAY_EXPIRED"
+    with sqlite3.connect(database_path) as connection:
+        terminal = connection.execute(
+            """
+            SELECT c.state, c.last_authenticated_at, f.state,
+                f.active_credential_id, f.pending_credential_id
+            FROM device_credentials c
+            JOIN device_credential_families f ON f.family_id = c.family_id
+            WHERE c.credential_id = ?
+            """,
+            (credential_id,),
+        ).fetchone()
+        assert terminal == ("REVOKED", None, "REENROLL_REQUIRED", None, None)
+    assert (
+        device.get(
+            "/api/v1/device/runtime-binding",
+            headers={"Authorization": f"DeviceCredential {credential}"},
+        ).status_code
+        == 401
+    )
+
+
 def test_device_enrollment_rotation_activation_and_family_revoke(
     control_plane: tuple[FastAPI, ControlPlaneService, Path],
 ) -> None:
@@ -619,6 +860,34 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     assert replay.status_code == 201
     assert replay.json()["enrollment_token"] == enrollment_token
 
+    terminal_enrollment_payload = {"reason": "prove a pre-issued token cannot reopen a terminal family"}
+    terminal_enrollment_action = request_action(
+        implementation,
+        csrf_impl,
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        terminal_enrollment_payload,
+        "request-terminal-enrollment",
+    )
+    approve_action(
+        admin_b,
+        csrf_b,
+        terminal_enrollment_action,
+        key="approve-terminal-enrollment",
+    )
+    terminal_enrollment = implementation.post(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "Idempotency-Key": "execute-terminal-enrollment",
+                "High-Risk-Action-ID": terminal_enrollment_action["high_risk_action_id"],
+            },
+        ),
+        json=terminal_enrollment_payload,
+    )
+    assert terminal_enrollment.status_code == 201
+    terminal_enrollment_token = terminal_enrollment.json()["enrollment_token"]
+
     device = TestClient(app, base_url="https://device.test")
     forbidden_scope = device.post(
         "/api/v1/device/enrollments:claim",
@@ -645,6 +914,23 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     )
     assert claim_replay.status_code == 200
     assert claim_replay.json()["credential"] == credential
+    with sqlite3.connect(database_path) as connection:
+        replay_evidence = connection.execute(
+            """
+            SELECT response_encryption_key_id, response_aad_json,
+                response_aad_hash, sensitive_digest_key_id
+            FROM idempotency_records
+            WHERE phase = 'claimDeviceEnrollment'
+            """
+        ).fetchone()
+    assert replay_evidence[0] == service.keys.key_id("ONE_TIME_RESPONSE_ENCRYPTION")
+    assert replay_evidence[1]
+    assert hashlib.sha256(replay_evidence[1].encode("utf-8")).hexdigest() == replay_evidence[2]
+    assert replay_evidence[3] == service.keys.key_id("SENSITIVE_REQUEST_DIGEST_HMAC")
+    replay_aad = json.loads(replay_evidence[1])
+    assert replay_aad["operation_id"] == "claimDeviceEnrollment"
+    assert replay_aad["device_enrollment_id"] == issued.json()["enrollment"]["enrollment_id"]
+    assert replay_aad["device_credential_id"] == credential_id
     second_claim = device.post(
         "/api/v1/device/enrollments:claim",
         headers={"Idempotency-Key": "claim-enrollment-again"},
@@ -669,29 +955,38 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     )
     assert expiring_rotation.status_code == 200, expiring_rotation.text
     expiring_successor = expiring_rotation.json()["credential"]
+    rotation_replay = device.post(
+        "/api/v1/device/credentials:rotate",
+        headers={
+            "Authorization": f"DeviceCredential {credential}",
+            "Idempotency-Key": "rotate-expiring-credential",
+        },
+    )
+    assert rotation_replay.status_code == 200
+    assert rotation_replay.json()["credential"] == expiring_successor
     with sqlite3.connect(database_path) as connection:
-        connection.execute(
+        rotation_response_expires_at = connection.execute(
             """
-            UPDATE device_credentials SET activation_expires_at = 0
-            WHERE credential_id = ?
+            SELECT response_expires_at FROM idempotency_records
+            WHERE phase = 'rotateDeviceCredential'
+                AND principal_key = ?
             """,
-            (expiring_rotation.json()["credential_id"],),
+            (credential_id,),
+        ).fetchone()[0]
+    original_clock = service.clock
+    service.clock = lambda: rotation_response_expires_at + 1
+    try:
+        expired_rotation_replay = device.post(
+            "/api/v1/device/credentials:rotate",
+            headers={
+                "Authorization": f"DeviceCredential {credential}",
+                "Idempotency-Key": "rotate-expiring-credential",
+            },
         )
-        connection.commit()
-    assert (
-        device.get(
-            "/api/v1/device/runtime-binding",
-            headers={"Authorization": f"DeviceCredential {expiring_successor}"},
-        ).status_code
-        == 401
-    )
-    assert (
-        device.get(
-            "/api/v1/device/runtime-binding",
-            headers={"Authorization": f"DeviceCredential {credential}"},
-        ).status_code
-        == 200
-    )
+    finally:
+        service.clock = original_clock
+    assert expired_rotation_replay.status_code == 409
+    assert expired_rotation_replay.json()["error"]["code"] == "ONE_TIME_RESPONSE_REPLAY_EXPIRED"
 
     rotated = device.post(
         "/api/v1/device/credentials:rotate",
@@ -704,6 +999,14 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     successor = rotated.json()["credential"]
     successor_id = rotated.json()["credential_id"]
     assert rotated.json()["state"] == "PENDING_ACTIVATION"
+    with sqlite3.connect(database_path) as connection:
+        expired_pending = connection.execute(
+            """
+            SELECT state FROM device_credentials WHERE credential_id = ?
+            """,
+            (expiring_rotation.json()["credential_id"],),
+        ).fetchone()
+        assert expired_pending == ("REVOKED",)
 
     activated = device.get(
         "/api/v1/device/runtime-binding",
@@ -782,34 +1085,74 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
         ).status_code
         == 401
     )
+    terminal_family_claim = device.post(
+        "/api/v1/device/enrollments:claim",
+        headers={"Idempotency-Key": "claim-terminal-family"},
+        json={"enrollment_token": terminal_enrollment_token},
+    )
+    assert terminal_family_claim.status_code == 409
+    assert terminal_family_claim.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+
+    terminal_issue_payload = {"reason": "terminal family must not reopen"}
+    terminal_issue_action = request_action(
+        implementation,
+        csrf_impl,
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        terminal_issue_payload,
+        "request-after-terminal-family",
+    )
+    approve_action(
+        admin_b,
+        csrf_b,
+        terminal_issue_action,
+        key="approve-after-terminal-family",
+    )
+    terminal_issue = implementation.post(
+        "/api/v1/control-plane/screen-instances/screen-trust-fixture/device-enrollments",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "Idempotency-Key": "execute-after-terminal-family",
+                "High-Risk-Action-ID": terminal_issue_action["high_risk_action_id"],
+            },
+        ),
+        json=terminal_issue_payload,
+    )
+    assert terminal_issue.status_code == 409
+    assert terminal_issue.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
 
     with sqlite3.connect(database_path) as connection:
-        connection.execute(
+        claim_response_expires_at = connection.execute(
             """
-            UPDATE idempotency_records SET response_expires_at = 0
+            SELECT response_expires_at FROM idempotency_records
             WHERE phase = 'claimDeviceEnrollment'
             """
+        ).fetchone()[0]
+    service.clock = lambda: claim_response_expires_at + 1
+    try:
+        expired_claim_replay = device.post(
+            "/api/v1/device/enrollments:claim",
+            headers={"Idempotency-Key": "claim-enrollment"},
+            json={"enrollment_token": enrollment_token},
         )
-        connection.commit()
-    expired_claim_replay = device.post(
-        "/api/v1/device/enrollments:claim",
-        headers={"Idempotency-Key": "claim-enrollment"},
-        json={"enrollment_token": enrollment_token},
-    )
+    finally:
+        service.clock = original_clock
     assert expired_claim_replay.status_code == 409
     assert expired_claim_replay.json()["error"]["code"] == "ONE_TIME_RESPONSE_REPLAY_EXPIRED"
     with sqlite3.connect(database_path) as connection:
         replay_material = connection.execute(
             """
-            SELECT response_nonce, response_ciphertext FROM idempotency_records
+            SELECT response_nonce, response_ciphertext, response_aad_json
+            FROM idempotency_records
             WHERE phase = 'claimDeviceEnrollment'
             """
         ).fetchone()
-        assert replay_material == (None, None)
+        assert replay_material == (None, None, None)
 
     database_bytes = database_path.read_bytes()
     for secret_value in (
         enrollment_token,
+        terminal_enrollment_token,
         credential,
         expiring_successor,
         successor,
@@ -824,6 +1167,7 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
     audit_text = audit_response.text
     for secret_value in (
         enrollment_token,
+        terminal_enrollment_token,
         credential,
         expiring_successor,
         successor,
@@ -857,8 +1201,9 @@ def test_device_enrollment_rotation_activation_and_family_revoke(
                 "created_at": event["created_at"],
             }
         )
-        assert event["event_hash"] == service.keys.digest(
-            "AUDIT_EVENT_CHAIN_HMAC",
-            payload,
+        assert (
+            event["event_hash"]
+            == hashlib.sha256(b"shuziren:p1:security-audit-event:v1\0" + payload.encode("utf-8")).hexdigest()
         )
+        assert event["event_hash_schema_version"] == "p1_security_audit_event_hash_v1"
         previous_hash = event["event_hash"]

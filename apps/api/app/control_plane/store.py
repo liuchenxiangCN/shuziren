@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 LOGICAL_SCHEMA_VERSION = "p1_control_plane_001"
+MIGRATION_VERSION = "001_initial_identity_device_trust"
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -16,16 +18,15 @@ class ClosingConnection(sqlite3.Connection):
             self.close()
 
 
-SCHEMA_SQL = """
-PRAGMA journal_mode=WAL;
-PRAGMA synchronous=FULL;
-PRAGMA foreign_keys=ON;
-
-CREATE TABLE IF NOT EXISTS schema_migrations (
+SCHEMA_MIGRATIONS_SQL = """
+CREATE TABLE schema_migrations (
     version TEXT PRIMARY KEY,
+    checksum_sha256 TEXT NOT NULL,
     applied_at REAL NOT NULL
 );
+"""
 
+SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS control_plane_metadata (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     profile TEXT NOT NULL CHECK (profile IN ('UNINITIALIZED', 'DEVELOPMENT_PREVIEW')),
@@ -167,6 +168,7 @@ CREATE TABLE IF NOT EXISTS device_credentials (
     issued_at REAL NOT NULL,
     activation_expires_at REAL,
     activated_at REAL,
+    last_authenticated_at REAL,
     revoked_at REAL,
     revision INTEGER NOT NULL DEFAULT 1,
     UNIQUE (family_id, credential_version)
@@ -177,11 +179,16 @@ CREATE TABLE IF NOT EXISTS idempotency_records (
     phase TEXT NOT NULL,
     principal_key TEXT NOT NULL,
     idempotency_key_digest TEXT NOT NULL,
-    idempotency_hmac_key_id TEXT NOT NULL,
-    request_digest TEXT NOT NULL,
+    operation_id TEXT NOT NULL,
+    canonical_route TEXT NOT NULL,
+    sensitive_request_digest TEXT NOT NULL,
+    sensitive_digest_key_id TEXT NOT NULL,
     result_json TEXT,
     response_nonce BLOB,
     response_ciphertext BLOB,
+    response_encryption_key_id TEXT,
+    response_aad_json TEXT,
+    response_aad_hash TEXT,
     response_expires_at REAL,
     created_at REAL NOT NULL,
     UNIQUE (phase, principal_key, idempotency_key_digest)
@@ -200,7 +207,7 @@ CREATE TABLE IF NOT EXISTS security_audit_events (
     details_json TEXT NOT NULL,
     previous_event_hash TEXT,
     event_hash TEXT NOT NULL UNIQUE,
-    event_hmac_key_id TEXT NOT NULL,
+    event_hash_schema_version TEXT NOT NULL,
     created_at REAL NOT NULL
 );
 
@@ -217,6 +224,8 @@ BEGIN
 END;
 """
 
+MIGRATION_CHECKSUM_SHA256 = hashlib.sha256(SCHEMA_SQL.encode("utf-8")).hexdigest()
+
 
 class ControlPlaneStore:
     def __init__(self, path: str | Path) -> None:
@@ -225,11 +234,39 @@ class ControlPlaneStore:
     def initialize(self, now: float) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as connection:
-            connection.executescript(SCHEMA_SQL)
-            connection.execute(
-                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                (LOGICAL_SCHEMA_VERSION, now),
-            )
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=FULL")
+            connection.execute("PRAGMA foreign_keys=ON")
+            migration_table = connection.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name = 'schema_migrations'
+                """
+            ).fetchone()
+            if migration_table is None:
+                connection.executescript(SCHEMA_MIGRATIONS_SQL)
+            columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(schema_migrations)").fetchall()
+            }
+            if columns != {"version", "checksum_sha256", "applied_at"}:
+                raise RuntimeError(
+                    "Unsupported pre-candidate P1.1 database; archive it and initialize a fresh preview"
+                )
+            applied = connection.execute("SELECT version, checksum_sha256 FROM schema_migrations").fetchall()
+            for row in applied:
+                if row["version"] != MIGRATION_VERSION:
+                    raise RuntimeError(f"Unknown control-plane migration: {row['version']}")
+                if row["checksum_sha256"] != MIGRATION_CHECKSUM_SHA256:
+                    raise RuntimeError("Control-plane migration checksum mismatch")
+            if not applied:
+                connection.executescript(SCHEMA_SQL)
+                connection.execute(
+                    """
+                    INSERT INTO schema_migrations(version, checksum_sha256, applied_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (MIGRATION_VERSION, MIGRATION_CHECKSUM_SHA256, now),
+                )
             connection.commit()
 
     @contextmanager
@@ -249,5 +286,6 @@ class ControlPlaneStore:
         connection = sqlite3.connect(self.path, timeout=30.0, factory=ClosingConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA synchronous=FULL")
         connection.execute("PRAGMA busy_timeout=30000")
         return connection

@@ -154,9 +154,20 @@ def reauthenticate_auth_session(
     idempotency_key: IdempotencyKeyHeader,
 ) -> dict[str, Any]:
     context = mutating_session(request)
-    issue = service_from_request(request).reauthenticate(context, payload.password, if_match)
-    _set_session_response(response, issue.cookie_value, issue.csrf_token)
-    return issue.response
+    result = service_from_request(request).reauthenticate(
+        context,
+        payload.password,
+        if_match,
+        idempotency_key,
+    )
+    if not result.replayed:
+        if result.cookie_value is None or result.csrf_token is None:
+            raise RuntimeError("Reauthentication result omitted new session material")
+        _set_session_response(response, result.cookie_value, result.csrf_token)
+    else:
+        response.headers["Cache-Control"] = "no-store"
+    response.headers["ETag"] = result.response["etag"]
+    return result.response
 
 
 @router.delete(f"{CONTROL_PREFIX}/auth/session")

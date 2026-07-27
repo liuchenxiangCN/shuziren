@@ -9,6 +9,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from cryptography.exceptions import InvalidTag
+
 from app.control_plane.errors import ControlPlaneError
 from app.control_plane.security import (
     Ciphertext,
@@ -19,7 +21,7 @@ from app.control_plane.security import (
     opaque_id,
     opaque_secret,
 )
-from app.control_plane.store import ControlPlaneStore
+from app.control_plane.store import LOGICAL_SCHEMA_VERSION, ControlPlaneStore
 
 ROLE_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "platform_admin": (
@@ -90,6 +92,62 @@ OPERATION_PERMISSION = {
     "revokeDeviceCredential": "device.revoke",
 }
 
+IDEMPOTENCY_OPERATION_ROUTES = {
+    "reauthenticateAuthSession": (
+        "reauthenticateAuthSession",
+        "/api/v1/control-plane/auth/session:reauthenticate",
+    ),
+    "approveHighRiskAction": (
+        "approveHighRiskAction",
+        "/api/v1/control-plane/high-risk-actions/{high_risk_action_id}:approve",
+    ),
+    "rejectHighRiskAction": (
+        "rejectHighRiskAction",
+        "/api/v1/control-plane/high-risk-actions/{high_risk_action_id}:reject",
+    ),
+    "request:createUser": ("createUser", "/api/v1/control-plane/users"),
+    "request:issueDeviceEnrollment": (
+        "issueDeviceEnrollment",
+        "/api/v1/control-plane/screen-instances/{screen_id}/device-enrollments",
+    ),
+    "execute:issueDeviceEnrollment": (
+        "issueDeviceEnrollment",
+        "/api/v1/control-plane/screen-instances/{screen_id}/device-enrollments",
+    ),
+    "request:revokeDeviceCredential": (
+        "revokeDeviceCredential",
+        "/api/v1/control-plane/screen-instances/{screen_id}/device-credentials/{credential_id}:revoke",
+    ),
+    "claimDeviceEnrollment": (
+        "claimDeviceEnrollment",
+        "/api/v1/device/enrollments:claim",
+    ),
+    "rotateDeviceCredential": (
+        "rotateDeviceCredential",
+        "/api/v1/device/credentials:rotate",
+    ),
+}
+
+ONE_TIME_AAD_REQUIRED_FIELDS = {
+    "execute:issueDeviceEnrollment": (
+        "device_enrollment_id",
+        "screen_id",
+        "installation_channel_id",
+    ),
+    "claimDeviceEnrollment": (
+        "device_enrollment_id",
+        "device_credential_family_id",
+        "device_credential_id",
+        "claiming_device_channel_id",
+    ),
+    "rotateDeviceCredential": (
+        "device_credential_family_id",
+        "predecessor_credential_id",
+        "successor_credential_id",
+        "rotating_device_channel_id",
+    ),
+}
+
 SENSITIVE_DETAIL_KEYS = (
     "password",
     "secret",
@@ -131,6 +189,14 @@ class SessionIssue:
 
 
 @dataclass(frozen=True)
+class ReauthenticationResult:
+    cookie_value: str | None
+    csrf_token: str | None
+    response: dict[str, Any]
+    replayed: bool
+
+
+@dataclass(frozen=True)
 class DeviceContext:
     credential_id: str
     credential_version: int
@@ -165,13 +231,18 @@ class ControlPlaneService:
                 "SELECT * FROM control_plane_metadata WHERE singleton = 1"
             ).fetchone()
             migration = connection.execute(
-                "SELECT version, applied_at FROM schema_migrations ORDER BY applied_at DESC LIMIT 1"
+                """
+                SELECT version, checksum_sha256, applied_at
+                FROM schema_migrations ORDER BY applied_at DESC LIMIT 1
+                """
             ).fetchone()
         return {
             "available": True,
             "initialized": metadata is not None,
             "profile": metadata["profile"] if metadata else "UNINITIALIZED",
-            "logical_schema_version": migration["version"] if migration else None,
+            "logical_schema_version": LOGICAL_SCHEMA_VERSION,
+            "migration_version": migration["version"] if migration else None,
+            "migration_checksum_sha256": migration["checksum_sha256"] if migration else None,
             "production_ready": False,
             "production_readiness_reason": "P1.1 development preview is not production activation evidence",
         }
@@ -504,20 +575,129 @@ class ControlPlaneService:
         )
         return token, {**self._session_response(refreshed_context), "refreshed_at": now}
 
-    def reauthenticate(self, context: SessionContext, password: str, if_match: str) -> SessionIssue:
-        self._require_etag(if_match, "session", context.revision)
+    def reauthenticate(
+        self,
+        context: SessionContext,
+        password: str,
+        if_match: str,
+        idempotency_key: str,
+    ) -> ReauthenticationResult:
+        request_digest = self._sensitive_request_digest(
+            "reauthenticateAuthSession",
+            {
+                "user_id": context.principal.user_id,
+                "password": password,
+                "if_match": if_match,
+            },
+        )
         now = self.clock()
-        issue: SessionIssue | None = None
-        failed = False
+        result: ReauthenticationResult | None = None
+        failure: ControlPlaneError | None = None
         with self.store.transaction() as connection:
+            replay = self._idempotency_lookup(
+                connection,
+                phase="reauthenticateAuthSession",
+                principal_key=context.principal.user_id,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+            )
+            if replay is not None:
+                replay_result = json.loads(replay["result_json"])
+                if replay_result["successor_session_id"] != context.auth_session_id:
+                    failure = ControlPlaneError(
+                        409,
+                        "IDEMPOTENCY_KEY_REUSED",
+                        "Reauthentication result belongs to a different session",
+                    )
+                else:
+                    result = ReauthenticationResult(
+                        cookie_value=None,
+                        csrf_token=None,
+                        response=self._session_response(context),
+                        replayed=True,
+                    )
+            session = connection.execute(
+                """
+                SELECT state, revision FROM auth_sessions
+                WHERE auth_session_id = ?
+                """,
+                (context.auth_session_id,),
+            ).fetchone()
             user = connection.execute(
                 "SELECT * FROM users WHERE user_id = ?", (context.principal.user_id,)
             ).fetchone()
-            if (
+            if result is not None and (
+                session is None
+                or session["state"] != "ACTIVE"
+                or user is None
+                or user["account_state"] != "ACTIVE"
+                or user["authentication_epoch"] != context.principal.authentication_epoch
+                or user["authorization_epoch"] != context.principal.authorization_epoch
+            ):
+                result = None
+                failure = ControlPlaneError(
+                    401,
+                    "AUTHENTICATION_REQUIRED",
+                    "Session is no longer valid",
+                )
+            elif result is not None and session["revision"] != context.revision:
+                result = None
+                failure = ControlPlaneError(
+                    409,
+                    "RESOURCE_VERSION_CONFLICT",
+                    "Session changed",
+                )
+            if result is not None or failure is not None:
+                pass
+            elif session is None or session["state"] != "ACTIVE":
+                self._append_audit(
+                    connection,
+                    event_type="SESSION_REAUTHENTICATION",
+                    actor_type="USER",
+                    actor_id=context.principal.user_id,
+                    target_type="AUTH_SESSION",
+                    target_id=context.auth_session_id,
+                    outcome="DENIED",
+                    reason="session no longer active",
+                    details={},
+                    now=now,
+                )
+                failure = ControlPlaneError(
+                    401,
+                    "AUTHENTICATION_REQUIRED",
+                    "Session is no longer valid",
+                )
+            elif (
                 user is None
                 or user["account_state"] != "ACTIVE"
-                or not user["password_verifier"]
-                or not self.passwords.verify(user["password_verifier"], password)
+                or user["authentication_epoch"] != context.principal.authentication_epoch
+                or user["authorization_epoch"] != context.principal.authorization_epoch
+            ):
+                failure = ControlPlaneError(
+                    401,
+                    "AUTHENTICATION_REQUIRED",
+                    "Session is no longer valid",
+                )
+            elif session["revision"] != context.revision:
+                failure = ControlPlaneError(
+                    409,
+                    "RESOURCE_VERSION_CONFLICT",
+                    "Session changed",
+                )
+            else:
+                try:
+                    self._require_etag(if_match, "session", context.revision)
+                except ControlPlaneError as exc:
+                    failure = exc
+            if (
+                result is None
+                and failure is None
+                and (
+                    user is None
+                    or user["account_state"] != "ACTIVE"
+                    or not user["password_verifier"]
+                    or not self.passwords.verify(user["password_verifier"], password)
+                )
             ):
                 self._append_audit(
                     connection,
@@ -531,16 +711,46 @@ class ControlPlaneService:
                     details={},
                     now=now,
                 )
-                failed = True
-            else:
-                connection.execute(
-                    """
-                    UPDATE auth_sessions SET state = 'REVOKED', revoked_at = ?, revision = revision + 1
-                    WHERE auth_session_id = ? AND state = 'ACTIVE'
-                    """,
-                    (now, context.auth_session_id),
+                failure = ControlPlaneError(
+                    401,
+                    "AUTHENTICATION_REQUIRED",
+                    "Password confirmation failed",
                 )
+            if result is None and failure is None:
+                updated = connection.execute(
+                    """
+                    UPDATE auth_sessions SET state = 'REVOKED', revoked_at = ?,
+                        revision = revision + 1
+                    WHERE auth_session_id = ? AND state = 'ACTIVE' AND revision = ?
+                    """,
+                    (now, context.auth_session_id, context.revision),
+                )
+                if updated.rowcount != 1:
+                    failure = ControlPlaneError(
+                        401,
+                        "AUTHENTICATION_REQUIRED",
+                        "Session is no longer valid",
+                    )
+            if result is None and failure is None:
                 issue = self._issue_session(connection, user["user_id"], now)
+                self._idempotency_store(
+                    connection,
+                    phase="reauthenticateAuthSession",
+                    principal_key=context.principal.user_id,
+                    idempotency_key=idempotency_key,
+                    request_digest=request_digest,
+                    result={
+                        "predecessor_session_id": context.auth_session_id,
+                        "successor_session_id": issue.response["auth_session_id"],
+                    },
+                    now=now,
+                )
+                result = ReauthenticationResult(
+                    cookie_value=issue.cookie_value,
+                    csrf_token=issue.csrf_token,
+                    response=issue.response,
+                    replayed=False,
+                )
                 self._append_audit(
                     connection,
                     event_type="SESSION_REAUTHENTICATED",
@@ -553,11 +763,11 @@ class ControlPlaneService:
                     details={"predecessor_session_id": context.auth_session_id},
                     now=now,
                 )
-        if failed:
-            raise ControlPlaneError(401, "AUTHENTICATION_REQUIRED", "Password confirmation failed")
-        if issue is None:
+        if failure is not None:
+            raise failure
+        if result is None:
             raise RuntimeError("Reauthentication transaction produced no result")
-        return issue
+        return result
 
     def logout(self, context: SessionContext) -> None:
         now = self.clock()
@@ -688,17 +898,15 @@ class ControlPlaneService:
         self._require_recent_reauthentication(context)
         now = self.clock()
         self._expire_due_actions(now, action_id=action_id)
-        request_digest = self.keys.digest(
-            "HIGH_RISK_REQUEST_HMAC",
-            canonical_json(
-                {
-                    "decision": "APPROVE",
-                    "action_id": action_id,
-                    "expected_request_digest": expected_request_digest,
-                    "reason": reason,
-                    "if_match": if_match,
-                }
-            ),
+        request_digest = self._sensitive_request_digest(
+            "approveHighRiskAction",
+            {
+                "decision": "APPROVE",
+                "action_id": action_id,
+                "expected_request_digest": expected_request_digest,
+                "reason": reason,
+                "if_match": if_match,
+            },
         )
         with self.store.transaction() as connection:
             replay = self._idempotency_lookup(
@@ -778,17 +986,15 @@ class ControlPlaneService:
         self._require_recent_reauthentication(context)
         now = self.clock()
         self._expire_due_actions(now, action_id=action_id)
-        request_digest = self.keys.digest(
-            "HIGH_RISK_REQUEST_HMAC",
-            canonical_json(
-                {
-                    "decision": "REJECT",
-                    "action_id": action_id,
-                    "expected_request_digest": expected_request_digest,
-                    "reason": reason,
-                    "if_match": if_match,
-                }
-            ),
+        request_digest = self._sensitive_request_digest(
+            "rejectHighRiskAction",
+            {
+                "decision": "REJECT",
+                "action_id": action_id,
+                "expected_request_digest": expected_request_digest,
+                "reason": reason,
+                "if_match": if_match,
+            },
         )
         with self.store.transaction() as connection:
             replay = self._idempotency_lookup(
@@ -886,10 +1092,10 @@ class ControlPlaneService:
 
     def claim_enrollment(self, enrollment_token: str, idempotency_key: str) -> dict[str, Any]:
         enrollment_id, token_secret = self._parse_bound_secret(enrollment_token, "enrollment")
-        principal_key = self.keys.digest("ONE_TIME_TOKEN_VERIFIER_PEPPER", enrollment_token)
-        request_digest = self.keys.digest(
-            "HIGH_RISK_REQUEST_HMAC",
-            canonical_json({"enrollment_id": enrollment_id}),
+        principal_key = enrollment_id
+        request_digest = self._sensitive_request_digest(
+            "claimDeviceEnrollment",
+            {"enrollment_token": enrollment_token},
         )
         replay = self._load_one_time_replay(
             "claimDeviceEnrollment", principal_key, idempotency_key, request_digest
@@ -918,54 +1124,42 @@ class ControlPlaneService:
                 """,
                 (enrollment["tenant_id"], enrollment["deployment_id"], enrollment["screen_id"]),
             ).fetchone()
-            if family is not None and family["state"] == "ACTIVE":
+            if family is not None:
+                if family["state"] == "ACTIVE":
+                    raise ControlPlaneError(
+                        409,
+                        "ACTIVE_DEVICE_FAMILY_EXISTS",
+                        "An active device family already exists",
+                    )
                 raise ControlPlaneError(
-                    409, "ACTIVE_DEVICE_FAMILY_EXISTS", "An active device family already exists"
+                    409,
+                    "INVALID_STATE_TRANSITION",
+                    "A terminal device family cannot be reopened",
                 )
-            family_id = family["family_id"] if family is not None else opaque_id("dcf")
+            family_id = opaque_id("dcf")
             credential_id = opaque_id("dvc")
             credential_secret = opaque_secret()
             credential_value = f"{credential_id}.{credential_secret}"
-            if family is None:
-                credential_version = 1
-                family_revision = 1
-                credential_epoch = 1
-                connection.execute(
-                    """
-                    INSERT INTO device_credential_families(
-                        family_id, tenant_id, deployment_id, screen_id, state, credential_epoch,
-                        active_credential_id, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, 'ACTIVE', 1, ?, ?, ?)
-                    """,
-                    (
-                        family_id,
-                        enrollment["tenant_id"],
-                        enrollment["deployment_id"],
-                        enrollment["screen_id"],
-                        credential_id,
-                        now,
-                        now,
-                    ),
-                )
-            else:
-                version_row = connection.execute(
-                    """
-                    SELECT COALESCE(MAX(credential_version), 0) AS version
-                    FROM device_credentials WHERE family_id = ?
-                    """,
-                    (family_id,),
-                ).fetchone()
-                credential_version = version_row["version"] + 1
-                family_revision = family["revision"] + 1
-                credential_epoch = family["credential_epoch"]
-                connection.execute(
-                    """
-                    UPDATE device_credential_families SET state = 'ACTIVE',
-                        active_credential_id = ?, pending_credential_id = NULL,
-                        updated_at = ?, revision = revision + 1 WHERE family_id = ?
-                    """,
-                    (credential_id, now, family_id),
-                )
+            credential_version = 1
+            family_revision = 1
+            credential_epoch = 1
+            connection.execute(
+                """
+                INSERT INTO device_credential_families(
+                    family_id, tenant_id, deployment_id, screen_id, state, credential_epoch,
+                    active_credential_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'ACTIVE', 1, ?, ?, ?)
+                """,
+                (
+                    family_id,
+                    enrollment["tenant_id"],
+                    enrollment["deployment_id"],
+                    enrollment["screen_id"],
+                    credential_id,
+                    now,
+                    now,
+                ),
+            )
             connection.execute(
                 """
                 INSERT INTO device_credentials(
@@ -1005,6 +1199,12 @@ class ControlPlaneService:
                 idempotency_key=idempotency_key,
                 request_digest=request_digest,
                 result=result,
+                aad_context={
+                    "device_enrollment_id": enrollment_id,
+                    "device_credential_family_id": family_id,
+                    "device_credential_id": credential_id,
+                    "claiming_device_channel_id": principal_key,
+                },
                 now=now,
             )
             self._append_audit(
@@ -1097,9 +1297,10 @@ class ControlPlaneService:
                     connection.execute(
                         """
                         UPDATE device_credentials SET state = 'ACTIVE', activated_at = ?,
-                            revision = revision + 1 WHERE credential_id = ?
+                            last_authenticated_at = ?, revision = revision + 1
+                        WHERE credential_id = ?
                         """,
-                        (now, credential_id),
+                        (now, now, credential_id),
                     )
                     connection.execute(
                         """
@@ -1129,6 +1330,13 @@ class ControlPlaneService:
                     "Device credential is invalid",
                 )
             else:
+                connection.execute(
+                    """
+                    UPDATE device_credentials SET last_authenticated_at = ?
+                    WHERE credential_id = ?
+                    """,
+                    (now, credential_id),
+                )
                 family_revision = credential["family_revision"]
             if failure is None:
                 context = DeviceContext(
@@ -1154,15 +1362,12 @@ class ControlPlaneService:
         idempotency_key: str,
     ) -> dict[str, Any]:
         principal_key = context.credential_id
-        request_digest = self.keys.digest(
-            "HIGH_RISK_REQUEST_HMAC",
-            canonical_json(
-                {
-                    "credential_id": context.credential_id,
-                    "credential_epoch": context.credential_epoch,
-                    "family_revision": context.family_revision,
-                }
-            ),
+        request_digest = self._sensitive_request_digest(
+            "rotateDeviceCredential",
+            {
+                "credential_id": context.credential_id,
+                "credential_epoch": context.credential_epoch,
+            },
         )
         replay = self._load_one_time_replay(
             "rotateDeviceCredential", principal_key, idempotency_key, request_digest
@@ -1180,10 +1385,68 @@ class ControlPlaneService:
                 or family["state"] != "ACTIVE"
                 or family["active_credential_id"] != context.credential_id
                 or family["credential_epoch"] != context.credential_epoch
+                or family["revision"] != context.family_revision
             ):
                 raise ControlPlaneError(409, "RESOURCE_VERSION_CONFLICT", "Device family changed")
+            family_revision = family["revision"]
             if family["pending_credential_id"]:
-                raise ControlPlaneError(409, "SUCCESSOR_ALREADY_PENDING", "A successor is already pending")
+                pending = connection.execute(
+                    """
+                    SELECT state, activation_expires_at, credential_version
+                    FROM device_credentials WHERE credential_id = ? AND family_id = ?
+                    """,
+                    (family["pending_credential_id"], context.family_id),
+                ).fetchone()
+                if (
+                    pending is None
+                    or pending["state"] != "PENDING_ACTIVATION"
+                    or pending["activation_expires_at"] is None
+                    or pending["activation_expires_at"] > now
+                ):
+                    raise ControlPlaneError(
+                        409,
+                        "SUCCESSOR_ALREADY_PENDING",
+                        "A successor is already pending",
+                    )
+                connection.execute(
+                    """
+                    UPDATE device_credentials SET state = 'EXPIRED', revision = revision + 1
+                    WHERE credential_id = ? AND state = 'PENDING_ACTIVATION'
+                    """,
+                    (family["pending_credential_id"],),
+                )
+                cleared = connection.execute(
+                    """
+                    UPDATE device_credential_families SET pending_credential_id = NULL,
+                        updated_at = ?, revision = revision + 1
+                    WHERE family_id = ? AND pending_credential_id = ? AND revision = ?
+                    """,
+                    (
+                        now,
+                        context.family_id,
+                        family["pending_credential_id"],
+                        family_revision,
+                    ),
+                )
+                if cleared.rowcount != 1:
+                    raise ControlPlaneError(
+                        409,
+                        "RESOURCE_VERSION_CONFLICT",
+                        "Device family changed",
+                    )
+                self._append_audit(
+                    connection,
+                    event_type="DEVICE_CREDENTIAL_SUCCESSOR_EXPIRED",
+                    actor_type="SYSTEM",
+                    actor_id=None,
+                    target_type="SCREEN",
+                    target_id=context.screen_id,
+                    outcome="DENIED",
+                    reason="activation window expired",
+                    details={"credential_version": pending["credential_version"]},
+                    now=now,
+                )
+                family_revision += 1
             current = connection.execute(
                 """
                 SELECT MAX(credential_version) AS credential_version
@@ -1212,13 +1475,19 @@ class ControlPlaneService:
                     now + 10 * 60,
                 ),
             )
-            connection.execute(
+            pending_update = connection.execute(
                 """
                 UPDATE device_credential_families SET pending_credential_id = ?, updated_at = ?,
-                    revision = revision + 1 WHERE family_id = ?
+                    revision = revision + 1 WHERE family_id = ? AND revision = ?
                 """,
-                (successor_id, now, context.family_id),
+                (successor_id, now, context.family_id, family_revision),
             )
+            if pending_update.rowcount != 1:
+                raise ControlPlaneError(
+                    409,
+                    "RESOURCE_VERSION_CONFLICT",
+                    "Device family changed",
+                )
             result = {
                 "credential": successor_value,
                 "credential_id": successor_id,
@@ -1226,7 +1495,7 @@ class ControlPlaneService:
                 "state": "PENDING_ACTIVATION",
                 "activation_expires_at": now + 10 * 60,
                 "screen_id": context.screen_id,
-                "family_etag": self._etag("device-family", family["revision"] + 1),
+                "family_etag": self._etag("device-family", family_revision + 1),
                 "credential_epoch": family["credential_epoch"],
             }
             self._store_one_time_replay(
@@ -1236,6 +1505,12 @@ class ControlPlaneService:
                 idempotency_key=idempotency_key,
                 request_digest=request_digest,
                 result=result,
+                aad_context={
+                    "device_credential_family_id": context.family_id,
+                    "predecessor_credential_id": context.credential_id,
+                    "successor_credential_id": successor_id,
+                    "rotating_device_channel_id": principal_key,
+                },
                 now=now,
             )
             self._append_audit(
@@ -1373,6 +1648,10 @@ class ControlPlaneService:
         if len(reason) < 3 or len(reason) > 500:
             raise ControlPlaneError(422, "VALIDATION_ERROR", "Reason must contain 3 to 500 characters")
         digest = self._protected_digest(operation_id, command, reason)
+        sensitive_digest = self._sensitive_request_digest(
+            operation_id,
+            {"command": command, "reason": reason},
+        )
         one_time_phase = f"execute:{operation_id}"
         one_time_principal = (
             f"{context.principal.user_id}:{high_risk_action_id}" if high_risk_action_id is not None else None
@@ -1382,7 +1661,7 @@ class ControlPlaneService:
                 one_time_phase,
                 one_time_principal,
                 idempotency_key,
-                digest,
+                sensitive_digest,
             )
             if replay is not None:
                 return replay
@@ -1396,7 +1675,7 @@ class ControlPlaneService:
                     phase=f"request:{operation_id}",
                     principal_key=context.principal.user_id,
                     idempotency_key=idempotency_key,
-                    request_digest=digest,
+                    request_digest=sensitive_digest,
                 )
                 if record is not None:
                     return json.loads(record["result_json"])
@@ -1435,7 +1714,7 @@ class ControlPlaneService:
                     phase=f"request:{operation_id}",
                     principal_key=context.principal.user_id,
                     idempotency_key=idempotency_key,
-                    request_digest=digest,
+                    request_digest=sensitive_digest,
                     result=result,
                     now=now,
                 )
@@ -1497,8 +1776,13 @@ class ControlPlaneService:
                     phase=one_time_phase,
                     principal_key=one_time_principal,
                     idempotency_key=idempotency_key,
-                    request_digest=digest,
+                    request_digest=sensitive_digest,
                     result=result,
+                    aad_context={
+                        "device_enrollment_id": result["enrollment"]["enrollment_id"],
+                        "screen_id": result["enrollment"]["screen_id"],
+                        "installation_channel_id": one_time_principal,
+                    },
                     now=now,
                 )
                 stored_result = {
@@ -1570,9 +1854,17 @@ class ControlPlaneService:
                 """,
                 (principal.tenant_id, principal.deployment_id, command["screen_id"]),
             ).fetchone()
-            if family is not None and family["state"] == "ACTIVE":
+            if family is not None:
+                if family["state"] == "ACTIVE":
+                    raise ControlPlaneError(
+                        409,
+                        "ACTIVE_DEVICE_FAMILY_EXISTS",
+                        "An active device family already exists",
+                    )
                 raise ControlPlaneError(
-                    409, "ACTIVE_DEVICE_FAMILY_EXISTS", "An active device family already exists"
+                    409,
+                    "INVALID_STATE_TRANSITION",
+                    "A terminal device family cannot be reopened",
                 )
             enrollment_id = opaque_id("enr")
             token_secret = opaque_secret()
@@ -1948,15 +2240,27 @@ class ControlPlaneService:
             """,
             (phase, principal_key, key_digest),
         ).fetchone()
-        if row is not None and row["idempotency_hmac_key_id"] != self.keys.key_id(
-            "SENSITIVE_IDEMPOTENCY_HMAC"
+        operation_id, canonical_route = self._idempotency_operation_route(phase)
+        if row is not None and (
+            row["operation_id"] != operation_id or row["canonical_route"] != canonical_route
         ):
             raise ControlPlaneError(
                 409,
-                "IDEMPOTENCY_DIGEST_KEY_EPOCH_CHANGED",
-                "Idempotency evidence uses an unavailable key generation",
+                "IDEMPOTENCY_EVIDENCE_INVALID",
+                "Idempotency route evidence is invalid",
             )
-        if row is not None and not secrets.compare_digest(row["request_digest"], request_digest):
+        if row is not None and row["sensitive_digest_key_id"] != self.keys.key_id(
+            "SENSITIVE_REQUEST_DIGEST_HMAC"
+        ):
+            raise ControlPlaneError(
+                409,
+                "REQUEST_DIGEST_KEY_EPOCH_CHANGED",
+                "Sensitive request evidence uses an unavailable key generation",
+            )
+        if row is not None and not secrets.compare_digest(
+            row["sensitive_request_digest"],
+            request_digest,
+        ):
             raise ControlPlaneError(
                 409, "IDEMPOTENCY_KEY_REUSED", "Idempotency key was reused with different content"
             )
@@ -1973,20 +2277,24 @@ class ControlPlaneService:
         result: dict[str, Any],
         now: float,
     ) -> None:
+        operation_id, canonical_route = self._idempotency_operation_route(phase)
         connection.execute(
             """
             INSERT INTO idempotency_records(
                 record_id, phase, principal_key, idempotency_key_digest,
-                idempotency_hmac_key_id, request_digest, result_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                operation_id, canonical_route, sensitive_request_digest,
+                sensitive_digest_key_id, result_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 opaque_id("idem"),
                 phase,
                 principal_key,
                 self._idempotency_key_digest(idempotency_key),
-                self.keys.key_id("SENSITIVE_IDEMPOTENCY_HMAC"),
+                operation_id,
+                canonical_route,
                 request_digest,
+                self.keys.key_id("SENSITIVE_REQUEST_DIGEST_HMAC"),
                 canonical_json(result),
                 now,
             ),
@@ -2000,6 +2308,8 @@ class ControlPlaneService:
         request_digest: str,
     ) -> dict[str, Any] | None:
         expired = False
+        result: dict[str, Any] | None = None
+        now = self.clock()
         with self.store.transaction() as connection:
             row = self._idempotency_lookup(
                 connection,
@@ -2008,13 +2318,25 @@ class ControlPlaneService:
                 idempotency_key=idempotency_key,
                 request_digest=request_digest,
             )
-            if row is not None and (
-                row["response_expires_at"] is None or row["response_expires_at"] <= self.clock()
-            ):
+            if row is not None:
+                result = self._decrypt_one_time_replay(
+                    row,
+                    phase=phase,
+                    principal_key=principal_key,
+                    request_digest=request_digest,
+                )
+            if row is not None and (row["response_expires_at"] is None or row["response_expires_at"] <= now):
+                self._cleanup_expired_one_time_replay(
+                    connection,
+                    phase=phase,
+                    result=result,
+                    now=now,
+                )
                 connection.execute(
                     """
                     UPDATE idempotency_records
-                    SET response_nonce = NULL, response_ciphertext = NULL
+                    SET response_nonce = NULL, response_ciphertext = NULL,
+                        response_aad_json = NULL
                     WHERE record_id = ?
                     """,
                     (row["record_id"],),
@@ -2028,19 +2350,7 @@ class ControlPlaneService:
                 "ONE_TIME_RESPONSE_REPLAY_EXPIRED",
                 "The one-time response replay window expired",
             )
-        aad = self._one_time_aad(
-            phase,
-            principal_key,
-            row["idempotency_key_digest"],
-            request_digest,
-            row["record_id"],
-            row["response_expires_at"],
-        )
-        plaintext = self.keys.decrypt(
-            Ciphertext(nonce=row["response_nonce"], value=row["response_ciphertext"]),
-            aad,
-        )
-        return json.loads(plaintext)
+        return result
 
     def _store_one_time_replay(
         self,
@@ -2051,37 +2361,62 @@ class ControlPlaneService:
         idempotency_key: str,
         request_digest: str,
         result: dict[str, Any],
+        aad_context: dict[str, Any],
         now: float,
     ) -> None:
         record_id = opaque_id("idem")
         key_digest = self._idempotency_key_digest(idempotency_key)
         expires_at = now + 5 * 60
-        aad = self._one_time_aad(
-            phase,
-            principal_key,
-            key_digest,
-            request_digest,
-            record_id,
-            expires_at,
+        operation_id, canonical_route = self._idempotency_operation_route(phase)
+        sensitive_digest_key_id = self.keys.key_id("SENSITIVE_REQUEST_DIGEST_HMAC")
+        response_encryption_key_id = self.keys.key_id("ONE_TIME_RESPONSE_ENCRYPTION")
+        aad_payload = {
+            "schema_version": "p1_one_time_response_aad_v1",
+            "record_id": record_id,
+            "phase": phase,
+            "operation_id": operation_id,
+            "canonical_route": canonical_route,
+            "principal_key": principal_key,
+            "idempotency_key_digest": key_digest,
+            "sensitive_request_digest_hmac": request_digest,
+            "sensitive_request_digest_hmac_key_id": sensitive_digest_key_id,
+            "sensitive_request_digest_schema_version": "p1_sensitive_request_digest_v1",
+            "response_encryption_key_id": response_encryption_key_id,
+            "delivery_channel_id": principal_key,
+            "expires_at": expires_at,
+            **aad_context,
+        }
+        aad_json = canonical_json(aad_payload)
+        aad = aad_json.encode("utf-8")
+        aad_hash = hashlib.sha256(aad).hexdigest()
+        encrypted = self.keys.encrypt(
+            canonical_json(result).encode("utf-8"),
+            aad,
         )
-        encrypted = self.keys.encrypt(canonical_json(result).encode("utf-8"), aad)
         connection.execute(
             """
             INSERT INTO idempotency_records(
                 record_id, phase, principal_key, idempotency_key_digest,
-                idempotency_hmac_key_id, request_digest, response_nonce,
-                response_ciphertext, response_expires_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                operation_id, canonical_route, sensitive_request_digest,
+                sensitive_digest_key_id, response_nonce, response_ciphertext,
+                response_encryption_key_id, response_aad_json, response_aad_hash,
+                response_expires_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record_id,
                 phase,
                 principal_key,
                 key_digest,
-                self.keys.key_id("SENSITIVE_IDEMPOTENCY_HMAC"),
+                operation_id,
+                canonical_route,
                 request_digest,
+                sensitive_digest_key_id,
                 encrypted.nonce,
                 encrypted.value,
+                response_encryption_key_id,
+                aad_json,
+                aad_hash,
                 expires_at,
                 now,
             ),
@@ -2094,27 +2429,257 @@ class ControlPlaneService:
                 "VALIDATION_ERROR",
                 "Idempotency-Key must contain 8 to 200 printing characters",
             )
-        return self.keys.digest("SENSITIVE_IDEMPOTENCY_HMAC", idempotency_key)
+        return hashlib.sha256(
+            b"shuziren:p1:idempotency-key:v1\0" + idempotency_key.encode("utf-8")
+        ).hexdigest()
 
-    @staticmethod
-    def _one_time_aad(
-        phase: str,
-        principal_key: str,
-        key_digest: str,
-        request_digest: str,
-        record_id: str,
-        expires_at: float,
-    ) -> bytes:
-        return canonical_json(
+    def _sensitive_request_digest(self, operation_id: str, value: dict[str, Any]) -> str:
+        payload = canonical_json(
             {
-                "phase": phase,
-                "principal_key": principal_key,
-                "idempotency_key_digest": key_digest,
-                "request_digest": request_digest,
-                "record_id": record_id,
-                "expires_at": expires_at,
+                "schema_version": "p1_sensitive_request_digest_v1",
+                "operation_id": operation_id,
+                "request": value,
             }
         ).encode("utf-8")
+        return self.keys.digest(
+            "SENSITIVE_REQUEST_DIGEST_HMAC",
+            b"shuziren:p1:sensitive-request-digest:v1\0" + payload,
+        )
+
+    @staticmethod
+    def _idempotency_operation_route(phase: str) -> tuple[str, str]:
+        try:
+            return IDEMPOTENCY_OPERATION_ROUTES[phase]
+        except KeyError as exc:
+            raise RuntimeError(f"Missing idempotency route metadata for {phase}") from exc
+
+    def _decrypt_one_time_replay(
+        self,
+        row: sqlite3.Row,
+        *,
+        phase: str,
+        principal_key: str,
+        request_digest: str,
+    ) -> dict[str, Any]:
+        if row["response_encryption_key_id"] != self.keys.key_id("ONE_TIME_RESPONSE_ENCRYPTION"):
+            raise ControlPlaneError(
+                503,
+                "ONE_TIME_RESPONSE_KEY_UNAVAILABLE",
+                "The one-time response key is unavailable",
+                retryable=True,
+            )
+        aad_json = row["response_aad_json"]
+        if not aad_json or row["response_nonce"] is None or row["response_ciphertext"] is None:
+            raise ControlPlaneError(
+                409,
+                "ONE_TIME_RESPONSE_REPLAY_EXPIRED",
+                "The one-time response replay window expired",
+            )
+        aad = aad_json.encode("utf-8")
+        if not secrets.compare_digest(
+            hashlib.sha256(aad).hexdigest(),
+            row["response_aad_hash"],
+        ):
+            raise ControlPlaneError(
+                409,
+                "IDEMPOTENCY_EVIDENCE_INVALID",
+                "One-time response associated-data evidence is invalid",
+            )
+        try:
+            aad_payload = json.loads(aad_json)
+        except json.JSONDecodeError as exc:
+            raise ControlPlaneError(
+                409,
+                "IDEMPOTENCY_EVIDENCE_INVALID",
+                "One-time response associated-data evidence is invalid",
+            ) from exc
+        if not isinstance(aad_payload, dict):
+            raise ControlPlaneError(
+                409,
+                "IDEMPOTENCY_EVIDENCE_INVALID",
+                "One-time response associated-data evidence is invalid",
+            )
+        operation_id, canonical_route = self._idempotency_operation_route(phase)
+        expected = {
+            "schema_version": "p1_one_time_response_aad_v1",
+            "record_id": row["record_id"],
+            "phase": phase,
+            "operation_id": operation_id,
+            "canonical_route": canonical_route,
+            "principal_key": principal_key,
+            "idempotency_key_digest": row["idempotency_key_digest"],
+            "sensitive_request_digest_hmac": request_digest,
+            "sensitive_request_digest_hmac_key_id": row["sensitive_digest_key_id"],
+            "sensitive_request_digest_schema_version": "p1_sensitive_request_digest_v1",
+            "response_encryption_key_id": row["response_encryption_key_id"],
+            "delivery_channel_id": principal_key,
+            "expires_at": row["response_expires_at"],
+        }
+        for key, value in expected.items():
+            if aad_payload.get(key) != value:
+                raise ControlPlaneError(
+                    409,
+                    "IDEMPOTENCY_EVIDENCE_INVALID",
+                    "One-time response associated-data binding is invalid",
+                )
+        required_fields = ONE_TIME_AAD_REQUIRED_FIELDS.get(phase)
+        if required_fields is None or any(not aad_payload.get(field) for field in required_fields):
+            raise ControlPlaneError(
+                409,
+                "IDEMPOTENCY_EVIDENCE_INVALID",
+                "One-time response operation context is incomplete",
+            )
+        try:
+            plaintext = self.keys.decrypt(
+                Ciphertext(
+                    nonce=row["response_nonce"],
+                    value=row["response_ciphertext"],
+                ),
+                aad,
+            )
+            result = json.loads(plaintext)
+        except (InvalidTag, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ControlPlaneError(
+                409,
+                "IDEMPOTENCY_EVIDENCE_INVALID",
+                "One-time response ciphertext evidence is invalid",
+            ) from exc
+        if not isinstance(result, dict):
+            raise ControlPlaneError(
+                409,
+                "IDEMPOTENCY_EVIDENCE_INVALID",
+                "One-time response ciphertext evidence is invalid",
+            )
+        return result
+
+    def _cleanup_expired_one_time_replay(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        phase: str,
+        result: dict[str, Any] | None,
+        now: float,
+    ) -> None:
+        if result is None:
+            return
+        if phase == "execute:issueDeviceEnrollment":
+            enrollment_id = result["enrollment"]["enrollment_id"]
+            updated = connection.execute(
+                """
+                UPDATE device_enrollments SET state = 'REVOKED', revoked_at = ?,
+                    revision = revision + 1
+                WHERE enrollment_id = ? AND state = 'ISSUED'
+                """,
+                (now, enrollment_id),
+            )
+            if updated.rowcount == 1:
+                self._append_audit(
+                    connection,
+                    event_type="DEVICE_ENROLLMENT_REPLAY_EXPIRED",
+                    actor_type="SYSTEM",
+                    actor_id=None,
+                    target_type="SCREEN",
+                    target_id=result["enrollment"]["screen_id"],
+                    outcome="DENIED",
+                    reason="one-time response replay window expired",
+                    details={"enrollment_id": enrollment_id},
+                    now=now,
+                )
+            return
+        if phase == "claimDeviceEnrollment":
+            credential = connection.execute(
+                """
+                SELECT c.credential_id, c.family_id, c.state, c.last_authenticated_at,
+                    f.screen_id, f.state AS family_state, f.active_credential_id
+                FROM device_credentials c
+                JOIN device_credential_families f ON f.family_id = c.family_id
+                WHERE c.credential_id = ?
+                """,
+                (result["credential_id"],),
+            ).fetchone()
+            if (
+                credential is not None
+                and credential["state"] == "ACTIVE"
+                and credential["last_authenticated_at"] is None
+                and credential["family_state"] == "ACTIVE"
+                and credential["active_credential_id"] == credential["credential_id"]
+            ):
+                connection.execute(
+                    """
+                    UPDATE device_credentials SET state = 'REVOKED', revoked_at = ?,
+                        revision = revision + 1
+                    WHERE credential_id = ? AND state = 'ACTIVE'
+                    """,
+                    (now, credential["credential_id"]),
+                )
+                connection.execute(
+                    """
+                    UPDATE device_credential_families SET state = 'REENROLL_REQUIRED',
+                        credential_epoch = credential_epoch + 1,
+                        active_credential_id = NULL, pending_credential_id = NULL,
+                        updated_at = ?, revision = revision + 1
+                    WHERE family_id = ? AND state = 'ACTIVE'
+                    """,
+                    (now, credential["family_id"]),
+                )
+                self._append_audit(
+                    connection,
+                    event_type="DEVICE_CLAIM_REPLAY_EXPIRED",
+                    actor_type="SYSTEM",
+                    actor_id=None,
+                    target_type="SCREEN",
+                    target_id=credential["screen_id"],
+                    outcome="DENIED",
+                    reason="credential delivery was not proven",
+                    details={"credential_id": credential["credential_id"]},
+                    now=now,
+                )
+            return
+        if phase == "rotateDeviceCredential":
+            successor = connection.execute(
+                """
+                SELECT c.credential_id, c.family_id, c.state, f.screen_id,
+                    f.state AS family_state, f.active_credential_id, f.pending_credential_id
+                FROM device_credentials c
+                JOIN device_credential_families f ON f.family_id = c.family_id
+                WHERE c.credential_id = ?
+                """,
+                (result["credential_id"],),
+            ).fetchone()
+            if (
+                successor is not None
+                and successor["state"] == "PENDING_ACTIVATION"
+                and successor["family_state"] == "ACTIVE"
+                and successor["pending_credential_id"] == successor["credential_id"]
+            ):
+                connection.execute(
+                    """
+                    UPDATE device_credentials SET state = 'REVOKED', revoked_at = ?,
+                        revision = revision + 1
+                    WHERE credential_id = ? AND state = 'PENDING_ACTIVATION'
+                    """,
+                    (now, successor["credential_id"]),
+                )
+                connection.execute(
+                    """
+                    UPDATE device_credential_families SET pending_credential_id = NULL,
+                        updated_at = ?, revision = revision + 1
+                    WHERE family_id = ? AND pending_credential_id = ?
+                    """,
+                    (now, successor["family_id"], successor["credential_id"]),
+                )
+                self._append_audit(
+                    connection,
+                    event_type="DEVICE_CREDENTIAL_ROTATION_REPLAY_EXPIRED",
+                    actor_type="SYSTEM",
+                    actor_id=None,
+                    target_type="SCREEN",
+                    target_id=successor["screen_id"],
+                    outcome="DENIED",
+                    reason="successor delivery was not proven",
+                    details={"successor_credential_id": successor["credential_id"]},
+                    now=now,
+                )
 
     def _append_audit(
         self,
@@ -2151,13 +2716,15 @@ class ControlPlaneService:
                 "created_at": now,
             }
         )
-        event_hash = self.keys.digest("AUDIT_EVENT_CHAIN_HMAC", payload)
+        event_hash = hashlib.sha256(
+            b"shuziren:p1:security-audit-event:v1\0" + payload.encode("utf-8")
+        ).hexdigest()
         connection.execute(
             """
             INSERT INTO security_audit_events(
                 event_id, event_type, actor_type, actor_id, target_type, target_id,
                 outcome, reason, details_json, previous_event_hash, event_hash,
-                event_hmac_key_id, created_at
+                event_hash_schema_version, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -2172,7 +2739,7 @@ class ControlPlaneService:
                 canonical_json(sanitized),
                 previous_hash,
                 event_hash,
-                self.keys.key_id("AUDIT_EVENT_CHAIN_HMAC"),
+                "p1_security_audit_event_hash_v1",
                 now,
             ),
         )
