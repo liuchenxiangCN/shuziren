@@ -28,9 +28,9 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ### P1.2 Three-Screen Inventory
 
-P1.1 was explicitly accepted on 2026-07-27 and is the current runtime rollback baseline. P1.2 is active only for result-card and non-scope freezing; inventory implementation has not started.
+P1.1 was explicitly accepted on 2026-07-27 and is the current runtime rollback baseline. The P1.2 result card and non-scope are frozen; inventory implementation has not started.
 
-- The P1.2 result card must freeze one default Site, screen-group behavior and at least three independently addressable ScreenInstances before implementation.
+- P1.2 must implement the frozen one default Site, screen-group behavior and at least three independently addressable ScreenInstances.
 - Every Site, ScreenGroup, ScreenInstance, DigitalHumanInstance and runtime-status reference must keep the accepted tenant/deployment/site/screen ownership lineage.
 - A screen or group mutation must not alter another screen, its device family, DigitalHumanInstance or runtime status.
 - The accepted P1.1 identity, approval, audit and device-trust behavior must remain backward compatible through any inventory migration.

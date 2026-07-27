@@ -16,7 +16,8 @@
 - The user explicitly accepted P1.1 (`通过`) without conditions or scope reduction.
 - P1.1 candidate commit `8c18e5d6b10081eaaf608436440046894d235d46`, tree `9bf17c8ac4b2fbf221cbaf1a27c0a3fb098aafbd`, became the accepted runtime rollback baseline.
 - P1.2 Three-Screen Inventory became the sole active result batch.
-- P1.2 is authorized only for result-card and non-scope freezing; no P1.2 runtime implementation is claimed or started by this acceptance record.
+- Froze the P1.2 result card and non-scope before implementation. It promotes the exact P1.1 fixture screen into a default Site/group three-screen inventory without changing its ID or trust history, keeps FVS `UNVERIFIED`, keeps runtime configuration `NOT_CONFIGURED_P1_3`, and requires ownership-aware isolation, migration and rollback evidence.
+- No P1.2 runtime implementation is claimed or started by the result-card freeze.
 
 ### P1.0 User Acceptance And P1.1 Activation
 
