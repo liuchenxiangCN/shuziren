@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `IMPLEMENTATION_IN_PROGRESS`
+- State: `CANDIDATE_FROZEN_REVIEW_PENDING`
 
 ## Frozen Limits
 
@@ -12,6 +12,7 @@
 - Development preview identity initialization is never a production bootstrap or custodian-attestation claim.
 - Network `createUser` correctly creates only a disabled, passwordless, empty-role `PROVISIONING` record. Complete target-person credential setup, custodian binding, role replacement and enablement are not yet implemented; the preview's usable auditor and implementation identities come only from explicit local initialization.
 - Production activation, external monotonic anchors, full security-ledger recovery, PostgreSQL and backup / restore remain unverified.
-- The browser login and management DOM smoke passed, but no screenshot is currently available because the capture command timed out.
+- Local API/web startup and the complete browser workflow passed. The retained screenshot shows the sanitized auditor view and contains no observed credential material.
 - Docker / Compose execution is Blocked on the current host because the Docker CLI is unavailable; no image digest or container smoke is claimed.
 - FineReport plugin behavior remains Blocked by the P2 external gate.
+- Independent Codex review is Pending. The candidate must not be presented for user acceptance until that separate review passes.

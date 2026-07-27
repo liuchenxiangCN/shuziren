@@ -11,11 +11,11 @@
 
 `Productization P1.1 Identity And Device Trust`.
 
-G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. Product runtime still begins from the single-instance POC until P1.1 evidence proves the scoped additions below.
+G0 and P1.0 were explicitly accepted on 2026-07-27. P1.0 is the accepted target-contract and rollback baseline. P1.1 candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e` is frozen with required local automated, browser and rollback gates passing, but it remains unaccepted and the accepted runtime baseline is still the single-instance POC.
 
 ## Next Task
 
-Implement and verify the P1.1 local identity and screen-device trust result, then present it for explicit user acceptance.
+Obtain a separate read-only Codex review of the frozen P1.1 candidate, remediate any blocking finding, then present the reviewed local identity and screen-device trust result for explicit user acceptance.
 
 ### User-Visible Result
 
@@ -39,7 +39,7 @@ P1.1 must provide:
 - [acceptance/productization/P1.1/IMPLEMENTED_DATA.md](acceptance/productization/P1.1/IMPLEMENTED_DATA.md)
 - [acceptance/productization/P1.1/RUNBOOK.md](acceptance/productization/P1.1/RUNBOOK.md)
 
-The user decision remains Pending until an explicit result decision is received.
+The independent review and user decision remain Pending. P1.1 cannot be presented for acceptance until the independent review passes.
 
 ### User Result Scenarios
 

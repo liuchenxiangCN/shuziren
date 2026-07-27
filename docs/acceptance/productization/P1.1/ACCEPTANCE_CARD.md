@@ -3,12 +3,12 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `IMPLEMENTATION_IN_PROGRESS`
+- State: `CANDIDATE_FROZEN_REVIEW_PENDING`
 - Result: local identity and screen-device trust
 - Base accepted version: commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`, tree `33752e13a385b4980cd3ecca309ad0f27d9307ae`
-- Candidate: Pending
-- Database schema / migration: `p1_control_plane_001`; implementation and rollback evidence pending
-- Gate summary: Pending
+- Candidate: commit `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e`, tree `d7c6d0221ccb156a69858742b5cda45e3ef9554d`
+- Database schema / migration: `p1_control_plane_001` / `001_initial_identity_device_trust`; empty-store and repeat initialization PASS
+- Gate summary: required local automated, browser and rollback gates PASS; optional Docker preview Blocked; independent review Pending
 - User decision: Pending
 
 ## Frozen Observable Outcome
@@ -80,4 +80,12 @@ The management UI and API must explain safe failures without exposing password, 
 
 ## Rollback
 
-Target: P1.0 acceptance-transition commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`. Rollback procedure and post-restore verification remain Pending until the P1.1 candidate is frozen.
+Target: P1.0 acceptance-transition commit `6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758`, tree `33752e13a385b4980cd3ecca309ad0f27d9307ae`.
+
+Rollback proof PASS in a detached temporary worktree: both P1 target-contract validation and repository lifecycle lint passed, the P1.1 control-plane module was absent, and the original POC API imported with `/api/config/*` present and no `/api/v1/control-plane/*` routes. The temporary worktree was removed after verification.
+
+The P1.1 store is a new, separate `data/control-plane.db`. Rollback preserves it outside the active P1.0 runtime path rather than attempting an unsupported downgrade into the POC `sessions.db`.
+
+## Review Boundary
+
+The candidate is not yet eligible for user acceptance. A separate read-only Codex review must rerun the critical negative tests and confirm the evidence before the acceptance prompt is issued.

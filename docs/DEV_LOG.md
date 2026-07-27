@@ -22,6 +22,7 @@
 
 #### Completed Facts To Date
 
+- Frozen P1.1 candidate commit `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e`, tree `d7c6d0221ccb156a69858742b5cda45e3ef9554d`.
 - Added a separate P1.1 SQLite control-plane store at logical schema `p1_control_plane_001`; the POC `sessions.db` and existing POC route meanings are unchanged.
 - Added Argon2id local-password verification, progressive lockout, opaque server-side browser sessions, exact-Origin / CSRF enforcement, idle / absolute expiry and session rotation on reauthentication.
 - Added the exact accepted five-role permission catalog and API-side authorization; auditors can read sanitized audit events but cannot read user administration or device credential metadata.
@@ -30,15 +31,20 @@
 - Added HMAC-chained append-only security audit records with SQLite update/delete denial triggers and sanitized API-denial events.
 - Added `/manage` as a separate management preview without changing the existing conversation, Ops or POC configuration views.
 - Added an explicit development-only initializer. Production startup does not auto-create identities, passwords, roles, screen targets or cryptographic keys.
+- Added a local PowerShell API launcher so Docker is optional for development preview; it imports only allowlisted preview settings, forces the local database path and never prints root-key material.
+- Hardened generic authentication failures, password validation, bounded idempotency/precondition headers, keyed idempotency evidence, terminal expiry persistence and expired one-time ciphertext destruction.
 - Kept Site / ScreenGroup / production ScreenInstance inventory, publication, rollback, recovery, Secret and FineReport identity behavior outside P1.1.
 
 #### Verification To Date
 
-- Backend Ruff formatting/check and four integration scenarios pass, covering schema repeatability, password/session/CSRF/lockout, auditor denial, different-user command binding, enrollment replay, rotation activation, predecessor rejection, whole-family revocation and database/audit plaintext scans.
+- Backend Ruff formatting/check and nine integration tests pass, covering schema repeatability/no-auto-bootstrap, password/session/CSRF/lockout, auditor denial, different-user command binding, terminal expiry, enrollment replay destruction, rotation activation, predecessor rejection, whole-family revocation, audit-chain verification and database/audit plaintext scans.
 - The Vue TypeScript check and Vite production build pass.
-- Browser DOM verification at 1280 by 720 confirms the `/manage` login view has no horizontal overflow, exposes an accessible username/password/login structure and uses a password input; no browser console warning/error was present.
-- A browser screenshot attempt timed out and is not counted as screenshot evidence.
-- Docker / Compose preview is Blocked on the current host because the Docker CLI is unavailable. The existing POC precheck also emitted unavailable-service property-access errors after reporting that environmental blocker; no container result is claimed.
+- A real local browser workflow at 1280 by 720 passed administrator login, role inspection, different-user user creation, auditor denial/audit read, device enrollment/claim/rotation/activation/revocation and password reauthentication with no horizontal overflow or captured console warning/error.
+- The sanitized auditor screenshot SHA-256 is `741c6e9d1b8d1c96e36a2383b9e9839f33ad0854f512f19c950d3a23e4d2b21e`.
+- P1 contract validation passed 2,722 checks and lifecycle lint passed 314 checks under both PowerShell hosts. Candidate-diff, bundle and evidence secret scanning returned zero findings.
+- Detached-worktree rollback to P1.0 passed contract/lifecycle checks and POC API import, then the temporary worktree was removed.
+- Docker / Compose preview is Blocked on the current host because the Docker CLI is unavailable; Docker is optional for the local preview and no container result is claimed.
+- Independent Codex review remains Pending, so the candidate is not yet presented for user acceptance.
 
 ### P1.0 Target Contract Result Pack
 

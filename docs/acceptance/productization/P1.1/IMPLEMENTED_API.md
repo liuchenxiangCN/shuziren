@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `IMPLEMENTATION_IN_PROGRESS`
+- State: `CANDIDATE_FROZEN_REVIEW_PENDING`
 - Scope: factual P1.1 candidate API; not an accepted production-support claim
 - Target source: [../../../product/contracts/CONTROL_PLANE_API.md](../../../product/contracts/CONTROL_PLANE_API.md)
 
@@ -13,7 +13,7 @@ The existing POC routes in [../../../06_API_CONTRACT.md](../../../06_API_CONTRAC
 
 | Operation | Route | Implemented P1.1 behavior |
 | --- | --- | --- |
-| `createAuthSession` | `POST /api/v1/control-plane/auth/sessions` | Argon2id login, progressive lockout, exact Origin, opaque Secure / HttpOnly cookie and header-only CSRF delivery |
+| `createAuthSession` | `POST /api/v1/control-plane/auth/sessions` | Argon2id login, progressive lockout, account-enumeration-resistant generic failures, exact Origin, opaque Secure / HttpOnly cookie and header-only CSRF delivery |
 | `getCurrentAuthSession` | `GET /api/v1/control-plane/auth/session` | Sanitized current user, roles, permissions and session ETag; never rotates or returns CSRF |
 | `refreshCsrfToken` | `POST /api/v1/control-plane/auth/session:refresh-csrf` | Exact-Origin, authenticated CSRF rotation; plaintext only in `X-CSRF-Token` |
 | `reauthenticateAuthSession` | `POST /api/v1/control-plane/auth/session:reauthenticate` | Password confirmation plus session ETag; revokes predecessor and returns a rotated cookie / CSRF pair |
@@ -49,6 +49,8 @@ The existing POC routes in [../../../06_API_CONTRACT.md](../../../06_API_CONTRAC
 - Every authenticated control-plane mutation except `refreshCsrfToken` requires the session-bound `X-CSRF-Token`.
 - Login, reauthentication and one-time material responses use `Cache-Control: no-store`.
 - Validation errors remove submitted input, context and URL values before returning details.
+- The management UI clears cached CSRF and one-time material on authentication loss or logout and exposes explicit password reauthentication before protected work.
+- `Idempotency-Key` accepts 8 to 200 printing characters and `If-Match` accepts 5 to 200 characters before service evaluation.
 
 ## Different-User Approval
 
@@ -68,3 +70,5 @@ The protected route itself creates a `PENDING` action on the first typed request
 ```
 
 The API never returns password verifiers, session / CSRF verifiers, one-time-token verifiers, device verifiers, root keys or audit HMAC keys.
+
+An expired pending device successor is durably marked `EXPIRED`, its family pending pointer is cleared, and the still-active predecessor remains usable. A later rotation receives the next unused family version.

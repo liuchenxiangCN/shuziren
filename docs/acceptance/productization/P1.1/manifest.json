@@ -2,21 +2,104 @@
   "schema_version": 1,
   "batch": "P1.1",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
-  "acceptance_state": "IMPLEMENTATION_IN_PROGRESS",
+  "acceptance_state": "CANDIDATE_FROZEN_REVIEW_PENDING",
   "base_accepted": {
     "commit": "6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758",
     "tree": "33752e13a385b4980cd3ecca309ad0f27d9307ae"
   },
-  "candidate": null,
+  "candidate": {
+    "commit": "f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e",
+    "tree": "d7c6d0221ccb156a69858742b5cda45e3ef9554d",
+    "branch": "codex/p1-1-identity-device-trust"
+  },
   "database": {
     "logical_schema_version": "p1_control_plane_001",
     "migration_version": "001_initial_identity_device_trust"
   },
-  "gates": [],
+  "evidence_root": "logs/productization/P1.1-20260727-local",
+  "gates": [
+    {
+      "id": "backend_quality_tests_and_import",
+      "status": "PASS",
+      "evidence": {
+        "path": "logs/productization/P1.1-20260727-local/test-results/backend-gates.txt",
+        "sha256": "df52a9df39df13f018eaeed71d6d2f2663052d90c0370eceec07e34a108b694e"
+      }
+    },
+    {
+      "id": "frontend_typecheck_and_build",
+      "status": "PASS",
+      "evidence": {
+        "path": "logs/productization/P1.1-20260727-local/test-results/frontend-build.txt",
+        "sha256": "e82c94875a22f5a592a177badbcd53eab81be9e5105f3f6969ad694f6adf58f4"
+      }
+    },
+    {
+      "id": "browser_workflow",
+      "status": "PASS",
+      "evidence": [
+        {
+          "path": "logs/productization/P1.1-20260727-local/test-results/browser-workflow.txt",
+          "sha256": "69d164e9ead3fec285c9282dc31ab3569232cad9591ea21d10d647438ba4aac4"
+        },
+        {
+          "path": "logs/productization/P1.1-20260727-local/screenshots/audit-role-preview.png",
+          "sha256": "741c6e9d1b8d1c96e36a2383b9e9839f33ad0854f512f19c950d3a23e4d2b21e"
+        }
+      ]
+    },
+    {
+      "id": "schema_empty_and_repeat_initialization",
+      "status": "PASS",
+      "evidence": {
+        "path": "logs/productization/P1.1-20260727-local/migration/schema-repeatability.txt",
+        "sha256": "1bd3d0c6c86c41a00acd1dc70b0493ff8cc68ae0234b60fe1a03c1ffefe443eb"
+      }
+    },
+    {
+      "id": "p1_contract_and_document_lifecycle",
+      "status": "PASS",
+      "evidence": {
+        "path": "logs/productization/P1.1-20260727-local/test-results/contract-lifecycle-gates.txt",
+        "sha256": "93cccf428e6a77e12975f276d4d86e6f8ce08ff89d2f3293d2977029666f4802"
+      }
+    },
+    {
+      "id": "candidate_repository_state",
+      "status": "PASS",
+      "evidence": {
+        "path": "logs/productization/P1.1-20260727-local/test-results/repository-gates.txt",
+        "sha256": "980cb33b312d56f7c92f3f6106dcdb3a6654ecd0c7582922b9e7bcbc4362eca9"
+      }
+    },
+    {
+      "id": "secret_scan",
+      "status": "PASS",
+      "evidence": {
+        "path": "logs/productization/P1.1-20260727-local/security/secret-scan.txt",
+        "sha256": "d2b8818f9f37ec6264ae0ff717ed5efaf7b01d52ccf7bd6469c9295b584588ca"
+      }
+    },
+    {
+      "id": "optional_docker_preview",
+      "status": "Blocked",
+      "reason": "Docker CLI unavailable on this host; Docker is not required for the local development preview",
+      "evidence": {
+        "path": "logs/productization/P1.1-20260727-local/test-results/docker-environment.txt",
+        "sha256": "fbf6ff5f70c6b89141ffed306f98f1e6221af3742835bc717d6442ec62e934ce"
+      }
+    }
+  ],
   "independent_reviews": [],
+  "independent_review_status": "PENDING",
   "rollback": {
-    "status": "PENDING",
-    "target": "P1.0 acceptance-transition commit"
+    "status": "PASS",
+    "target_commit": "6ec4cdbf03ddf64796c9f09d3a5950a7a2ee8758",
+    "target_tree": "33752e13a385b4980cd3ecca309ad0f27d9307ae",
+    "evidence": {
+      "path": "logs/productization/P1.1-20260727-local/rollback/rollback-verification.txt",
+      "sha256": "f84bf8e7c8d94f26f416b5026b52982fab30c4e324aad1aaacc7fa8a641f3fcb"
+    }
   },
   "user_decision": {
     "status": "PENDING",

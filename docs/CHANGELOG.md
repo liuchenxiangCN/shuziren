@@ -13,6 +13,7 @@
 
 - P1.1 candidate local IAM, server-side browser sessions, fixed RBAC, typed different-user approval, append-only audit and screen-device trust APIs under separate `/api/v1/control-plane` and `/api/v1/device` namespaces.
 - A `/manage` development-preview console and an explicit local initializer that never auto-creates production identities or keys.
+- A PowerShell local API launcher and documented two-terminal preview path that do not require Docker.
 - A separate `p1_control_plane_001` SQLite store using WAL, full synchronous durability, foreign keys, Argon2id password verifiers, purpose-separated HMAC / AEAD material and encrypted five-minute one-time response replay.
 - P1.0 target domain, identity / RBAC, device trust, configuration-release, data, storage / recovery and control-plane API contracts.
 - A machine-readable P1 contract registry plus validator and negative-fixture self-test.
@@ -31,6 +32,7 @@
 ### Changed
 
 - G0 and P1.0 are explicitly accepted, and P1.1 is the sole active result batch.
+- P1.1 local implementation is frozen at candidate `f4fadbf44a284ba0678eb82e37a1cebbcf6c3d1e`; independent review and explicit user acceptance remain pending.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
 - P1.0 validation now binds target membership and inheritance through ResolutionFingerprint, creates immutable ReleaseTargets only with ConfigRelease and separates control-plane ETag checks from device acknowledgement CAS.
 - P1.0 release provenance now separates `NORMAL` approved-draft creation from exact-map `ROLLBACK` creation, with no cross-screen or credential-version substitution.
@@ -56,6 +58,7 @@
 - P1.1 candidate device credentials derive screen scope server-side; rotation atomically activates a successor and revokes its predecessor, while hard revocation invalidates the complete family.
 - P1.1 candidate browser mutations require exact Origin and bound CSRF; login and reauthentication rotate opaque host-only Secure / HttpOnly cookies, and validation errors do not echo submitted inputs.
 - P1.1 candidate protected user/device mutations use different-user approval evidence that cannot execute the effect; altered-command replay and self-approval fail closed.
+- P1.1 candidate authentication failures no longer disclose unknown, disabled or locked account state; expired actions, enrollments, successor credentials and one-time replay ciphertext now become durable terminal evidence.
 - P1.0 separates user, device and FineReport data credentials; freezes local password/session/lockout/reset targets; prohibits Secret reveal; requires default-deny changed-field authorization, 18 non-reused cryptographic purpose domains and typed different-user/different-person production approval; and fails recovery closed against account/password/device generation rollback.
 - FineReport official plugin archives are excluded from Git and remain outside product distribution.
 - Result acceptance treats cross-screen leakage, authorization bypass, Secret exposure, data corruption and unrecoverable changes as immediate failures.
@@ -65,4 +68,4 @@
 - P1.1 remains an unaccepted development-preview candidate. Production custodian/person binding, external monotonic anchors, production activation, complete user onboarding and recovery are not implemented.
 - G0 changes documentation and development governance only.
 - P1.0 is target contract design only. Its RBAC, device trust, multi-screen storage, API, migration, backup and restore behaviors are not implemented.
-- Multi-screen runtime, target control-plane APIs, RBAC, database querying, FineReport plugin calling and real 2D / 3D rendering remain unimplemented product targets.
+- Multi-screen runtime, the remaining target control-plane APIs beyond the P1.1 subset, database querying, FineReport plugin calling and real 2D / 3D rendering remain unimplemented product targets.

@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `IMPLEMENTATION_IN_PROGRESS`
+- State: `CANDIDATE_FROZEN_REVIEW_PENDING`
 - Logical schema: `p1_control_plane_001`
 - Scope: factual SQLite P1.1 candidate subset; not the complete P1 target model
 - Target source: [../../../product/contracts/DATA_MODEL.md](../../../product/contracts/DATA_MODEL.md)
@@ -23,7 +23,7 @@ P1.1 uses a new control-plane database, separate from the POC `sessions.db`. SQL
 | `device_enrollments` | HMAC one-time enrollment verifier, preselected screen, state, expiry and ETag revision |
 | `device_credential_families` | Screen-bound family state, active / pending pointers, credential epoch and ETag revision |
 | `device_credentials` | HMAC verifier, version, activation deadline and state |
-| `idempotency_records` | Phase/principal/key digest, request digest and either sanitized result or AES-GCM one-time response |
+| `idempotency_records` | Phase/principal/keyed idempotency digest and its key ID, request digest and either sanitized result or AES-GCM one-time response |
 | `security_audit_events` | Append-only sequence, sanitized detail JSON and HMAC hash-chain evidence |
 
 ## Implemented Invariants
@@ -39,6 +39,8 @@ P1.1 uses a new control-plane database, separate from the POC `sessions.db`. SQL
 - Hard revocation advances the family credential epoch exactly once and revokes both active and pending credential rows.
 - One idempotency key with a changed request digest is rejected.
 - One-time enrollment and device-credential responses are AES-256-GCM encrypted with purpose-derived material and expire after five minutes.
+- Expired one-time replay nonce and ciphertext are overwritten with null before the terminal replay error is returned.
+- Expired approval, enrollment and pending-successor states are committed separately from their fail-closed response so later reads cannot observe a rolled-back live state.
 - Audit-event UPDATE and DELETE are rejected by SQLite triggers.
 
 ## Key Material Boundary
