@@ -2,9 +2,10 @@
   "schema_version": 1,
   "batch": "P1.3",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
-  "generated_at": "2026-07-28T00:47:52.3208038Z",
+  "generated_at": "2026-07-28T00:56:01.7919651Z",
   "gate_summary": "PASS",
-  "acceptance_state": "READY_FOR_USER_ACCEPTANCE",
+  "acceptance_state": "ACCEPTED",
+  "accepted_at": "2026-07-28",
   "base_accepted": {
     "commit": "2ddd2116aad19babc9acbfde1110802eb3187c2b",
     "tree": "565dbb3567e2a4ae5b872177d97449120477fe8c",
@@ -29,7 +30,7 @@
   "evidence_root": "logs/productization/P1.3-20260728-final-0f210cf",
   "raw_evidence_manifest": {
     "path": "logs/productization/P1.3-20260728-final-0f210cf/evidence-manifest.json",
-    "sha256": "aaf278cc3a106ac3d93236718ed2239d8a36bc04a23e84ff92fbc1d6f3c6dd25",
+    "sha256": "894ed7b22b17c110d55efecd2f8160e547a2a6d83c13421cdfdab35ec1ba0969",
     "file_count": 49
   },
   "gates": [
@@ -150,9 +151,9 @@
     ]
   },
   "user_decision": {
-    "status": "PENDING",
-    "decision": null,
-    "date": null,
-    "conversation_reference": null
+    "status": "RECORDED",
+    "decision": "通过",
+    "date": "2026-07-28",
+    "conversation_reference": "Codex task in which the user stated 通过"
   }
 }

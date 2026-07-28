@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Result: publish, forward rollback and verified development-preview recovery
 - Base accepted runtime: commit `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`
 - Base acceptance record: commit `7e7bf28a8393878185d55ea532b4212eee818586`
@@ -13,12 +13,13 @@
 - Target logical schema / migration: `p1_control_plane_001` / `003_publish_rollback_recovery`
 - Gate summary: automated candidate gates `PASS`
 - Independent review: `PASS`; zero blocking and zero non-blocking findings
-- User decision: Pending
+- User decision: `通过` on 2026-07-28
 
 This card froze the complete P1.3 result and non-scope before implementation.
-The candidate above implements the bounded local development-preview result and
-has passed its automated gates and final independent review. It is not accepted
-until the user records an explicit decision.
+The candidate above implements the bounded local development-preview result,
+passed its automated gates and final independent review, and was explicitly
+accepted without conditions on 2026-07-28. It is now the runtime rollback
+baseline for subsequent productization batches.
 
 ## Frozen Observable Outcome
 

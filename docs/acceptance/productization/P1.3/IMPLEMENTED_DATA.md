@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Candidate: `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`
 - Logical schema: `p1_control_plane_001`
 - Latest migration: `003_publish_rollback_recovery`

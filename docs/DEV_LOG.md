@@ -9,6 +9,22 @@
 
 ## 2026-07-28
 
+### P1.3 User Acceptance
+
+#### Completed Facts
+
+- The user explicitly accepted P1.3 (`通过`) without conditions or scope
+  reduction.
+- P1.3 runtime candidate
+  `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
+  `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, schema
+  `p1_control_plane_001` and migration `003_publish_rollback_recovery` became
+  the accepted runtime rollback baseline.
+- The acceptance package retains the final automated, browser, migration,
+  Docker, Secret-scan, recovery, retention, P1.2 rollback, hash-binding and
+  zero-finding independent-review evidence.
+- P2.1 remains queued and was not activated by this acceptance decision.
+
 ### P1.3 Publish, Rollback And Recovery Candidate
 
 #### Completed Facts
@@ -57,8 +73,8 @@
   backup-source validation finding. All five paths are repaired in the final
   candidate and pass independent focused regression; the complete final
   independent review passed with zero blocking and zero non-blocking findings.
-- User decision remains Pending. P1.2 remains the accepted runtime rollback
-  baseline and P2.1 remains queued.
+- The user subsequently accepted the candidate without conditions as recorded
+  above; P2.1 remains queued.
 
 ## 2026-07-27
 

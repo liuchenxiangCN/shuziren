@@ -3,13 +3,13 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Candidate: `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`
 - Candidate tree: `04bcbb940fbedb5fbb8957e538f46a4422e15db2`
 - Candidate fingerprint: `8cf8cdb380f849b947a76abeef2ff895fb79f7696effbb1abbdf9bdc0bb04e55` across 29 files
 - Gate summary: automated candidate gates `PASS`
 - Independent review: `PASS`; zero blocking and zero non-blocking findings
-- User decision: Pending
+- User decision: `通过` on 2026-07-28
 
 Sanitized raw evidence is under ignored local path
 `logs/productization/P1.3-20260728-final-0f210cf/`. The tracked

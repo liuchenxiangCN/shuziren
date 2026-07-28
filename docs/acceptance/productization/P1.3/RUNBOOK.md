@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Candidate: `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`
 - Scope: local P1.3 preview only
 - Production use: forbidden
