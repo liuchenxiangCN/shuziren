@@ -639,23 +639,43 @@ class BackupManager:
             "CAPABILITY_PROFILE_VERSION_CREATED",
             "CONFIG_DRAFT_CAPABILITY_PROFILE_ASSIGNED",
         }
+        fingerprint_event_types = capability_event_types | {"CONFIG_DRAFT_VALIDATED"}
         audit_rows = connection.execute("SELECT * FROM security_audit_events ORDER BY sequence").fetchall()
-        active_capability_sequences: set[int] = set()
-        active_sequences_by_event_hash: dict[str, frozenset[int]] = {}
+        active_integrity_tail: int | None = None
+        previous_integrity_sequence: dict[int, int | None] = {}
+        tail_by_event_hash: dict[str, int | None] = {}
+        epoch_by_event_hash: dict[str, int] = {}
+        current_epoch = 1
         for event in audit_rows:
-            if event["event_type"] in capability_event_types:
-                active_capability_sequences.add(event["sequence"])
+            if event["event_type"] in fingerprint_event_types:
+                previous_integrity_sequence[event["sequence"]] = active_integrity_tail
+                active_integrity_tail = event["sequence"]
             elif event["event_type"] == "RESTORE_COMPLETED":
                 try:
                     restore_details = json.loads(event["details_json"])
                     source_head = restore_details["source_manifest_audit_head"]
-                    restored_sequences = active_sequences_by_event_hash[source_head]
+                    active_integrity_tail = tail_by_event_hash[source_head]
+                    current_epoch = epoch_by_event_hash[source_head] + 1
                 except (json.JSONDecodeError, KeyError, TypeError) as exc:
                     raise BackupIntegrityError("Capability restore audit anchor is invalid") from exc
-                active_capability_sequences = set(restored_sequences)
-            active_sequences_by_event_hash[event["event_hash"]] = frozenset(active_capability_sequences)
+            tail_by_event_hash[event["event_hash"]] = active_integrity_tail
+            epoch_by_event_hash[event["event_hash"]] = current_epoch
+        active_integrity_sequences: set[int] = set()
+        while active_integrity_tail is not None:
+            if active_integrity_tail in active_integrity_sequences:
+                raise BackupIntegrityError("Capability audit anchor lineage contains a cycle")
+            active_integrity_sequences.add(active_integrity_tail)
+            active_integrity_tail = previous_integrity_sequence[active_integrity_tail]
+        metadata_epoch = connection.execute(
+            "SELECT revision FROM control_plane_metadata WHERE singleton = 1"
+        ).fetchone()
+        if metadata_epoch is None or metadata_epoch["revision"] != current_epoch:
+            raise BackupIntegrityError("Control-plane epoch audit lineage is invalid")
         capability_audit_events = [
-            event for event in audit_rows if event["sequence"] in active_capability_sequences
+            event
+            for event in audit_rows
+            if event["sequence"] in active_integrity_sequences
+            and event["event_type"] in capability_event_types
         ]
         for event in capability_audit_events:
             try:
@@ -754,6 +774,62 @@ class BackupManager:
                 ):
                     raise BackupIntegrityError("Capability assignment audit anchor changed")
 
+        validation_audit_by_revision: dict[tuple[str, int], tuple[dict[str, Any], int]] = {}
+        for event in audit_rows:
+            if (
+                event["sequence"] not in active_integrity_sequences
+                or event["event_type"] != "CONFIG_DRAFT_VALIDATED"
+            ):
+                continue
+            try:
+                details = json.loads(event["details_json"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise BackupIntegrityError("Validation audit anchor is invalid") from exc
+            if (
+                event["outcome"] != "SUCCESS"
+                or event["target_type"] != "CONFIG_DRAFT"
+                or not isinstance(details, dict)
+                or set(details)
+                != {
+                    "draft_revision",
+                    "fingerprint_hash",
+                    "target_set_hash",
+                    "outcome",
+                }
+                or not BackupManager._is_int(details["draft_revision"])
+                or not BackupManager._is_sha256(details["fingerprint_hash"])
+                or not BackupManager._is_sha256(details["target_set_hash"])
+                or details["outcome"] != "VALID"
+            ):
+                raise BackupIntegrityError("Validation audit anchor is invalid")
+            key = (event["target_id"], details["draft_revision"])
+            if key in validation_audit_by_revision:
+                raise BackupIntegrityError("Validation audit anchor is ambiguous")
+            validation_audit_by_revision[key] = (
+                details,
+                epoch_by_event_hash[event["event_hash"]],
+            )
+
+        approval_epochs_by_fingerprint: dict[str, set[int]] = {}
+        for row in connection.execute(
+            """
+            SELECT v.fingerprint_id, a.control_plane_epoch
+            FROM config_approval_records a
+            JOIN preview_records p
+              ON p.preview_record_id = a.preview_record_id
+             AND p.draft_id = a.draft_id
+             AND p.draft_revision = a.draft_revision
+            JOIN validation_records v
+              ON v.validation_record_id = p.validation_record_id
+             AND v.draft_id = p.draft_id
+             AND v.draft_revision = p.draft_revision
+            WHERE v.outcome = 'VALID'
+            """
+        ).fetchall():
+            approval_epochs_by_fingerprint.setdefault(row["fingerprint_id"], set()).add(
+                row["control_plane_epoch"]
+            )
+
         fingerprint_capability_marker: dict[str, bool] = {}
         fingerprint_target_sets: dict[str, list[str]] = {}
         fingerprint_target_set_hashes: dict[str, str] = {}
@@ -762,16 +838,19 @@ class BackupManager:
             """
             SELECT rf.*, dr.schema_version AS draft_schema_version,
                    dr.canonical_spec_json AS draft_canonical_spec_json,
-                   dr.content_hash AS draft_content_hash,
-                   d.control_plane_epoch AS draft_control_plane_epoch
+                   dr.content_hash AS draft_content_hash
             FROM resolution_fingerprints rf
             JOIN config_draft_revisions dr
               ON dr.draft_id = rf.draft_id
              AND dr.draft_revision = rf.draft_revision
-            JOIN config_drafts d ON d.draft_id = rf.draft_id
             ORDER BY rf.fingerprint_id
             """
         ).fetchall()
+        fingerprint_revision_keys = [(row["draft_id"], row["draft_revision"]) for row in fingerprints]
+        if len(fingerprint_revision_keys) != len(set(fingerprint_revision_keys)) or set(
+            fingerprint_revision_keys
+        ) != set(validation_audit_by_revision):
+            raise BackupIntegrityError("Resolution fingerprint audit lineage is incomplete")
         fingerprint_by_id = {row["fingerprint_id"]: row for row in fingerprints}
         for fingerprint in fingerprints:
             try:
@@ -915,6 +994,17 @@ class BackupManager:
             has_capability_marker = bool(marker_presence and marker_presence[0])
             if (assignment is not None) != has_capability_marker:
                 raise BackupIntegrityError("Resolution capability assignment is incomplete")
+            validation_anchor_with_epoch = validation_audit_by_revision.get(
+                (fingerprint["draft_id"], fingerprint["draft_revision"])
+            )
+            if validation_anchor_with_epoch is None:
+                raise BackupIntegrityError("Resolution fingerprint audit anchor changed")
+            validation_anchor, validation_epoch = validation_anchor_with_epoch
+            if (
+                validation_anchor["fingerprint_hash"] != fingerprint["fingerprint_hash"]
+                or validation_anchor["target_set_hash"] != fingerprint["target_set_hash"]
+            ):
+                raise BackupIntegrityError("Resolution fingerprint audit anchor changed")
             fingerprint_payload = {
                 "draft_id": fingerprint["draft_id"],
                 "draft_revision": fingerprint["draft_revision"],
@@ -925,8 +1015,15 @@ class BackupManager:
                 "inputs": inputs,
                 "effective_hashes": effective_hashes,
                 "capability_envelope_hashes": (capability_envelope_hashes if has_capability_marker else {}),
-                "control_plane_epoch": fingerprint["draft_control_plane_epoch"],
+                "control_plane_epoch": validation_epoch,
             }
+            approval_epochs = approval_epochs_by_fingerprint.get(fingerprint["fingerprint_id"], set())
+            if len(approval_epochs) > 1 or any(
+                not BackupManager._is_int(epoch) or epoch < 1 for epoch in approval_epochs
+            ):
+                raise BackupIntegrityError("Resolution fingerprint epoch evidence is invalid")
+            if approval_epochs and approval_epochs != {validation_epoch}:
+                raise BackupIntegrityError("Resolution fingerprint epoch evidence changed")
             expected_fingerprint_hashes = {
                 hashlib.sha256(canonical_json(fingerprint_payload).encode("utf-8")).hexdigest()
             }

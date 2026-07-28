@@ -828,6 +828,352 @@ def test_backup_validation_closes_unassigned_profile_metadata_and_row_loss(
         BackupManager._validate_snapshot(missing_rows_path.read_bytes())
 
 
+def test_restored_validated_fingerprint_survives_revision_and_next_backup(
+    p21_control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, service, database_path = p21_control_plane
+    implementation, csrf_impl = login(app, "implementation")
+    admin_a, csrf_a = login(app, "admin-a")
+    admin_b, csrf_b = login(app, "admin-b")
+    screen = implementation.get("/api/v1/control-plane/screen-instances").json()["items"][0]
+    profile = _create_profile(
+        implementation,
+        csrf_impl,
+        site_id=screen["site_id"],
+        preset_id="text_only",
+        suffix="validated-restore-revision",
+    )
+    created = implementation.post(
+        "/api/v1/control-plane/config-drafts",
+        headers=mutation_headers(
+            csrf_impl,
+            **{"Idempotency-Key": "p21-epoch-draft-create"},
+        ),
+        json={
+            "target_type": "SCREEN",
+            "target_id": screen["screen_id"],
+            "schema_version": "p1_screen_config_v1",
+        },
+    )
+    assert created.status_code == 201, created.text
+    draft = created.json()
+    replaced = implementation.put(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}/spec",
+        headers=mutation_headers(csrf_impl, **{"If-Match": draft["etag"]}),
+        json={
+            "welcome_text": "P2.1 restored validation epoch",
+            "fvs_binding_ref": "https://fvs.example.test/p2-1/restored-validation-epoch",
+        },
+    )
+    assert replaced.status_code == 200, replaced.text
+    draft = replaced.json()
+    assigned = implementation.put(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}/capability-profile",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": "p21-epoch-draft-assign",
+            },
+        ),
+        json={"profile_version_id": profile["head_version_id"]},
+    )
+    assert assigned.status_code == 200, assigned.text
+    draft = assigned.json()
+    validated = implementation.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:validate",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": draft["etag"],
+                "Idempotency-Key": "p21-epoch-draft-validate",
+            },
+        ),
+    )
+    assert validated.status_code == 200, validated.text
+    draft = validated.json()
+    assert draft["state"] == "VALIDATED"
+    validated_revision = draft["draft_revision"]
+
+    def online_copy(name: str) -> Path:
+        copied_path = database_path.parent / name
+        source = service.store.connect()
+        target = sqlite3.connect(copied_path)
+        try:
+            source.backup(target)
+            target.commit()
+        finally:
+            target.close()
+            source.close()
+        return copied_path
+
+    tampered_path = online_copy("unapproved-fingerprint-audit-anchor-tamper.db")
+    connection = sqlite3.connect(tampered_path)
+    try:
+        connection.row_factory = sqlite3.Row
+        fingerprint = connection.execute(
+            """
+            SELECT rf.fingerprint_id
+            FROM resolution_fingerprints rf
+            WHERE rf.draft_id = ? AND rf.draft_revision = ?
+            """,
+            (draft["draft_id"], validated_revision),
+        ).fetchone()
+        trigger_names = (
+            "resolution_fingerprints_no_update",
+            "validation_records_no_update",
+        )
+        trigger_sql_by_name = {
+            row["name"]: row["sql"]
+            for row in connection.execute(
+                f"""
+                SELECT name, sql FROM sqlite_master
+                WHERE type = 'trigger'
+                  AND name IN ({", ".join("?" for _ in trigger_names)})
+                """,
+                trigger_names,
+            ).fetchall()
+        }
+        for trigger_name in trigger_names:
+            connection.execute(f'DROP TRIGGER "{trigger_name}"')
+        rewritten_hash = hashlib.sha256(b"p2.1-unapproved-fingerprint-rewrite").hexdigest()
+        connection.execute(
+            """
+            UPDATE resolution_fingerprints SET fingerprint_hash = ?
+            WHERE fingerprint_id = ?
+            """,
+            (rewritten_hash, fingerprint["fingerprint_id"]),
+        )
+        connection.execute(
+            """
+            UPDATE validation_records SET fingerprint_hash = ?
+            WHERE fingerprint_id = ?
+            """,
+            (rewritten_hash, fingerprint["fingerprint_id"]),
+        )
+        for trigger_name in trigger_names:
+            connection.execute(trigger_sql_by_name[trigger_name])
+        connection.commit()
+    finally:
+        connection.close()
+    with pytest.raises(BackupIntegrityError, match="fingerprint audit anchor"):
+        BackupManager._validate_snapshot(tampered_path.read_bytes())
+
+    group_revision_path = online_copy("unapproved-fingerprint-group-revision-tamper.db")
+    connection = sqlite3.connect(group_revision_path)
+    try:
+        trigger_sql = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'trigger' AND name = 'resolution_fingerprints_no_update'
+            """
+        ).fetchone()[0]
+        connection.execute("DROP TRIGGER resolution_fingerprints_no_update")
+        connection.execute(
+            """
+            UPDATE resolution_fingerprints SET group_revision = 7
+            WHERE draft_id = ? AND draft_revision = ?
+            """,
+            (draft["draft_id"], validated_revision),
+        )
+        connection.execute(trigger_sql)
+        connection.commit()
+    finally:
+        connection.close()
+    with pytest.raises(BackupIntegrityError, match="Resolution fingerprint hash changed"):
+        BackupManager._validate_snapshot(group_revision_path.read_bytes())
+
+    metadata_epoch_path = online_copy("metadata-epoch-audit-lineage-tamper.db")
+    connection = sqlite3.connect(metadata_epoch_path)
+    try:
+        connection.execute(
+            """
+            UPDATE control_plane_metadata SET revision = revision + 1
+            WHERE singleton = 1
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    with pytest.raises(BackupIntegrityError, match="epoch audit lineage"):
+        BackupManager._validate_snapshot(metadata_epoch_path.read_bytes())
+
+    created_backup = admin_a.post(
+        "/api/v1/control-plane/backups",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p21-epoch-backup-create"},
+        ),
+        json={"reason": "preserve validated draft fingerprint epoch"},
+    )
+    assert created_backup.status_code == 201, created_backup.text
+    backup = created_backup.json()
+    verified_backup = admin_a.post(
+        f"/api/v1/control-plane/backups/{backup['backup_id']}:verify",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p21-epoch-backup-verify"},
+        ),
+    )
+    assert verified_backup.status_code == 200, verified_backup.text
+
+    plan_response = admin_a.post(
+        "/api/v1/control-plane/restore-plans",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "p21-epoch-restore-plan"},
+        ),
+        json={"backup_id": backup["backup_id"]},
+    )
+    assert plan_response.status_code == 201, plan_response.text
+    plan = plan_response.json()
+    restore_payload = {
+        "confirmation": "RESTORE_VERIFIED_BACKUP",
+        "reason": "restore validated draft fingerprint epoch",
+    }
+    action = request_action(
+        admin_a,
+        csrf_a,
+        f"/api/v1/control-plane/restore-plans/{plan['restore_plan_id']}:execute",
+        restore_payload,
+        "p21-epoch-restore-request",
+        extra_headers={"If-Match": plan["etag"]},
+    )
+    approve_action(
+        admin_b,
+        csrf_b,
+        action,
+        key="p21-epoch-restore-approve",
+    )
+    restored = admin_a.post(
+        f"/api/v1/control-plane/restore-plans/{plan['restore_plan_id']}:execute",
+        headers=mutation_headers(
+            csrf_a,
+            **{
+                "If-Match": plan["etag"],
+                "Idempotency-Key": "p21-epoch-restore-execute",
+                "High-Risk-Action-ID": action["high_risk_action_id"],
+            },
+        ),
+        json=restore_payload,
+    )
+    assert restored.status_code == 200, restored.text
+
+    relogged_implementation, relogged_csrf_impl = login(app, "implementation")
+    restored_draft_response = relogged_implementation.get(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}"
+    )
+    assert restored_draft_response.status_code == 200, restored_draft_response.text
+    restored_draft = restored_draft_response.json()
+    assert restored_draft["state"] == "VALIDATED"
+    assert restored_draft["draft_revision"] == validated_revision
+    revised = relogged_implementation.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:revise",
+        headers=mutation_headers(
+            relogged_csrf_impl,
+            **{
+                "If-Match": restored_draft["etag"],
+                "Idempotency-Key": "p21-epoch-post-restore-revise",
+            },
+        ),
+    )
+    assert revised.status_code == 200, revised.text
+    assert revised.json()["state"] == "DRAFT"
+    assert revised.json()["draft_revision"] == validated_revision + 1
+
+    copied_path = online_copy("post-restore-revised-online-copy.db")
+    BackupManager._validate_snapshot(copied_path.read_bytes())
+
+    relogged_admin, relogged_csrf_admin = login(app, "admin-a")
+    next_backup = relogged_admin.post(
+        "/api/v1/control-plane/backups",
+        headers=mutation_headers(
+            relogged_csrf_admin,
+            **{"Idempotency-Key": "p21-epoch-next-backup-create"},
+        ),
+        json={"reason": "verify next snapshot after restored draft revision"},
+    )
+    assert next_backup.status_code == 201, next_backup.text
+    next_verified = relogged_admin.post(
+        f"/api/v1/control-plane/backups/{next_backup.json()['backup_id']}:verify",
+        headers=mutation_headers(
+            relogged_csrf_admin,
+            **{"Idempotency-Key": "p21-epoch-next-backup-verify"},
+        ),
+    )
+    assert next_verified.status_code == 200, next_verified.text
+    assert next_verified.json()["outcome"] == "VERIFIED"
+
+    current_draft = relogged_implementation.get(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}"
+    ).json()
+    historical_branch_validation = relogged_implementation.post(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}:validate",
+        headers=mutation_headers(
+            relogged_csrf_impl,
+            **{
+                "If-Match": current_draft["etag"],
+                "Idempotency-Key": "p21-epoch-historical-branch-validate",
+            },
+        ),
+    )
+    assert historical_branch_validation.status_code == 200, historical_branch_validation.text
+    assert historical_branch_validation.json()["state"] == "VALIDATED"
+
+    relogged_admin_b, relogged_csrf_admin_b = login(app, "admin-b")
+    second_plan_response = relogged_admin.post(
+        "/api/v1/control-plane/restore-plans",
+        headers=mutation_headers(
+            relogged_csrf_admin,
+            **{"Idempotency-Key": "p21-epoch-second-restore-plan"},
+        ),
+        json={"backup_id": next_backup.json()["backup_id"]},
+    )
+    assert second_plan_response.status_code == 201, second_plan_response.text
+    second_plan = second_plan_response.json()
+    second_restore_payload = {
+        "confirmation": "RESTORE_VERIFIED_BACKUP",
+        "reason": "restore before historical validation branch",
+    }
+    second_action = request_action(
+        relogged_admin,
+        relogged_csrf_admin,
+        f"/api/v1/control-plane/restore-plans/{second_plan['restore_plan_id']}:execute",
+        second_restore_payload,
+        "p21-epoch-second-restore-request",
+        extra_headers={"If-Match": second_plan["etag"]},
+    )
+    approve_action(
+        relogged_admin_b,
+        relogged_csrf_admin_b,
+        second_action,
+        key="p21-epoch-second-restore-approve",
+    )
+    second_restored = relogged_admin.post(
+        f"/api/v1/control-plane/restore-plans/{second_plan['restore_plan_id']}:execute",
+        headers=mutation_headers(
+            relogged_csrf_admin,
+            **{
+                "If-Match": second_plan["etag"],
+                "Idempotency-Key": "p21-epoch-second-restore-execute",
+                "High-Risk-Action-ID": second_action["high_risk_action_id"],
+            },
+        ),
+        json=second_restore_payload,
+    )
+    assert second_restored.status_code == 200, second_restored.text
+
+    twice_relogged_implementation, _ = login(app, "implementation")
+    twice_restored_draft = twice_relogged_implementation.get(
+        f"/api/v1/control-plane/config-drafts/{draft['draft_id']}"
+    )
+    assert twice_restored_draft.status_code == 200, twice_restored_draft.text
+    assert twice_restored_draft.json()["state"] == "DRAFT"
+    assert twice_restored_draft.json()["draft_revision"] == validated_revision + 1
+    twice_restored_copy = online_copy("twice-restored-historical-validation-pruned.db")
+    BackupManager._validate_snapshot(twice_restored_copy.read_bytes())
+
+
 def test_unverified_profile_is_inspectable_but_cannot_validate(
     p21_control_plane: tuple[FastAPI, ControlPlaneService, Path],
 ) -> None:
