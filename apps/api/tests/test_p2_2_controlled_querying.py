@@ -610,28 +610,70 @@ def test_excel_release_user_and_device_execution_are_screen_bound_and_closed(
 
 
 @pytest.mark.parametrize(
-    "query_template",
+    ("engine", "query_template"),
     (
-        "SELECT * FROM approved_metrics; DELETE FROM approved_metrics",
-        "SELECT * FROM approved_metrics -- comment",
-        "INSERT INTO approved_metrics(value) VALUES (1)",
-        "UPDATE approved_metrics SET value = 1",
-        "DELETE FROM approved_metrics",
-        "DROP TABLE approved_metrics",
-        "CALL refresh_metrics()",
-        "EXECUTE unsafe_plan",
-        "SELECT shift, output FROM unapproved_metrics WHERE shift = :shift",
-        "SELECT shift, output FROM approved_metrics WHERE shift = :undeclared",
-        "SELECT pg_read_file('/etc/passwd') AS output FROM approved_metrics",
-        "SELECT LOAD_FILE('/etc/passwd') AS output FROM approved_metrics",
-        "SELECT UTL_HTTP.REQUEST('https://example.invalid') AS output FROM approved_metrics",
-        "SELECT shift, output FROM approved_metrics WHERE shift = :shift FOR UPDATE",
-        "SELECT shift, output FROM approved_metrics # comment\nWHERE shift = :shift",
-        "SELECT @p22_probe := output AS output, shift FROM approved_metrics WHERE shift = :shift",
+        ("POSTGRESQL", "SELECT * FROM approved_metrics; DELETE FROM approved_metrics"),
+        ("POSTGRESQL", "SELECT * FROM approved_metrics -- comment"),
+        ("POSTGRESQL", "INSERT INTO approved_metrics(value) VALUES (1)"),
+        ("POSTGRESQL", "UPDATE approved_metrics SET value = 1"),
+        ("POSTGRESQL", "DELETE FROM approved_metrics"),
+        ("POSTGRESQL", "DROP TABLE approved_metrics"),
+        ("POSTGRESQL", "CALL refresh_metrics()"),
+        ("POSTGRESQL", "EXECUTE unsafe_plan"),
+        (
+            "POSTGRESQL",
+            "SELECT shift, output FROM unapproved_metrics WHERE shift = :shift",
+        ),
+        (
+            "POSTGRESQL",
+            "SELECT shift, output FROM approved_metrics WHERE shift = :undeclared",
+        ),
+        (
+            "POSTGRESQL",
+            "SELECT pg_read_file('/etc/passwd') AS output FROM approved_metrics",
+        ),
+        ("MYSQL", "SELECT LOAD_FILE('/etc/passwd') AS output FROM approved_metrics"),
+        (
+            "ORACLE",
+            "SELECT UTL_HTTP.REQUEST('https://example.invalid') AS output FROM approved_metrics",
+        ),
+        (
+            "POSTGRESQL",
+            "SELECT shift, output FROM approved_metrics WHERE shift = :shift FOR UPDATE",
+        ),
+        (
+            "MYSQL",
+            "SELECT shift, output FROM approved_metrics # comment\nWHERE shift = :shift",
+        ),
+        (
+            "MYSQL",
+            "SELECT @p22_probe := output AS output, shift FROM approved_metrics WHERE shift = :shift",
+        ),
+        (
+            "ORACLE",
+            "SELECT shift, myseq.NEXTVAL AS output FROM approved_metrics WHERE shift = :shift",
+        ),
+        (
+            "ORACLE",
+            "SELECT shift, myseq.CURRVAL AS output FROM approved_metrics WHERE shift = :shift",
+        ),
+        (
+            "POSTGRESQL",
+            "SELECT shift, (:shift OPERATOR(public.##) shift) AS output FROM approved_metrics",
+        ),
+        (
+            "POSTGRESQL",
+            "SELECT shift, CAST(:shift AS public.evil_type) AS output FROM approved_metrics",
+        ),
+        (
+            "ORACLE",
+            "SELECT shift, CAST(:shift AS MY_OBJECT_TYPE) AS output FROM approved_metrics",
+        ),
     ),
 )
 def test_database_dataset_sql_contract_fails_closed(
     p22_control_plane: tuple[FastAPI, ControlPlaneService, Path],
+    engine: str,
     query_template: str,
 ) -> None:
     app, _, _ = p22_control_plane
@@ -646,8 +688,8 @@ def test_database_dataset_sql_contract_fails_closed(
         ),
         json={
             "site_id": site_id,
-            "display_name": "Unverified PostgreSQL reference",
-            "engine": "POSTGRESQL",
+            "display_name": f"Unverified {engine} reference",
+            "engine": engine,
             "read_only_account_confirmed": True,
             "connection": {
                 "host": "127.0.0.1",

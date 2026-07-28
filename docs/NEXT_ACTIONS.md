@@ -32,6 +32,10 @@ adapters and a fresh 1280 by 720 browser workflow pass. The first immutable
 candidate was rejected by independent review and is not presentable; its SQL,
 OOXML, queued-cancel, authority-race, timeout, three-screen, recovery, audit
 and negative-coverage findings were repaired and re-tested. Replacement
+candidate `78b5af301a1c57915a4535d3decc11c59b79eba7` was then rejected for
+Oracle sequence expressions, PostgreSQL custom operators and user-defined
+casts that escaped the closed SQL grammar. Those final SQL expression families
+are now rejected with cross-dialect regression coverage. A new immutable
 candidate binding and exact independent re-review remain before presentation;
 P2.2 is not accepted.
 

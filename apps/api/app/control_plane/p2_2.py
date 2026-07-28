@@ -2979,6 +2979,7 @@ class P22ControlPlane:
             exp.PropertyEQ,
             exp.ReadCSV,
             exp.SessionParameter,
+            exp.Operator,
             exp.Var,
         )
         if any(isinstance(node, forbidden_nodes) for node in tree.walk()):
@@ -2997,6 +2998,18 @@ class P22ControlPlane:
                     "READ_ONLY_TEMPLATE_REQUIRED",
                     "The query template contains an unapproved function",
                 )
+        if any(data_type.this == exp.DataType.Type.USERDEFINED for data_type in tree.find_all(exp.DataType)):
+            raise ControlPlaneError(
+                422,
+                "READ_ONLY_TEMPLATE_REQUIRED",
+                "The query template contains an unapproved user-defined type",
+            )
+        if any(column.name.upper() in {"CURRVAL", "NEXTVAL"} for column in tree.find_all(exp.Column)):
+            raise ControlPlaneError(
+                422,
+                "READ_ONLY_TEMPLATE_REQUIRED",
+                "The query template contains a stateful sequence expression",
+            )
         if any(
             selection.is_star
             for select_node in tree.find_all(exp.Select)

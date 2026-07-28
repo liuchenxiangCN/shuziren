@@ -13,7 +13,7 @@
 
 - Candidate-scoped Ruff format/check passed over 15 Python files; the API
   imports with 116 routes.
-- Complete backend regression passed 62 cases; three environment-gated
+- Complete backend regression passed 67 cases; three environment-gated
   database cases are separate.
 - PostgreSQL 17, MySQL 8.4 and Oracle Free 23 exact ephemeral read-only
   adapters each rejected DB-side INSERT, qualified the exact source, executed
@@ -36,6 +36,12 @@
 - Restore rejects live controlled-query workers; restored nonterminal
   execution rows are sanitized to terminal failure, and startup reconciles
   orphaned nonterminal metadata.
+- Independent review rejected candidate
+  `78b5af301a1c57915a4535d3decc11c59b79eba7` after finding Oracle sequence
+  expressions, PostgreSQL custom operators and user-defined casts outside the
+  function-only SQL allowlist. The replacement validator rejects those AST
+  forms; 21 cross-dialect SQL-negative cases and the full/real-adapter suites
+  pass after the repair.
 
 The immutable candidate, independent review, lifecycle gate, fingerprint,
 rollback evidence and manifest hashes are recorded only after the candidate

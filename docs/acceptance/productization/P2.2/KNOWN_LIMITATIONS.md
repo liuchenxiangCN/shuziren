@@ -30,7 +30,9 @@
   relationships or hyperlinks, `.xls`, CSV and arbitrary paths are rejected.
 - Database querying supports one administrator-approved parameterized
   read-only statement. There is no free SQL, stored procedure, writeback,
-  federated/cross-source query or model-generated query/summarization.
+  federated/cross-source query or model-generated query/summarization. Custom
+  operators, user-defined casts and sequence `NEXTVAL`/`CURRVAL` expressions
+  are rejected.
 - No FineReport official-plugin request is made. Plugin API, authentication,
   permission inheritance and exact compatibility remain the P2.4 external
   gate.

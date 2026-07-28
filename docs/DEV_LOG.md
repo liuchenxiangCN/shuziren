@@ -35,7 +35,7 @@
 #### Verification To Date
 
 - Candidate-scoped Ruff passed; 116 API routes import; complete backend
-  regression passed 62 cases with three real-database cases gated separately.
+  regression passed 67 cases with three real-database cases gated separately.
 - PostgreSQL 17, MySQL 8.4 and Oracle Free 23 ephemeral read-only tests passed
   DB-side INSERT denial plus exact published device query execution.
 - P2.2 target validation passed 47 checks and six mutation fixtures under both
@@ -58,6 +58,12 @@
   concurrent screens, failure isolation, timeout, disabled/unverified/unbound
   zero execution, stale ETag/idempotency, immutable sidecars, database Secret
   recovery/AAD failure and restored-orphan termination.
+- Independent review rejected replacement candidate
+  `78b5af301a1c57915a4535d3decc11c59b79eba7` for one remaining SQL-expression
+  family: Oracle `NEXTVAL`/`CURRVAL`, PostgreSQL custom operators and
+  user-defined casts could invoke stateful or unapproved database logic.
+  Validation now rejects those AST forms, and 21 cross-dialect closed-SQL
+  negative cases plus all three real adapters pass.
 - Replacement candidate commit, exact independent re-review, rollback binding
   and final evidence hashes remain pending. P2.2 is not accepted and P2.3 has
   not started.

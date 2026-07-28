@@ -36,9 +36,11 @@ only bounded base64 `.xlsx` content and no server path.
 Dataset creation accepts immutable metadata, typed parameter schema, ordered
 output fields, row/timeout bounds and an engine-specific approved definition.
 Database definitions contain the only SQL accepted by P2.2 and require a
-single parsed read-only template plus exact relation allowlists. Runtime start
-accepts only `parameters`; unknown fields such as SQL/template/relation/source
-or ownership selectors fail schema validation.
+single parsed read-only template plus exact relation allowlists. Unknown
+functions, custom operators, user-defined casts and sequence
+`NEXTVAL`/`CURRVAL` expressions are rejected. Runtime start accepts only
+`parameters`; unknown fields such as SQL/template/relation/source or ownership
+selectors fail schema validation.
 
 Successful runtime output contains the dataset/source labels and opaque IDs,
 metric/time-scope/permission evidence, request ID, latency, ordered fields and

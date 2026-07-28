@@ -22,9 +22,12 @@ candidate
 `8f364b93b574c058cd8cd617f925107985318098`, tree
 `7c277e32b6419bd3720591c454e8282d94f081ec`, is the rollback baseline. P2.2
 implementation, expanded automated gates and fresh browser workflow pass. The
-first immutable candidate failed independent review; its blocking findings
-were repaired, and replacement candidate binding plus exact re-review remain
-before presentation. P2.2 is not accepted and P2.3 has not started.
+first immutable candidate failed independent review and its blocking findings
+were repaired. Replacement candidate `78b5af301a1c57915a4535d3decc11c59b79eba7`
+then failed only the closed-SQL expression review; Oracle sequence expressions,
+PostgreSQL custom operators and user-defined casts are now rejected with new
+regressions. New candidate binding and exact re-review remain before
+presentation. P2.2 is not accepted and P2.3 has not started.
 
 ## Frozen Product Boundaries
 

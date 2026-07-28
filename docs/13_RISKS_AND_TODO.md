@@ -34,8 +34,11 @@ The user explicitly accepted P2.1 without conditions on 2026-07-28. Candidate
 Accepted P1.3 remains the verified product-code and pre-`004` data rollback
 target. P2.2 implementation and expanded automated/browser/ephemeral-database
 gates pass. Its first immutable candidate failed independent review; the
-reported gaps were repaired, but replacement candidate review and explicit
-user acceptance remain.
+reported gaps were repaired. Replacement candidate
+`78b5af301a1c57915a4535d3decc11c59b79eba7` exposed one remaining closed-SQL
+expression family and was also rejected; sequence expressions, custom
+operators and user-defined casts are now fail-closed. New candidate review and
+explicit user acceptance remain.
 
 - P2.1 accepted capability-profile, three-screen resolution, migration,
   recovery, Docker, Secret-scan and accepted-P1.3 rollback evidence; final
