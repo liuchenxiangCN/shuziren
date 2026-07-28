@@ -17,7 +17,8 @@
   asynchronous execution with timeout, cancellation and backpressure.
 - Additive `005_controlled_querying`, P2.2 preview/browser launchers,
   machine-readable query contract, management/runtime workflow and
-  backup/restore validation that preserves current source/dataset authority.
+  backup/restore validation that preserves current source/dataset authority,
+  refuses live-query restore and terminalizes restored orphan executions.
 - Accepted P2.1 Site-owned capability profiles, immutable profile
   versions, exact draft assignments, immutable ReleaseTarget capability
   snapshots and credential-scoped applied-profile resolution across three

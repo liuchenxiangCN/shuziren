@@ -32,8 +32,10 @@ The user explicitly accepted P2.1 without conditions on 2026-07-28. Candidate
 `8f364b93b574c058cd8cd617f925107985318098`, tree
 `7c277e32b6419bd3720591c454e8282d94f081ec`, is the accepted runtime baseline.
 Accepted P1.3 remains the verified product-code and pre-`004` data rollback
-target. P2.2 implementation and automated/browser/ephemeral-database gates
-pass; exact candidate review and explicit user acceptance remain.
+target. P2.2 implementation and expanded automated/browser/ephemeral-database
+gates pass. Its first immutable candidate failed independent review; the
+reported gaps were repaired, but replacement candidate review and explicit
+user acceptance remain.
 
 - P2.1 accepted capability-profile, three-screen resolution, migration,
   recovery, Docker, Secret-scan and accepted-P1.3 rollback evidence; final

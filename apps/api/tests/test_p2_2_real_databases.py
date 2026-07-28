@@ -112,6 +112,13 @@ def test_exact_read_only_database_adapter_executes_bound_dataset(
                     "VALUES ('2026-07-28', 'DENIED', 1)"
                 )
             )
+        with direct.connect() as connection:
+            before_count = connection.execute(
+                text(f"SELECT COUNT(*) AS row_count FROM {case['relation']}")
+            ).scalar_one()
+            before_fields = list(
+                connection.execute(text(f"SELECT * FROM {case['relation']} WHERE 1 = 0")).keys()
+            )
     finally:
         direct.dispose()
 
@@ -252,6 +259,19 @@ def test_exact_read_only_database_adapter_executes_bound_dataset(
     )
     assert injection_result["state"] == "SUCCEEDED"
     assert injection_result["row_count"] == 0
+    invariant_check = create_engine(url, poolclass=NullPool, hide_parameters=True)
+    try:
+        with invariant_check.connect() as connection:
+            after_count = connection.execute(
+                text(f"SELECT COUNT(*) AS row_count FROM {case['relation']}")
+            ).scalar_one()
+            after_fields = list(
+                connection.execute(text(f"SELECT * FROM {case['relation']} WHERE 1 = 0")).keys()
+            )
+        assert after_count == before_count
+        assert after_fields == before_fields
+    finally:
+        invariant_check.dispose()
 
     for _ in range(100):
         status = device.get(

@@ -19,14 +19,15 @@
   queue, external control-plane database, measured throughput or SLA.
 - The worker pool and per-screen bound prove correctness/backpressure for this
   result, not P2.3 capacity certification.
-- Successful rows are retained only by the current in-memory job. After a
-  process restart, metadata remains but the caller must rerun the dataset.
+- Successful rows are retained only in the current process, capped at 256
+  terminal jobs. Eviction, process restart or restore keeps sanitized metadata
+  but requires the caller to rerun the dataset.
 - Secret rotation/retiring windows and external key custody are outside P2.2.
   Database credentials are immutable per source; replacement uses a new
   source.
 - Excel supports only `.xlsx`, one approved worksheet, scalar cells and
-  equality filters. Formulas, macros, external links, `.xls`, CSV and arbitrary
-  paths are rejected.
+  equality filters. Formulas, macros, ActiveX/OLE/binary parts, external
+  relationships or hyperlinks, `.xls`, CSV and arbitrary paths are rejected.
 - Database querying supports one administrator-approved parameterized
   read-only statement. There is no free SQL, stored procedure, writeback,
   federated/cross-source query or model-generated query/summarization.

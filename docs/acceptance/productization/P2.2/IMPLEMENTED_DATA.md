@@ -8,7 +8,7 @@
 - Logical schema: `p1_control_plane_001`
 - Latest migration: `005_controlled_querying`
 - Migration checksum SHA-256:
-  `dcb10e463615b75409453785c67cf78e89da614eb77b61bd2f0d3ee6c0ffab80`
+  `d6661b95fcf08e478c29ea20314f3dc158be88433a7fa3c3c86d119b33cfbcf4`
 
 ## Additive Structures
 
@@ -49,7 +49,11 @@ Secret AAD/ciphertext references, dataset definition hashes, assignment
 closure, validation binding, release snapshots and execution metadata.
 Backup creation, fresh verification and staged restore use this validation.
 Online restore reconciles current matching source/dataset/Secret authority
-instead of resurrecting older enabled state.
+instead of resurrecting older enabled state. Restore refuses cutover while a
+controlled-query worker is live, terminalizes nonterminal rows from the
+restored snapshot as `QUERY_RESTORE_INTERRUPTED`, and clears pre-cutover
+in-memory results only after a quiescent cutover. Startup similarly marks
+orphaned `QUEUED`/`RUNNING` rows as `QUERY_PROCESS_RESTARTED`.
 
 The exact accepted-P2.1 copied upgrade, repeat migration and WAL-safe pre-005
 copy are executable regression cases. Product rollback uses accepted P2.1 code

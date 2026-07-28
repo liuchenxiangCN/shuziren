@@ -10,15 +10,16 @@ import re
 import sqlite3
 import threading
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+from xml.etree import ElementTree
 
 import sqlglot
 from cryptography.exceptions import InvalidTag
@@ -32,7 +33,7 @@ from app.control_plane.errors import ControlPlaneError
 from app.control_plane.security import Ciphertext, canonical_json, opaque_id
 
 DATASET_SCHEMA_VERSION = "p2_controlled_dataset_v1"
-QUERY_VALIDATOR_VERSION = "p2_2_controlled_query_validator_v1"
+QUERY_VALIDATOR_VERSION = "p2_2_controlled_query_validator_v2"
 QUERY_SNAPSHOT_SCHEMA_VERSION = "p2_query_snapshot_v1"
 QUERY_ENGINES = ("EXCEL", "MYSQL", "ORACLE", "POSTGRESQL")
 DATABASE_ENGINES = {"MYSQL", "ORACLE", "POSTGRESQL"}
@@ -46,21 +47,64 @@ MAX_WORKBOOK_CELLS = 500_000
 MAX_GLOBAL_INFLIGHT = 6
 MAX_PER_SCREEN_INFLIGHT = 2
 EXECUTOR_WORKERS = 3
+MAX_RETAINED_JOBS = 256
 
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _RELATION = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_$#]*(?:\.[a-zA-Z_][a-zA-Z0-9_$#]*){0,2}$")
 _FORBIDDEN_SQL_TEXT = re.compile(
-    r"""(?is)(
+    r"""(?isx)(
         ;|--|/\*|\*/|\x00|
         \b(?:insert|update|delete|merge|replace|upsert|truncate)\b|
         \b(?:create|alter|drop|rename|comment|grant|revoke)\b|
         \b(?:call|execute|exec|prepare|deallocate|copy|load|outfile|dumpfile)\b|
-        \b(?:attach|detach|pragma|vacuum|analyze|begin|commit|rollback|savepoint)\b
+        \b(?:attach|detach|pragma|vacuum|analyze|begin|commit|rollback|savepoint)\b|
+        \b(?:for\s+(?:update|share)|lock\s+in\s+share\s+mode)\b
     )"""
 )
+_FORBIDDEN_MYSQL_SQL_TEXT = re.compile(r"(?m)\#")
+_ALLOWED_SQL_FUNCTIONS = {
+    "ABS",
+    "AVG",
+    "CAST",
+    "CEIL",
+    "CEILING",
+    "COALESCE",
+    "CONCAT",
+    "COUNT",
+    "DATE_TRUNC",
+    "EXTRACT",
+    "FLOOR",
+    "LOWER",
+    "MAX",
+    "MIN",
+    "NULLIF",
+    "ROUND",
+    "SUM",
+    "UPPER",
+}
 _FORBIDDEN_ARCHIVE_PART = re.compile(
-    r"(?i)(?:^|/)(?:vbaProject\.bin|externalLinks|embeddings|oleObject|connections\.xml)"
+    r"""(?ix)
+    (?:^|/)(?:
+        activex(?:/|$)|
+        ctrlprops(?:/|$)|
+        dialogsheets(?:/|$)|
+        embeddings(?:/|$)|
+        externallinks(?:/|$)|
+        macrosheets(?:/|$)|
+        model(?:/|$)|
+        oleobjects?(?:/|$)|
+        querytables(?:/|$)|
+        webextensions(?:/|$)|
+        connections\.xml$|
+        vbaproject\.bin$
+    )|
+    \.bin$
+    """
 )
+_FORBIDDEN_CONTENT_TYPE = re.compile(
+    r"(?i)(?:macroenabled|vba|activex|oleobject|externallink|connections|querytable)"
+)
+_URI_TARGET = re.compile(r"(?i)^(?:[a-z][a-z0-9+.-]*:|//)")
 
 
 @dataclass
@@ -68,10 +112,17 @@ class QueryJob:
     execution_id: str
     request_id: str
     screen_id: str
+    source_id: str
+    dataset_id: str
+    dataset_version_id: str
     cancel_event: threading.Event = field(default_factory=threading.Event)
     future: Future[None] | None = None
     cancel_adapter: Callable[[], None] | None = None
     result: dict[str, Any] | None = None
+    authority_error_code: str | None = None
+    timed_out: bool = False
+    slot_released: bool = False
+    terminal: bool = False
     lock: threading.RLock = field(default_factory=threading.RLock)
 
 
@@ -95,6 +146,84 @@ class P22ControlPlane:
         self._jobs_lock = threading.RLock()
         self._global_slots = threading.BoundedSemaphore(MAX_GLOBAL_INFLIGHT)
         self._screen_inflight: dict[str, int] = {}
+        self._authority_locks_guard = threading.RLock()
+        self._authority_locks: dict[tuple[str, str], threading.RLock] = {}
+        self._execution_gate = threading.RLock()
+        self._reconcile_orphaned_executions()
+
+    @contextmanager
+    def restore_quiescence(self) -> Iterator[None]:
+        with self._execution_gate:
+            with self.owner.store.connect() as connection:
+                active = connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM query_executions
+                    WHERE state IN ('QUEUED', 'RUNNING')
+                    """
+                ).fetchone()["count"]
+            with self._jobs_lock:
+                active_workers = any(
+                    job.future is not None and not job.future.done() for job in self._jobs.values()
+                )
+            if active or active_workers:
+                raise ControlPlaneError(
+                    409,
+                    "ACTIVE_QUERY_RESTORE_FORBIDDEN",
+                    "Cancel or complete controlled queries before restoring",
+                )
+            yield
+
+    def on_restore_cutover(self) -> None:
+        with self._jobs_lock:
+            if any(job.future is not None and not job.future.done() for job in self._jobs.values()):
+                raise RuntimeError("Controlled-query workers crossed a restore cutover")
+            self._jobs.clear()
+            self._screen_inflight.clear()
+            self._global_slots = threading.BoundedSemaphore(MAX_GLOBAL_INFLIGHT)
+
+    def _reconcile_orphaned_executions(self) -> None:
+        now = self.owner.clock()
+        with self.owner.store.transaction() as connection:
+            if not self._table_exists(connection, "query_executions"):
+                return
+            rows = connection.execute(
+                """
+                SELECT * FROM query_executions
+                WHERE state IN ('QUEUED', 'RUNNING')
+                ORDER BY created_at, execution_id
+                """
+            ).fetchall()
+            for row in rows:
+                connection.execute(
+                    """
+                    UPDATE query_executions
+                    SET state = 'FAILED',
+                        error_code = 'QUERY_PROCESS_RESTARTED',
+                        completed_at = ?, revision = revision + 1
+                    WHERE execution_id = ? AND state IN ('QUEUED', 'RUNNING')
+                    """,
+                    (now, row["execution_id"]),
+                )
+                self.owner._append_audit(
+                    connection,
+                    event_type="CONTROLLED_QUERY_RECOVERED",
+                    actor_type="SYSTEM",
+                    actor_id="control-plane-startup",
+                    target_type="QUERY_EXECUTION",
+                    target_id=row["execution_id"],
+                    outcome="DENIED",
+                    reason=None,
+                    details={
+                        "request_id": row["request_id"],
+                        "screen_id": row["screen_id"],
+                        "dataset_id": row["dataset_id"],
+                        "previous_state": row["state"],
+                        "state": "FAILED",
+                        "error_code": "QUERY_PROCESS_RESTARTED",
+                    },
+                    now=now,
+                )
 
     # QuerySource registration and qualification.
 
@@ -419,6 +548,29 @@ class P22ControlPlane:
         idempotency_key: str,
     ) -> dict[str, Any]:
         self.owner.require_permission(principal, "config.edit_technical")
+        with self._authority_lock("query-source", source_id):
+            result = self._test_source_serialized(
+                principal,
+                source_id,
+                if_match=if_match,
+                idempotency_key=idempotency_key,
+            )
+            if result["qualification_state"] != "AVAILABLE":
+                self._cancel_jobs_for_authority(
+                    resource_kind="query-source",
+                    resource_id=source_id,
+                    error_code="QUERY_SOURCE_NOT_AVAILABLE",
+                )
+        return result
+
+    def _test_source_serialized(
+        self,
+        principal: Any,
+        source_id: str,
+        *,
+        if_match: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
         operation_id = "testQuerySource"
         command = {"source_id": source_id, "if_match": if_match}
         request_digest = self.owner._sensitive_request_digest(operation_id, command)
@@ -1021,7 +1173,7 @@ class P22ControlPlane:
         draft_id: str,
         source_revision: int,
         target_revision: int,
-    ) -> None:
+    ) -> bool:
         if not self._table_exists(connection, "config_draft_query_assignments"):
             return
         source = self._draft_assignment_row(connection, draft_id, source_revision)
@@ -1519,6 +1671,34 @@ class P22ControlPlane:
         principal_key: str,
         idempotency_key: str,
     ) -> dict[str, Any]:
+        with self._execution_gate:
+            return self._start_execution_serialized(
+                tenant_id=tenant_id,
+                deployment_id=deployment_id,
+                site_id=site_id,
+                screen_id=screen_id,
+                dataset_id=dataset_id,
+                parameters=parameters,
+                actor_type=actor_type,
+                actor_id=actor_id,
+                principal_key=principal_key,
+                idempotency_key=idempotency_key,
+            )
+
+    def _start_execution_serialized(
+        self,
+        *,
+        tenant_id: str,
+        deployment_id: str,
+        site_id: str | None,
+        screen_id: str,
+        dataset_id: str,
+        parameters: dict[str, Any],
+        actor_type: str,
+        actor_id: str,
+        principal_key: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
         operation_phase = "startControlledQueryDevice" if actor_type == "DEVICE" else "startControlledQuery"
         if not isinstance(parameters, dict):
             raise ControlPlaneError(
@@ -1621,6 +1801,31 @@ class P22ControlPlane:
                         "retryable": True,
                     },
                 }
+                self.owner._append_audit(
+                    connection,
+                    event_type="CONTROLLED_QUERY_COMPLETED",
+                    actor_type=actor_type,
+                    actor_id=actor_id,
+                    target_type="QUERY_EXECUTION",
+                    target_id=execution_id,
+                    outcome="DENIED",
+                    reason=None,
+                    details={
+                        "request_id": request_id,
+                        "screen_id": screen_id,
+                        "source_id": ref["source_id"],
+                        "source_version_id": ref["source_version_id"],
+                        "dataset_id": dataset_id,
+                        "dataset_version_id": ref["dataset_version_id"],
+                        "parameter_names": sorted(normalized_parameters),
+                        "parameter_digest": command["parameter_digest"],
+                        "state": "REJECTED_BACKPRESSURE",
+                        "error_code": rejection,
+                        "row_count": None,
+                        "latency_ms": 0,
+                    },
+                    now=now,
+                )
                 self.owner._idempotency_store(
                     connection,
                     phase=operation_phase,
@@ -1636,6 +1841,9 @@ class P22ControlPlane:
             execution_id=execution_id,
             request_id=request_id,
             screen_id=screen_id,
+            source_id=ref["source_id"],
+            dataset_id=dataset_id,
+            dataset_version_id=ref["dataset_version_id"],
         )
         with self._jobs_lock:
             self._jobs[execution_id] = job
@@ -1692,7 +1900,7 @@ class P22ControlPlane:
             job.future = self._executor.submit(
                 self._run_execution,
                 job,
-                dataset,
+                dict(ref),
                 normalized_parameters,
                 time_scope,
                 snapshot,
@@ -1708,7 +1916,7 @@ class P22ControlPlane:
     def _run_execution(
         self,
         job: QueryJob,
-        dataset: sqlite3.Row,
+        ref: dict[str, Any],
         parameters: dict[str, Any],
         time_scope: dict[str, Any],
         snapshot: dict[str, Any],
@@ -1716,21 +1924,54 @@ class P22ControlPlane:
     ) -> None:
         started = perf_counter()
         started_at = self.owner.clock()
+        timeout_timer: threading.Timer | None = None
         try:
             if job.cancel_event.is_set():
-                raise QueryExecutionFailure("QUERY_CANCELLED", "The query was cancelled")
-            with self.owner.store.transaction() as connection:
-                connection.execute(
-                    """
-                    UPDATE query_executions
-                    SET state = 'RUNNING', started_at = ?, revision = revision + 1
-                    WHERE execution_id = ? AND state = 'QUEUED'
-                    """,
-                    (started_at, job.execution_id),
-                )
+                raise self._cancellation_failure(job)
+            with (
+                self._authority_lock("query-source", job.source_id),
+                self._authority_lock("query-dataset", job.dataset_id),
+            ):
+                if job.cancel_event.is_set():
+                    raise self._cancellation_failure(job)
+                with self.owner.store.transaction() as connection:
+                    current = connection.execute(
+                        "SELECT state FROM query_executions WHERE execution_id = ?",
+                        (job.execution_id,),
+                    ).fetchone()
+                    if current is None or current["state"] != "QUEUED":
+                        raise self._cancellation_failure(job)
+                    try:
+                        dataset = self._runtime_dataset_row(connection, ref)
+                    except ControlPlaneError as exc:
+                        if exc.code in {
+                            "QUERY_SOURCE_NOT_AVAILABLE",
+                            "QUERY_DATASET_NOT_AVAILABLE",
+                        }:
+                            raise QueryExecutionFailure(exc.code, exc.message) from exc
+                        raise
+                    updated = connection.execute(
+                        """
+                        UPDATE query_executions
+                        SET state = 'RUNNING', started_at = ?, revision = revision + 1
+                        WHERE execution_id = ? AND state = 'QUEUED'
+                        """,
+                        (started_at, job.execution_id),
+                    )
+                    if updated.rowcount != 1:
+                        raise self._cancellation_failure(job)
+            timeout_timer = threading.Timer(
+                dataset["timeout_ms"] / 1000,
+                self._expire_execution,
+                args=(job, dataset["timeout_ms"]),
+            )
+            timeout_timer.daemon = True
+            timeout_timer.start()
+            if job.cancel_event.is_set():
+                raise self._cancellation_failure(job)
             rows, fields = self._execute_dataset(job, dataset, parameters)
             if job.cancel_event.is_set():
-                raise QueryExecutionFailure("QUERY_CANCELLED", "The query was cancelled")
+                raise self._cancellation_failure(job)
             latency_ms = max(0, int((perf_counter() - started) * 1000))
             result = {
                 "api_version": "v1",
@@ -1826,9 +2067,13 @@ class P22ControlPlane:
                 latency_ms=latency_ms,
             )
         finally:
+            if timeout_timer is not None:
+                timeout_timer.cancel()
             with job.lock:
                 job.cancel_adapter = None
-            self._release_execution_slot(job.screen_id)
+                job.terminal = True
+            self._release_job_slot_once(job)
+            self._prune_terminal_jobs()
 
     def _finish_execution(
         self,
@@ -1840,56 +2085,67 @@ class P22ControlPlane:
         latency_ms: int,
     ) -> None:
         now = self.owner.clock()
-        with self.owner.store.transaction() as connection:
-            current = connection.execute(
-                "SELECT * FROM query_executions WHERE execution_id = ?",
-                (job.execution_id,),
-            ).fetchone()
-            if current is None:
-                return
-            if current["state"] == "CANCELLED" and state != "CANCELLED":
-                return
-            connection.execute(
-                """
-                UPDATE query_executions
-                SET state = ?, error_code = ?, row_count = ?, latency_ms = ?,
-                    completed_at = ?, revision = revision + 1
-                WHERE execution_id = ?
-                """,
-                (
-                    state,
-                    error_code,
-                    row_count,
-                    latency_ms,
-                    now,
-                    job.execution_id,
-                ),
-            )
-            self.owner._append_audit(
-                connection,
-                event_type="CONTROLLED_QUERY_COMPLETED",
-                actor_type=current["actor_type"],
-                actor_id=current["actor_id"],
-                target_type="QUERY_EXECUTION",
-                target_id=job.execution_id,
-                outcome="SUCCESS" if state == "SUCCEEDED" else "DENIED",
-                reason=None,
-                details={
-                    "request_id": job.request_id,
-                    "screen_id": current["screen_id"],
-                    "source_id": current["source_id"],
-                    "source_version_id": current["source_version_id"],
-                    "dataset_id": current["dataset_id"],
-                    "dataset_version_id": current["dataset_version_id"],
-                    "parameter_names": json.loads(current["parameter_names_json"]),
-                    "parameter_digest": current["parameter_digest"],
-                    "state": state,
-                    "error_code": error_code,
-                    "row_count": row_count,
-                    "latency_ms": latency_ms,
-                },
-                now=now,
-            )
+        with job.lock:
+            with self.owner.store.transaction() as connection:
+                current = connection.execute(
+                    "SELECT * FROM query_executions WHERE execution_id = ?",
+                    (job.execution_id,),
+                ).fetchone()
+                if current is None:
+                    job.terminal = True
+                    return False
+                if current["state"] in {
+                    "SUCCEEDED",
+                    "FAILED",
+                    "TIMED_OUT",
+                    "CANCELLED",
+                    "REJECTED_BACKPRESSURE",
+                }:
+                    job.terminal = True
+                    return False
+                connection.execute(
+                    """
+                    UPDATE query_executions
+                    SET state = ?, error_code = ?, row_count = ?, latency_ms = ?,
+                        completed_at = ?, revision = revision + 1
+                    WHERE execution_id = ?
+                    """,
+                    (
+                        state,
+                        error_code,
+                        row_count,
+                        latency_ms,
+                        now,
+                        job.execution_id,
+                    ),
+                )
+                self.owner._append_audit(
+                    connection,
+                    event_type="CONTROLLED_QUERY_COMPLETED",
+                    actor_type=current["actor_type"],
+                    actor_id=current["actor_id"],
+                    target_type="QUERY_EXECUTION",
+                    target_id=job.execution_id,
+                    outcome="SUCCESS" if state == "SUCCEEDED" else "DENIED",
+                    reason=None,
+                    details={
+                        "request_id": job.request_id,
+                        "screen_id": current["screen_id"],
+                        "source_id": current["source_id"],
+                        "source_version_id": current["source_version_id"],
+                        "dataset_id": current["dataset_id"],
+                        "dataset_version_id": current["dataset_version_id"],
+                        "parameter_names": json.loads(current["parameter_names_json"]),
+                        "parameter_digest": current["parameter_digest"],
+                        "state": state,
+                        "error_code": error_code,
+                        "row_count": row_count,
+                        "latency_ms": latency_ms,
+                    },
+                    now=now,
+                )
+            job.terminal = True
+            return True
 
     def _execution_response(
         self,
@@ -2057,13 +2313,18 @@ class P22ControlPlane:
             job.cancel_event.set()
             with job.lock:
                 cancel_adapter = job.cancel_adapter
+                future = job.future
             if cancel_adapter is not None:
                 with suppress(Exception):
                     cancel_adapter()
-            if job.future is not None:
-                job.future.cancel()
+            cancelled_before_start = future.cancel() if future is not None else False
             with job.lock:
                 job.result = dict(result)
+                if cancelled_before_start:
+                    job.terminal = True
+            if cancelled_before_start:
+                self._release_job_slot_once(job)
+                self._prune_terminal_jobs()
         return result
 
     # Adapter implementations.
@@ -2160,7 +2421,7 @@ class P22ControlPlane:
             result: list[dict[str, Any]] = []
             for row in rows_iter:
                 if job.cancel_event.is_set():
-                    raise QueryExecutionFailure("QUERY_CANCELLED", "The query was cancelled")
+                    raise self._cancellation_failure(job)
                 if perf_counter() > deadline:
                     raise QueryExecutionFailure("QUERY_TIMED_OUT", "The query timed out")
                 values = [cell.value for cell in row]
@@ -2192,6 +2453,8 @@ class P22ControlPlane:
         dataset: sqlite3.Row,
         parameters: dict[str, Any],
     ) -> tuple[list[dict[str, Any]], list[str]]:
+        if job.cancel_event.is_set():
+            raise self._cancellation_failure(job)
         connection_payload = self._decrypt_source_connection(dataset)
         engine = self._database_engine(
             dataset["engine"],
@@ -2201,6 +2464,8 @@ class P22ControlPlane:
         output_fields = json.loads(dataset["canonical_output_fields_json"])
         definition = json.loads(dataset["canonical_definition_json"])
         try:
+            if job.cancel_event.is_set():
+                raise self._cancellation_failure(job)
             with engine.connect() as connection:
                 self._configure_database_connection(
                     dataset["engine"],
@@ -2208,6 +2473,8 @@ class P22ControlPlane:
                     timeout_ms=dataset["timeout_ms"],
                     job=job,
                 )
+                if job.cancel_event.is_set():
+                    raise self._cancellation_failure(job)
                 result = connection.execute(
                     text(definition["query_template"]),
                     parameters,
@@ -2225,20 +2492,14 @@ class P22ControlPlane:
                 rows: list[dict[str, Any]] = []
                 for row in result.fetchmany(dataset["row_limit"] + 1):
                     if job.cancel_event.is_set():
-                        raise QueryExecutionFailure(
-                            "QUERY_CANCELLED",
-                            "The query was cancelled",
-                        )
+                        raise self._cancellation_failure(job)
                     rows.append({field: self._json_scalar(row._mapping[field]) for field in output_fields})
                 return rows[: dataset["row_limit"]], output_fields
         except QueryExecutionFailure:
             raise
         except (DBAPIError, SQLAlchemyError, OSError) as exc:
             if job.cancel_event.is_set():
-                raise QueryExecutionFailure(
-                    "QUERY_CANCELLED",
-                    "The query was cancelled",
-                ) from exc
+                raise self._cancellation_failure(job) from exc
             if self._looks_like_timeout(exc):
                 raise QueryExecutionFailure(
                     "QUERY_TIMED_OUT",
@@ -2416,11 +2677,19 @@ class P22ControlPlane:
                         "WORKBOOK_SIZE_EXCEEDED",
                         "Workbook archive limits were exceeded",
                     )
+                member_names: set[str] = set()
                 for member in members:
                     normalized = member.filename.replace("\\", "/")
+                    normalized_casefold = normalized.casefold()
+                    parts = normalized.rstrip("/").split("/")
                     if (
-                        normalized.startswith(("/", "../"))
-                        or "/../" in normalized
+                        not normalized
+                        or normalized.startswith("/")
+                        or re.match(r"(?i)^[a-z]:", normalized)
+                        or any(part in {"", ".", ".."} for part in parts)
+                        or normalized_casefold in member_names
+                        or member.flag_bits & 0x1
+                        or (member.external_attr >> 16) & 0o170000 == 0o120000
                         or _FORBIDDEN_ARCHIVE_PART.search(normalized)
                     ):
                         raise ControlPlaneError(
@@ -2428,6 +2697,11 @@ class P22ControlPlane:
                             "WORKBOOK_ACTIVE_CONTENT_FORBIDDEN",
                             "Workbook active or external content is forbidden",
                         )
+                    member_names.add(normalized_casefold)
+                    if normalized_casefold.endswith(".rels"):
+                        self._inspect_relationship_part(archive.read(member))
+                    elif normalized_casefold == "[content_types].xml":
+                        self._inspect_content_types_part(archive.read(member))
         except zipfile.BadZipFile as exc:
             raise ControlPlaneError(
                 422,
@@ -2480,6 +2754,63 @@ class P22ControlPlane:
             return {"worksheet_names": list(workbook.sheetnames)}
         finally:
             workbook.close()
+
+    @staticmethod
+    def _inspect_relationship_part(payload: bytes) -> None:
+        if b"<!DOCTYPE" in payload.upper() or b"<!ENTITY" in payload.upper():
+            raise ControlPlaneError(
+                422,
+                "WORKBOOK_ACTIVE_CONTENT_FORBIDDEN",
+                "Workbook active or external content is forbidden",
+            )
+        try:
+            root = ElementTree.fromstring(payload)
+        except ElementTree.ParseError as exc:
+            raise ControlPlaneError(
+                422,
+                "WORKBOOK_INVALID",
+                "Workbook relationship metadata is invalid",
+            ) from exc
+        for relationship in root.iter():
+            attributes = {key.casefold(): value for key, value in relationship.attrib.items()}
+            target_mode = attributes.get("targetmode", "").casefold()
+            relationship_type = attributes.get("type", "").casefold()
+            target = attributes.get("target", "").strip()
+            if (
+                target_mode == "external"
+                or relationship_type.endswith(("/hyperlink", "/externallink"))
+                or _URI_TARGET.match(target)
+                or target.startswith("\\\\")
+            ):
+                raise ControlPlaneError(
+                    422,
+                    "WORKBOOK_ACTIVE_CONTENT_FORBIDDEN",
+                    "Workbook active or external content is forbidden",
+                )
+
+    @staticmethod
+    def _inspect_content_types_part(payload: bytes) -> None:
+        if b"<!DOCTYPE" in payload.upper() or b"<!ENTITY" in payload.upper():
+            raise ControlPlaneError(
+                422,
+                "WORKBOOK_ACTIVE_CONTENT_FORBIDDEN",
+                "Workbook active or external content is forbidden",
+            )
+        try:
+            root = ElementTree.fromstring(payload)
+        except ElementTree.ParseError as exc:
+            raise ControlPlaneError(
+                422,
+                "WORKBOOK_INVALID",
+                "Workbook content-type metadata is invalid",
+            ) from exc
+        for item in root.iter():
+            if any(_FORBIDDEN_CONTENT_TYPE.search(value) for value in item.attrib.values()):
+                raise ControlPlaneError(
+                    422,
+                    "WORKBOOK_ACTIVE_CONTENT_FORBIDDEN",
+                    "Workbook active or external content is forbidden",
+                )
 
     def _validate_parameter_schema(
         self,
@@ -2589,6 +2920,7 @@ class P22ControlPlane:
             or not query_template.strip()
             or len(query_template) > 20_000
             or _FORBIDDEN_SQL_TEXT.search(query_template)
+            or (source["engine"] == "MYSQL" and _FORBIDDEN_MYSQL_SQL_TEXT.search(query_template))
         ):
             raise ControlPlaneError(
                 422,
@@ -2640,6 +2972,14 @@ class P22ControlPlane:
             exp.Command,
             exp.Transaction,
             exp.Copy,
+            exp.Export,
+            exp.Into,
+            exp.Lock,
+            exp.Parameter,
+            exp.PropertyEQ,
+            exp.ReadCSV,
+            exp.SessionParameter,
+            exp.Var,
         )
         if any(isinstance(node, forbidden_nodes) for node in tree.walk()):
             raise ControlPlaneError(
@@ -2647,6 +2987,16 @@ class P22ControlPlane:
                 "READ_ONLY_TEMPLATE_REQUIRED",
                 "The query template contains a forbidden operation",
             )
+        for function in tree.find_all(exp.Func):
+            if (
+                isinstance(function, exp.Anonymous)
+                or function.sql_name().upper() not in _ALLOWED_SQL_FUNCTIONS
+            ):
+                raise ControlPlaneError(
+                    422,
+                    "READ_ONLY_TEMPLATE_REQUIRED",
+                    "The query template contains an unapproved function",
+                )
         if any(
             selection.is_star
             for select_node in tree.find_all(exp.Select)
@@ -2976,12 +3326,19 @@ class P22ControlPlane:
                 ref["source_version_id"],
             ),
         ).fetchone()
-        if (
-            row is None
-            or row["state"] != "ACTIVE"
-            or row["source_state"] != "ACTIVE"
-            or row["source_qualification_state"] != "AVAILABLE"
-        ):
+        if row is None:
+            raise ControlPlaneError(
+                409,
+                "QUERY_SOURCE_NOT_AVAILABLE",
+                "The approved dataset source is unavailable",
+            )
+        if row["state"] != "ACTIVE":
+            raise ControlPlaneError(
+                409,
+                "QUERY_DATASET_NOT_AVAILABLE",
+                "The approved dataset is unavailable",
+            )
+        if row["source_state"] != "ACTIVE" or row["source_qualification_state"] != "AVAILABLE":
             raise ControlPlaneError(
                 409,
                 "QUERY_SOURCE_NOT_AVAILABLE",
@@ -3604,6 +3961,42 @@ class P22ControlPlane:
         operation_id: str,
         event_type: str,
     ) -> dict[str, Any]:
+        with self._authority_lock(resource_kind, resource_id):
+            result = self._disable_envelope_serialized(
+                principal,
+                resource_kind=resource_kind,
+                table=table,
+                id_column=id_column,
+                resource_id=resource_id,
+                if_match=if_match,
+                idempotency_key=idempotency_key,
+                operation_id=operation_id,
+                event_type=event_type,
+            )
+            self._cancel_jobs_for_authority(
+                resource_kind=resource_kind,
+                resource_id=resource_id,
+                error_code=(
+                    "QUERY_SOURCE_NOT_AVAILABLE"
+                    if resource_kind == "query-source"
+                    else "QUERY_DATASET_NOT_AVAILABLE"
+                ),
+            )
+            return result
+
+    def _disable_envelope_serialized(
+        self,
+        principal: Any,
+        *,
+        resource_kind: str,
+        table: str,
+        id_column: str,
+        resource_id: str,
+        if_match: str,
+        idempotency_key: str,
+        operation_id: str,
+        event_type: str,
+    ) -> dict[str, Any]:
         command = {"resource_id": resource_id, "if_match": if_match}
         request_digest = self.owner._sensitive_request_digest(operation_id, command)
         now = self.owner.clock()
@@ -3698,6 +4091,129 @@ class P22ControlPlane:
             else:
                 self._screen_inflight[screen_id] = current - 1
         self._global_slots.release()
+
+    def _release_job_slot_once(self, job: QueryJob) -> None:
+        with job.lock:
+            if job.slot_released:
+                return
+            job.slot_released = True
+        self._release_execution_slot(job.screen_id)
+
+    def _prune_terminal_jobs(self) -> None:
+        with self._jobs_lock:
+            overflow = len(self._jobs) - MAX_RETAINED_JOBS
+            if overflow <= 0:
+                return
+            for execution_id, job in tuple(self._jobs.items()):
+                with job.lock:
+                    removable = job.terminal and job.slot_released
+                if removable:
+                    self._jobs.pop(execution_id, None)
+                    overflow -= 1
+                    if overflow == 0:
+                        return
+
+    def _authority_lock(self, resource_kind: str, resource_id: str) -> threading.RLock:
+        key = (resource_kind, resource_id)
+        with self._authority_locks_guard:
+            lock = self._authority_locks.get(key)
+            if lock is None:
+                lock = threading.RLock()
+                self._authority_locks[key] = lock
+            return lock
+
+    @staticmethod
+    def _cancellation_failure(job: QueryJob) -> QueryExecutionFailure:
+        code = "QUERY_TIMED_OUT" if job.timed_out else job.authority_error_code or "QUERY_CANCELLED"
+        message = {
+            "QUERY_TIMED_OUT": "The query timed out",
+            "QUERY_SOURCE_NOT_AVAILABLE": "The QuerySource is unavailable",
+            "QUERY_DATASET_NOT_AVAILABLE": "The approved dataset is unavailable",
+        }.get(code, "The query was cancelled")
+        return QueryExecutionFailure(code, message)
+
+    def _cancel_jobs_for_authority(
+        self,
+        *,
+        resource_kind: str,
+        resource_id: str,
+        error_code: str,
+    ) -> None:
+        with self._jobs_lock:
+            jobs = [
+                job
+                for job in self._jobs.values()
+                if (
+                    resource_kind == "query-source"
+                    and job.source_id == resource_id
+                    or resource_kind == "query-dataset"
+                    and job.dataset_id == resource_id
+                )
+            ]
+        for job in jobs:
+            with job.lock:
+                if job.terminal:
+                    continue
+                job.authority_error_code = error_code
+                job.cancel_event.set()
+                cancel_adapter = job.cancel_adapter
+                future = job.future
+                job.result = {
+                    "api_version": "v1",
+                    "execution_id": job.execution_id,
+                    "request_id": job.request_id,
+                    "state": "FAILED",
+                    "error": {
+                        "code": error_code,
+                        "message": self._execution_error_message(error_code),
+                        "retryable": False,
+                    },
+                }
+            if cancel_adapter is not None:
+                with suppress(Exception):
+                    cancel_adapter()
+            cancelled_before_start = future.cancel() if future is not None else False
+            self._finish_execution(
+                job,
+                state="FAILED",
+                error_code=error_code,
+                row_count=None,
+                latency_ms=0,
+            )
+            if cancelled_before_start:
+                self._release_job_slot_once(job)
+                self._prune_terminal_jobs()
+
+    def _expire_execution(self, job: QueryJob, timeout_ms: int) -> None:
+        with job.lock:
+            if job.terminal:
+                return
+            transitioned = self._finish_execution(
+                job,
+                state="TIMED_OUT",
+                error_code="QUERY_TIMED_OUT",
+                row_count=None,
+                latency_ms=timeout_ms,
+            )
+            if not transitioned:
+                return
+            job.timed_out = True
+            job.cancel_event.set()
+            job.result = {
+                "api_version": "v1",
+                "execution_id": job.execution_id,
+                "request_id": job.request_id,
+                "state": "TIMED_OUT",
+                "error": {
+                    "code": "QUERY_TIMED_OUT",
+                    "message": self._execution_error_message("QUERY_TIMED_OUT"),
+                    "retryable": True,
+                },
+            }
+            cancel_adapter = job.cancel_adapter
+        if cancel_adapter is not None:
+            with suppress(Exception):
+                cancel_adapter()
 
     @staticmethod
     def _table_relation_name(table: exp.Table) -> str:
@@ -3811,6 +4327,10 @@ class P22ControlPlane:
             "QUERY_CANCELLED": "The query was cancelled.",
             "QUERY_TIMED_OUT": "The query timed out.",
             "QUERY_SOURCE_UNAVAILABLE": "The QuerySource is unavailable.",
+            "QUERY_SOURCE_NOT_AVAILABLE": "The QuerySource is disabled or unqualified.",
+            "QUERY_DATASET_NOT_AVAILABLE": "The approved dataset is disabled.",
+            "QUERY_PROCESS_RESTARTED": "The query ended when the control-plane process restarted.",
+            "QUERY_RESTORE_INTERRUPTED": "The restored query cannot resume without its original worker.",
             "GLOBAL_QUERY_BACKPRESSURE": "The global controlled-query queue is full.",
             "SCREEN_QUERY_BACKPRESSURE": "This screen already has the maximum queued work.",
         }.get(code, "The controlled query failed safely.")

@@ -3052,7 +3052,11 @@ class P13ControlPlane:
         reason = self._reason(reason)
         operation_id = "executeRestorePlan"
         digest = self.owner._protected_digest(operation_id, command, reason)
-        with self._restore_lock, self.owner.store.mutation_lock:
+        with (
+            self._restore_lock,
+            self.owner.p2_2.restore_quiescence(),
+            self.owner.store.mutation_lock,
+        ):
             with self.owner.store.connect() as connection:
                 action = connection.execute(
                     """
@@ -3270,6 +3274,16 @@ class P13ControlPlane:
         staged_store = ControlPlaneStore(staged_path)
         staged_store.initialize(now)
         with staged_store.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE query_executions
+                SET state = 'FAILED',
+                    error_code = 'QUERY_RESTORE_INTERRUPTED',
+                    completed_at = ?, revision = revision + 1
+                WHERE state IN ('QUEUED', 'RUNNING')
+                """,
+                (now,),
+            )
             self._reconcile_table(
                 connection,
                 "users",
@@ -3567,6 +3581,7 @@ class P13ControlPlane:
         self._unlink_sidecars(live_path)
         os.replace(staged_path, live_path)
         self._unlink_sidecars(live_path)
+        self.owner.p2_2.on_restore_cutover()
         return result
 
     @staticmethod

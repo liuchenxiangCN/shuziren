@@ -28,9 +28,12 @@ The user explicitly activated P2.2 with `完成P2.2` on 2026-07-28. Its result
 card and non-scope are frozen against accepted P2.1 in
 [acceptance/productization/P2.2/ACCEPTANCE_CARD.md](acceptance/productization/P2.2/ACCEPTANCE_CARD.md).
 Implementation, proportional automated gates, three exact ephemeral database
-adapters and a fresh 1280 by 720 browser workflow pass. Immutable candidate
-binding and independent review remain before presentation; P2.2 is not
-accepted.
+adapters and a fresh 1280 by 720 browser workflow pass. The first immutable
+candidate was rejected by independent review and is not presentable; its SQL,
+OOXML, queued-cancel, authority-race, timeout, three-screen, recovery, audit
+and negative-coverage findings were repaired and re-tested. Replacement
+candidate binding and exact independent re-review remain before presentation;
+P2.2 is not accepted.
 
 ## Next Task
 

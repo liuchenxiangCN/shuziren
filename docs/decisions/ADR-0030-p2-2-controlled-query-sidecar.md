@@ -43,7 +43,9 @@ placing Secrets in ordinary reads or mutating a historical release.
 8. `AVAILABLE` records exact deployment-local evidence only. Product
    certification remains `UNVERIFIED`, including the FineReport plugin.
 9. Online restore validates all P2.2 hashes and references while preserving
-   current source/dataset authority. The verified product/data rollback target
+   current source/dataset authority. It refuses a live controlled-query worker,
+   terminalizes nonterminal restored rows and clears pre-cutover in-memory
+   results after quiescent cutover. The verified product/data rollback target
    remains accepted P2.1 plus a WAL-safe pre-`005` copy.
 
 ## Consequences

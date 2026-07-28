@@ -22,18 +22,20 @@
   relation and output allowlists.
 - Added screen/session and credential-derived device catalogs, asynchronous
   start/poll/cancel, exact idempotency, global/per-screen bounds, terminal
-  no-fallback behavior and in-memory bounded result retention.
+  no-fallback behavior and 256-job bounded in-memory result retention.
 - Integrated query assignment with validation, preview, NORMAL release,
   publication/acknowledgement and historical forward rollback without changing
   accepted P1.3/P2.1 schemas.
 - Extended encrypted backup, fresh verification and staged restore validation
   across the P2.2 graph while preserving current matching source/dataset
-  authority. Added fresh preview/browser launchers and a proposed ADR-0030.
+  authority. Restore rejects live workers and terminalizes restored/startup
+  orphan executions. Added fresh preview/browser launchers and a proposed
+  ADR-0030.
 
 #### Verification To Date
 
 - Candidate-scoped Ruff passed; 116 API routes import; complete backend
-  regression passed 51 cases with three real-database cases gated separately.
+  regression passed 62 cases with three real-database cases gated separately.
 - PostgreSQL 17, MySQL 8.4 and Oracle Free 23 ephemeral read-only tests passed
   DB-side INSERT denial plus exact published device query execution.
 - P2.2 target validation passed 47 checks and six mutation fixtures under both
@@ -45,9 +47,20 @@
 - The first browser run found a missing QuerySource list projection field.
   The blocker was fixed, covered by regression and rerun from a fresh fixture
   before candidate creation.
-- Exact candidate commit, independent review, rollback binding and final
-  evidence hashes remain pending. P2.2 is not accepted and P2.3 has not
-  started.
+- Independent review rejected the first immutable candidate for closed-SQL and
+  OOXML bypasses, queued-cancel capacity leakage, stale queued authority,
+  incomplete timeout/three-screen/recovery/audit behavior and negative-test
+  gaps. The candidate was discarded.
+- The repaired implementation now closes function/session-variable SQL,
+  external/active OOXML, uses exact-once slot release, rechecks current
+  authority before adapter entry, applies an end-to-end execution watchdog,
+  audits backpressure and quiesces restore. Expanded tests prove three distinct
+  concurrent screens, failure isolation, timeout, disabled/unverified/unbound
+  zero execution, stale ETag/idempotency, immutable sidecars, database Secret
+  recovery/AAD failure and restored-orphan termination.
+- Replacement candidate commit, exact independent re-review, rollback binding
+  and final evidence hashes remain pending. P2.2 is not accepted and P2.3 has
+  not started.
 
 ### P2.1 User Acceptance
 

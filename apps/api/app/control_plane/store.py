@@ -1538,7 +1538,7 @@ CREATE TABLE query_validation_records (
     findings_json TEXT NOT NULL,
     findings_hash TEXT NOT NULL,
     validator_version TEXT NOT NULL CHECK (
-        validator_version = 'p2_2_controlled_query_validator_v1'
+        validator_version = 'p2_2_controlled_query_validator_v2'
     ),
     created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
     created_at REAL NOT NULL,

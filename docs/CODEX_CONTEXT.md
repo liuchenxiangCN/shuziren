@@ -21,9 +21,10 @@ P1.2 three-screen inventory and P1.3 draft/release/recovery. Accepted P2.1
 candidate
 `8f364b93b574c058cd8cd617f925107985318098`, tree
 `7c277e32b6419bd3720591c454e8282d94f081ec`, is the rollback baseline. P2.2
-implementation, automated gates and fresh browser workflow pass; immutable
-candidate binding and independent review remain before presentation. P2.2 is
-not accepted and P2.3 has not started.
+implementation, expanded automated gates and fresh browser workflow pass. The
+first immutable candidate failed independent review; its blocking findings
+were repaired, and replacement candidate binding plus exact re-review remain
+before presentation. P2.2 is not accepted and P2.3 has not started.
 
 ## Frozen Product Boundaries
 
