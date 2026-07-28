@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -609,6 +610,67 @@ def test_profile_versions_are_immutable_strong_and_secret_closed(
         )
         assert rejected.status_code == 422
         assert rejected.json()["error"]["code"] == "SECRET_MATERIAL_FORBIDDEN"
+
+    provider_payloads = (
+        ("primary_provider_id", "postgresql://user:secret@db.example.test/app"),
+        ("fallback_provider_ids", "https://private.example.test/api"),
+        ("primary_provider_id", "select * from private_table"),
+        ("fallback_provider_ids", "javascript:eval(payload)"),
+        ("primary_provider_id", "Bearer should-never-enter-a-provider"),
+    )
+    for index, (field, submitted_value) in enumerate(provider_payloads):
+        rejected_spec = json.loads(json.dumps(profile_v2["head_version"]["spec"]))
+        rejected_spec["dora"] = {
+            **rejected_spec["dora"],
+            "primary_provider_id": (submitted_value if field == "primary_provider_id" else "local_rules"),
+            "fallback_provider_ids": ([submitted_value] if field == "fallback_provider_ids" else []),
+        }
+        rejected = implementation.post(
+            f"/api/v1/control-plane/capability-profiles/{profile['profile_id']}/versions",
+            headers=mutation_headers(
+                csrf_impl,
+                **{
+                    "If-Match": profile_v2["etag"],
+                    "Idempotency-Key": f"p21-provider-payload-reject-{index}",
+                },
+            ),
+            json={"spec": rejected_spec},
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["error"]["code"] == "SECRET_MATERIAL_FORBIDDEN"
+        assert submitted_value not in rejected.text
+
+    unknown_provider_id = "client-submitted-unknown-provider"
+    unknown_spec = json.loads(json.dumps(profile_v2["head_version"]["spec"]))
+    unknown_spec["dora"] = {
+        **unknown_spec["dora"],
+        "primary_provider_id": unknown_provider_id,
+        "fallback_provider_ids": [],
+    }
+    unknown = implementation.post(
+        f"/api/v1/control-plane/capability-profiles/{profile['profile_id']}/versions",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": profile_v2["etag"],
+                "Idempotency-Key": "p21-unknown-provider-reject",
+            },
+        ),
+        json={"spec": unknown_spec},
+    )
+    assert unknown.status_code == 422
+    assert unknown.json()["error"]["code"] == "SCHEMA_VALIDATION_FAILED"
+    assert unknown_provider_id not in unknown.text
+
+    audit_response = auditor.get("/api/v1/control-plane/audit-events?limit=200")
+    assert audit_response.status_code == 200, audit_response.text
+    persisted_surfaces = audit_response.content
+    for path in (database_path, Path(f"{database_path}-wal")):
+        if path.exists():
+            persisted_surfaces += path.read_bytes()
+    for _, submitted_value in provider_payloads:
+        assert submitted_value.encode() not in persisted_surfaces
+    assert unknown_provider_id.encode() not in persisted_surfaces
 
 
 def test_unverified_profile_is_inspectable_but_cannot_validate(

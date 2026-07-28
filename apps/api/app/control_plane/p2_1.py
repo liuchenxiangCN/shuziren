@@ -1850,6 +1850,7 @@ class P21ControlPlane:
         self,
         spec: dict[str, Any],
     ) -> tuple[str, dict[str, Any]]:
+        self._reject_secret_material_tree(spec, "Capability profile")
         if not isinstance(spec, dict) or set(spec) != set(CAPABILITY_KEYS):
             raise ControlPlaneError(
                 422,
@@ -2038,7 +2039,7 @@ class P21ControlPlane:
             raise ControlPlaneError(
                 422,
                 "SCHEMA_VALIDATION_FAILED",
-                f"{provider_id} is not registered for {capability}",
+                f"Provider is not registered for {capability}",
             )
         return provider
 
@@ -2088,6 +2089,21 @@ class P21ControlPlane:
                 "Runtime session ID cannot contain an ownership selector",
             )
         return normalized
+
+    @classmethod
+    def _reject_secret_material_tree(cls, value: Any, label: str) -> None:
+        if isinstance(value, str):
+            cls._reject_secret_material(value, label)
+            return
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if isinstance(key, str):
+                    cls._reject_secret_material(key, label)
+                cls._reject_secret_material_tree(item, label)
+            return
+        if isinstance(value, list | tuple):
+            for item in value:
+                cls._reject_secret_material_tree(item, label)
 
     @staticmethod
     def _reject_secret_material(value: str, label: str) -> None:
