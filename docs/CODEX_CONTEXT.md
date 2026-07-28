@@ -15,7 +15,7 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P2.2 Candidate Preparation`. G0 and P1.0
+Current phase: `Productization P2.2 User Decision Pending`. G0 and P1.0
 through P2.1 are explicitly accepted. P1.1 proves local identity/device trust,
 P1.2 three-screen inventory and P1.3 draft/release/recovery. Accepted P2.1
 candidate
@@ -26,8 +26,11 @@ first immutable candidate failed independent review and its blocking findings
 were repaired. Replacement candidate `78b5af301a1c57915a4535d3decc11c59b79eba7`
 then failed only the closed-SQL expression review; Oracle sequence expressions,
 PostgreSQL custom operators and user-defined casts are now rejected with new
-regressions. New candidate binding and exact re-review remain before
-presentation. P2.2 is not accepted and P2.3 has not started.
+regressions. Final candidate
+`a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+`aaa499de416b522e21c02f41119024296fc2c3a0`, passed the exact independent
+review with zero findings and is waiting for an explicit user decision. P2.2
+is not accepted and P2.3 has not started.
 
 ## Frozen Product Boundaries
 

@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "batch": "P2.2",
+  "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "generated_at": "2026-07-28T09:53:44Z",
+  "gate_summary": "PASS",
+  "acceptance_state": "USER_DECISION_PENDING",
+  "base_accepted": {
+    "commit": "8f364b93b574c058cd8cd617f925107985318098",
+    "tree": "7c277e32b6419bd3720591c454e8282d94f081ec",
+    "acceptance_record": "8939b8a7eadb9ba5493b1a74d4fbae23b2459cae"
+  },
+  "candidate": {
+    "commit": "a75d3327fdc1ab4b83b0bba501d387af150353c4",
+    "tree": "aaa499de416b522e21c02f41119024296fc2c3a0",
+    "branch": "codex/p2-2-controlled-querying",
+    "fingerprint_sha256": "8a1a369fa328f6a516d9a36ad5f36c314629d2e683bbf38304510521817d357d",
+    "fingerprint_file_count": 47,
+    "fingerprint_evidence": {
+      "path": "logs/productization/P2.2-20260728-170650/candidate-fingerprint.json",
+      "sha256": "460bb0cc074299a122f6d656fbec01b41d84013e8995799dcd4da0b2cad024c3"
+    }
+  },
+  "database": {
+    "logical_schema_version": "p1_control_plane_001",
+    "latest_migration": "005_controlled_querying",
+    "migration_checksum_sha256": "d6661b95fcf08e478c29ea20314f3dc158be88433a7fa3c3c86d119b33cfbcf4",
+    "dataset_schema": "p2_controlled_dataset_v1",
+    "query_snapshot_schema": "p2_query_snapshot_v1",
+    "validator_version": "p2_2_controlled_query_validator_v2"
+  },
+  "evidence_root": "logs/productization/P2.2-20260728-170650",
+  "raw_evidence_manifest": {
+    "path": "logs/productization/P2.2-20260728-170650/evidence-manifest.json",
+    "sha256": "4f8746d7190813ae9ec61879c9b6e9cdbb74be8e3fc6ba7c9801b1d440708742",
+    "file_count": 67
+  },
+  "manifest_verification": {
+    "path": "logs/productization/P2.2-20260728-170650/verification/manifest-verification.json",
+    "sha256": "5289f9f01af2b4e87eecfebf88206762273dd776b05ad98847fc9d3ebbce32b6",
+    "missing": 0,
+    "unexpected": 0,
+    "mismatched": 0
+  },
+  "gates": [
+    {
+      "id": "backend_quality_security_and_isolation",
+      "status": "PASS",
+      "note": "Candidate-scoped Ruff passed over 15 Python files; 67 backend cases passed and the three real-database cases are recorded separately.",
+      "evidence": [
+        "test-results/ruff-format-final.txt",
+        "test-results/ruff-check-final.txt",
+        "test-results/backend-full-final.txt"
+      ]
+    },
+    {
+      "id": "exact_real_database_adapters",
+      "status": "PASS",
+      "note": "PostgreSQL 17, MySQL 8.4 and Oracle Free 23 read-only accounts rejected INSERT, ran the exact published device dataset and preserved row/schema invariants after injection.",
+      "evidence": [
+        "database-contract/real-database-tests-final.txt"
+      ]
+    },
+    {
+      "id": "controlled_query_contract",
+      "status": "PASS",
+      "note": "Both PowerShell hosts passed 47 checks and all six mutation fixtures.",
+      "evidence": [
+        "test-results/p2-2-contract-final-pwsh7.txt",
+        "test-results/p2-2-contract-final-winps.txt",
+        "test-results/p2-2-contract-selftest-final-pwsh7.txt",
+        "test-results/p2-2-contract-selftest-final-winps.txt"
+      ]
+    },
+    {
+      "id": "migration_recovery_timeout_and_three_screen_isolation",
+      "status": "PASS",
+      "note": "Migration 005, immutable sidecars, SQL/OOXML/Secret negatives, current-authority races, end-to-end timeout, three-screen concurrency/failure isolation and quiescent restore passed.",
+      "evidence": [
+        "test-results/backend-full-final.txt",
+        "rollback/pre-005-copy-pytest.txt"
+      ]
+    },
+    {
+      "id": "frontend_build_and_browser_workflow",
+      "status": "PASS",
+      "note": "Pinned pnpm 9.15.4 built 19 modules. Fresh 1280 by 720 Excel workflow passed with no overflow or console warnings/errors; the final SQL-only validator delta is semantically bound.",
+      "evidence": [
+        "test-results/frontend-build.txt",
+        "browser/browser-evidence.json",
+        "browser/final-candidate-reuse-binding.json"
+      ]
+    },
+    {
+      "id": "docker_compose",
+      "status": "PASS",
+      "note": "Exact final-candidate API/Web images built and started; health, 16 P2.2 paths, migration 005, schema integrity and cleanup passed.",
+      "evidence": [
+        "docker/compose-build-final.txt",
+        "docker/exact-candidate-compose-smoke.json",
+        "docker/cleanup-verification-final.json"
+      ]
+    },
+    {
+      "id": "secret_surfaces",
+      "status": "PASS",
+      "note": "Exact local root-key and dangerous-pattern scanning returned zero findings.",
+      "evidence": [
+        "security/secret-scan.json",
+        "test-results/secret-surfaces-final.txt"
+      ],
+      "evidence_sha256": "f195ef97846608e71a614b1506fc6b6704ee66144e24a70d77c39093936fa756"
+    },
+    {
+      "id": "accepted_p2_1_rollback",
+      "status": "PASS",
+      "note": "The accepted-P2.1 archive passed its 35 original tests; migration 004 and SQLite integrity remain valid, no P2.2 route/table exists, and a WAL-safe online pre-005 copy is retained.",
+      "evidence": [
+        "rollback/accepted-p2-1-runtime.zip",
+        "rollback/accepted-p2-1-api-pytest.txt",
+        "rollback/accepted-p2-1-boundary-probe.json",
+        "rollback/pre-005-control-plane.db",
+        "rollback/pre-005-copy-verification.json"
+      ]
+    },
+    {
+      "id": "document_lifecycle_and_evidence_integrity",
+      "status": "PASS",
+      "note": "Both PowerShell hosts passed 403 lifecycle checks; all 21 lifecycle mutation cases and the independently verified raw-evidence manifest passed.",
+      "evidence": [
+        "test-results/lifecycle-final-pwsh7.txt",
+        "test-results/lifecycle-final-winps.txt",
+        "test-results/lifecycle-selftest-pwsh7.txt",
+        "verification/manifest-verification.json",
+        "review/independent-review-final-pass.md"
+      ]
+    }
+  ],
+  "independent_reviews": [
+    {
+      "candidate": "8a6c30efe36a79caad025521e98667df6a3c28e7",
+      "tree": "dae3a34a28fdbac00509871a4af6594b67365c5b",
+      "status": "FAIL",
+      "blocking_finding_families": 8,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-first-fail.md",
+      "report_sha256": "df2b4b07e3638813482ca7dbfe70edcafc0bec0445abaa43f5757cad7558c15b",
+      "disposition": "REMEDIATED"
+    },
+    {
+      "candidate": "78b5af301a1c57915a4535d3decc11c59b79eba7",
+      "tree": "08784c38654d665922ed4db448f93c4da54addee",
+      "status": "FAIL",
+      "blocking_findings": 1,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-second-fail.md",
+      "report_sha256": "74262640b526dbc11a74ea86826fbe8ddf8cd35d9ec3a7e03f7059c4dce3b79a",
+      "disposition": "REMEDIATED"
+    },
+    {
+      "task_id": "/root/p22_independent_review",
+      "reviewer": "Einstein",
+      "candidate": "a75d3327fdc1ab4b83b0bba501d387af150353c4",
+      "tree": "aaa499de416b522e21c02f41119024296fc2c3a0",
+      "status": "PASS",
+      "blocking_findings": 0,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-final-pass.md",
+      "report_sha256": "e640aae6b3d650168a1fa77d5f0e91864f4af8be68478f39289da03bed5e9f29"
+    }
+  ],
+  "independent_review_status": "PASS",
+  "rollback": {
+    "status": "PASS",
+    "target_commit": "8f364b93b574c058cd8cd617f925107985318098",
+    "target_tree": "7c277e32b6419bd3720591c454e8282d94f081ec",
+    "runtime_archive_sha256": "50e9b6373af7bdd06d2da197c7516dabeaa3630f8a92a34d4e338fd6eb4a24aa",
+    "pre_005_database_sha256": "3ac77dbca28f4b204efe4bc560f8805507357cad8709e6a92bd6b477d33a62dd",
+    "evidence": [
+      "rollback/accepted-p2-1-runtime.zip",
+      "rollback/accepted-p2-1-api-pytest.txt",
+      "rollback/accepted-p2-1-boundary-probe.json",
+      "rollback/pre-005-control-plane.db",
+      "rollback/pre-005-copy-verification.json"
+    ]
+  },
+  "user_decision": {
+    "status": "PENDING",
+    "decision": null,
+    "date": null,
+    "conversation_reference": null
+  }
+}

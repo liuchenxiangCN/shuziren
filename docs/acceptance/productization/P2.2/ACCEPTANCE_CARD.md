@@ -4,14 +4,15 @@
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
 - Batch: `P2.2 Controlled Excel And Database Querying`
-- State: `CANDIDATE_PREPARATION`
+- State: `USER_DECISION_PENDING`
 - Activated by: explicit user instruction `完成P2.2`
 - Activated at: 2026-07-28
 - Base accepted commit: `8f364b93b574c058cd8cd617f925107985318098`
 - Base accepted tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
-- Candidate commit/tree: pending immutable candidate record
+- Candidate commit: `a75d3327fdc1ab4b83b0bba501d387af150353c4`
+- Candidate tree: `aaa499de416b522e21c02f41119024296fc2c3a0`
 - Logical schema: `p1_control_plane_001`
-- Planned migration: `005_controlled_querying`
+- Latest migration: `005_controlled_querying`
 - Target contract:
   [CONTROLLED_QUERYING.md](../../../product/contracts/CONTROLLED_QUERYING.md)
 - User decision: pending; silence is not acceptance
@@ -30,7 +31,7 @@ understandable, sanitized errors.
 
 ## Entry Point And Test Data
 
-- Management entry: P2 control-plane preview at `/control-plane`.
+- Management entry: P2 control-plane preview at `/manage`.
 - Runtime API entry: the P2.2 control-plane and device dataset routes frozen in
   the target contract.
 - Test data: generated non-customer `.xlsx` workbook plus isolated reference

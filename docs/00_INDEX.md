@@ -34,6 +34,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [acceptance/productization/P1.2](acceptance/productization/P1.2) | Acceptance evidence | Accepted P1.2 three-screen inventory result and decision |
 | [acceptance/productization/P1.3](acceptance/productization/P1.3) | Acceptance evidence | Accepted P1.3 publish, rollback and recovery result and decision |
 | [acceptance/productization/P2.1](acceptance/productization/P2.1) | Acceptance evidence | Accepted P2.1 capability-profile result and decision |
+| [acceptance/productization/P2.2](acceptance/productization/P2.2) | Acceptance evidence | P2.2 controlled-query candidate and pending user decision |
 
 ## Product Target
 
@@ -44,11 +45,13 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [17_STANDARD_PRODUCT_DESIGN.md](17_STANDARD_PRODUCT_DESIGN.md) | Target not implemented | Standard product design |
 | [product/contracts/README.md](product/contracts/README.md) | Target not implemented | P1 domain, identity, state, data, storage and API target contracts |
 | [product/contracts/CAPABILITY_PROFILES.md](product/contracts/CAPABILITY_PROFILES.md) | Target not implemented | P2.1 capability-profile and provider-resolution target contract |
+| [product/contracts/CONTROLLED_QUERYING.md](product/contracts/CONTROLLED_QUERYING.md) | Target not implemented | P2.2 controlled Excel/database querying target contract |
 | [integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md](integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md) | Target not implemented / external gate | Official plugin evidence and connector boundary |
 | [decisions/ADR-0026-finereport-fvs-productization.md](decisions/ADR-0026-finereport-fvs-productization.md) | Accepted ADR | Productization decision |
 | [decisions/ADR-0027-result-driven-development-and-document-lifecycle.md](decisions/ADR-0027-result-driven-development-and-document-lifecycle.md) | Accepted ADR | Result-driven development and document lifecycle |
 | [decisions/ADR-0028-p1-control-plane-foundation.md](decisions/ADR-0028-p1-control-plane-foundation.md) | Accepted ADR | P1 control-plane foundation accepted with P1.0 |
 | [decisions/ADR-0029-p2-1-capability-profile-sidecars.md](decisions/ADR-0029-p2-1-capability-profile-sidecars.md) | Accepted ADR | P2.1 immutable capability-profile sidecars accepted with P2.1 |
+| [decisions/ADR-0030-p2-2-controlled-query-sidecar.md](decisions/ADR-0030-p2-2-controlled-query-sidecar.md) | Proposed ADR | P2.2 controlled-querying candidate decision pending user acceptance |
 
 ## Implemented POC Baseline
 

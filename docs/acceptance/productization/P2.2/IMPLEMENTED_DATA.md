@@ -3,8 +3,9 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE_PREPARATION`
-- Candidate commit/tree: pending immutable candidate record
+- State: `USER_DECISION_PENDING`
+- Candidate commit: `a75d3327fdc1ab4b83b0bba501d387af150353c4`
+- Candidate tree: `aaa499de416b522e21c02f41119024296fc2c3a0`
 - Logical schema: `p1_control_plane_001`
 - Latest migration: `005_controlled_querying`
 - Migration checksum SHA-256:

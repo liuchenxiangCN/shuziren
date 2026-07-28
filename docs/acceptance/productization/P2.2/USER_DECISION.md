@@ -4,7 +4,7 @@
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
 - Decision: `PENDING`
-- Candidate: pending
+- Candidate: `a75d3327fdc1ab4b83b0bba501d387af150353c4`
 - Date: pending
 - Conversation reference: pending
 

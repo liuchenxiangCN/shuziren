@@ -3,10 +3,14 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE_PREPARATION`
-- Candidate commit/tree: pending immutable candidate record
-- Automated gates: `PASS` before immutable candidate binding
-- Independent review: pending exact candidate
+- State: `USER_DECISION_PENDING`
+- Candidate commit: `a75d3327fdc1ab4b83b0bba501d387af150353c4`
+- Candidate tree: `aaa499de416b522e21c02f41119024296fc2c3a0`
+- Candidate fingerprint:
+  `8A1A369FA328F6A516D9A36AD5F36C314629D2E683BBF38304510521817D357D`
+  over 47 files
+- Automated gates: `PASS`
+- Independent review: `PASS`; zero blocking and zero non-blocking findings
 - User decision: `PENDING`
 
 ## Passed Results
@@ -43,6 +47,8 @@
   forms; 21 cross-dialect SQL-negative cases and the full/real-adapter suites
   pass after the repair.
 
-The immutable candidate, independent review, lifecycle gate, fingerprint,
-rollback evidence and manifest hashes are recorded only after the candidate
-commit exists.
+Exact-candidate Compose, Secret scan and accepted-P2.1 rollback passed.
+Accepted P2.1 ran its 35 original tests, retained migration
+`004_capability_profiles` and exposed no P2.2 route/table. Raw evidence is
+under `logs/productization/P2.2-20260728-170650`; its verified manifest hashes
+67 files with zero missing, unexpected or mismatched entries.

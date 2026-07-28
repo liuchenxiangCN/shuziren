@@ -64,9 +64,18 @@
   user-defined casts could invoke stateful or unapproved database logic.
   Validation now rejects those AST forms, and 21 cross-dialect closed-SQL
   negative cases plus all three real adapters pass.
-- Replacement candidate commit, exact independent re-review, rollback binding
-  and final evidence hashes remain pending. P2.2 is not accepted and P2.3 has
-  not started.
+- Froze final runtime candidate
+  `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+  `aaa499de416b522e21c02f41119024296fc2c3a0`, fingerprint
+  `8A1A369FA328F6A516D9A36AD5F36C314629D2E683BBF38304510521817D357D`
+  over 47 files.
+- Exact Compose startup/migration/route probes, the fresh Excel browser flow,
+  three ephemeral real-database adapters, Secret scan and accepted-P2.1
+  rollback proof pass. Accepted P2.1 passed its 35 original tests and exposes
+  only migration 004 with no P2.2 route/table.
+- Independent reviewer Einstein returned `PASS` for the exact final candidate
+  with zero blocking and zero non-blocking findings. P2.2 is waiting for an
+  explicit user decision; it is not accepted and P2.3 has not started.
 
 ### P2.1 User Acceptance
 

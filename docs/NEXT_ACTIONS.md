@@ -9,7 +9,7 @@
 
 ## Current Phase
 
-`Productization P2.2 Candidate Preparation`.
+`Productization P2.2 User Decision Pending`.
 
 G0 and P1.0 through P2.1 are explicitly accepted. P2.1 candidate
 `8f364b93b574c058cd8cd617f925107985318098`, tree
@@ -34,16 +34,19 @@ OOXML, queued-cancel, authority-race, timeout, three-screen, recovery, audit
 and negative-coverage findings were repaired and re-tested. Replacement
 candidate `78b5af301a1c57915a4535d3decc11c59b79eba7` was then rejected for
 Oracle sequence expressions, PostgreSQL custom operators and user-defined
-casts that escaped the closed SQL grammar. Those final SQL expression families
-are now rejected with cross-dialect regression coverage. A new immutable
-candidate binding and exact independent re-review remain before presentation;
-P2.2 is not accepted.
+casts that escaped the closed SQL grammar. Final candidate
+`a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+`aaa499de416b522e21c02f41119024296fc2c3a0`, rejects those expression
+families with cross-dialect regression coverage. Its automated gates,
+accepted-P2.1 rollback and exact independent re-review pass with zero
+blocking/non-blocking findings. P2.2 is ready for an explicit user decision
+but is not accepted.
 
 ## Next Task
 
-Freeze the exact P2.2 candidate, obtain the required independent review,
-complete its evidence hashes/rollback record and present it for an explicit
-user decision.
+Exercise the P2.2 result scenarios against candidate
+`a75d3327fdc1ab4b83b0bba501d387af150353c4` and record an explicit `通过`,
+`条件通过`, `不通过` or `Blocked` decision.
 
 Do not start P2.3 or P2.4 and do not interpret implementation completion,
 automated success or user silence as acceptance.
@@ -75,6 +78,7 @@ automated success or user silence as acceptance.
 - [acceptance/productization/P2.2/ACCEPTANCE_CARD.md](acceptance/productization/P2.2/ACCEPTANCE_CARD.md)
 - [acceptance/productization/P2.2/AUTOMATED_SUMMARY.md](acceptance/productization/P2.2/AUTOMATED_SUMMARY.md)
 - [acceptance/productization/P2.2/KNOWN_LIMITATIONS.md](acceptance/productization/P2.2/KNOWN_LIMITATIONS.md)
+- [acceptance/productization/P2.2/manifest.json](acceptance/productization/P2.2/manifest.json)
 - [acceptance/productization/P2.2/RUNBOOK.md](acceptance/productization/P2.2/RUNBOOK.md)
 - [acceptance/productization/P2.2/USER_DECISION.md](acceptance/productization/P2.2/USER_DECISION.md)
 - [product/contracts/CONTROLLED_QUERYING.md](product/contracts/CONTROLLED_QUERYING.md)

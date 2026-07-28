@@ -26,7 +26,7 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product State And Blockers
 
-### P2.1 Accepted; P2.2 Candidate Preparation
+### P2.1 Accepted; P2.2 User Decision Pending
 
 The user explicitly accepted P2.1 without conditions on 2026-07-28. Candidate
 `8f364b93b574c058cd8cd617f925107985318098`, tree
@@ -37,8 +37,9 @@ gates pass. Its first immutable candidate failed independent review; the
 reported gaps were repaired. Replacement candidate
 `78b5af301a1c57915a4535d3decc11c59b79eba7` exposed one remaining closed-SQL
 expression family and was also rejected; sequence expressions, custom
-operators and user-defined casts are now fail-closed. New candidate review and
-explicit user acceptance remain.
+operators and user-defined casts are now fail-closed. Final candidate
+`a75d3327fdc1ab4b83b0bba501d387af150353c4` passed exact independent review
+with zero findings; explicit user acceptance remains.
 
 - P2.1 accepted capability-profile, three-screen resolution, migration,
   recovery, Docker, Secret-scan and accepted-P1.3 rollback evidence; final
