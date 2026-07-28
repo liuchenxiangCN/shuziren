@@ -4,7 +4,7 @@
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
 - Batch: `P2.2 Controlled Excel And Database Querying`
-- State: `USER_DECISION_PENDING`
+- State: `ACCEPTED`
 - Activated by: explicit user instruction `完成P2.2`
 - Activated at: 2026-07-28
 - Base accepted commit: `8f364b93b574c058cd8cd617f925107985318098`
@@ -15,11 +15,11 @@
 - Latest migration: `005_controlled_querying`
 - Target contract:
   [CONTROLLED_QUERYING.md](../../../product/contracts/CONTROLLED_QUERYING.md)
-- User decision: pending; silence is not acceptance
+- User decision: `通过` without conditions or scope reduction on 2026-07-28
 
 ## User-Visible Outcome
 
-P2.2 will let an administrator register bounded Excel, MySQL, Oracle and
+P2.2 lets an administrator register bounded Excel, MySQL, Oracle and
 PostgreSQL QuerySources and immutable approved datasets. A business operator
 or enrolled screen selects only a published dataset and supplies typed
 parameters; neither can submit SQL.

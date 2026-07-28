@@ -3,14 +3,17 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- Decision: `PENDING`
+- Decision: `通过`
 - Candidate: `a75d3327fdc1ab4b83b0bba501d387af150353c4`
-- Date: pending
-- Conversation reference: pending
+- Date: 2026-07-28
+- Conversation reference: current Codex task; explicit user instruction
+  `确认验收`
 
-The explicit instruction `完成P2.2` activated and authorized implementation of
-the frozen P2.2 result card. It is not an acceptance decision.
+The user explicitly accepted the immutable P2.2 candidate without conditions
+or scope reduction. Candidate
+`a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+`aaa499de416b522e21c02f41119024296fc2c3a0`, is therefore the accepted runtime
+baseline.
 
-Only a later explicit `通过`, `条件通过`, `不通过` or `Blocked` decision for the
-immutable candidate may replace this pending state. Silence is not acceptance,
-and P2.3 must not start from this file.
+This acceptance does not activate P2.3 or P2.4. A separate explicit user
+instruction is required before either queued batch may begin.

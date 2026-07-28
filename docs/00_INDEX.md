@@ -34,7 +34,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [acceptance/productization/P1.2](acceptance/productization/P1.2) | Acceptance evidence | Accepted P1.2 three-screen inventory result and decision |
 | [acceptance/productization/P1.3](acceptance/productization/P1.3) | Acceptance evidence | Accepted P1.3 publish, rollback and recovery result and decision |
 | [acceptance/productization/P2.1](acceptance/productization/P2.1) | Acceptance evidence | Accepted P2.1 capability-profile result and decision |
-| [acceptance/productization/P2.2](acceptance/productization/P2.2) | Acceptance evidence | P2.2 controlled-query candidate and pending user decision |
+| [acceptance/productization/P2.2](acceptance/productization/P2.2) | Acceptance evidence | Accepted P2.2 controlled-query result and decision |
 
 ## Product Target
 
@@ -51,7 +51,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [decisions/ADR-0027-result-driven-development-and-document-lifecycle.md](decisions/ADR-0027-result-driven-development-and-document-lifecycle.md) | Accepted ADR | Result-driven development and document lifecycle |
 | [decisions/ADR-0028-p1-control-plane-foundation.md](decisions/ADR-0028-p1-control-plane-foundation.md) | Accepted ADR | P1 control-plane foundation accepted with P1.0 |
 | [decisions/ADR-0029-p2-1-capability-profile-sidecars.md](decisions/ADR-0029-p2-1-capability-profile-sidecars.md) | Accepted ADR | P2.1 immutable capability-profile sidecars accepted with P2.1 |
-| [decisions/ADR-0030-p2-2-controlled-query-sidecar.md](decisions/ADR-0030-p2-2-controlled-query-sidecar.md) | Proposed ADR | P2.2 controlled-querying candidate decision pending user acceptance |
+| [decisions/ADR-0030-p2-2-controlled-query-sidecar.md](decisions/ADR-0030-p2-2-controlled-query-sidecar.md) | Accepted ADR | P2.2 controlled-querying sidecar accepted with P2.2 |
 
 ## Implemented POC Baseline
 

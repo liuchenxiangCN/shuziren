@@ -13,11 +13,11 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 | ID | Risk | Required Control | Status |
 | --- | --- | --- | --- |
-| R-041 | Multi-screen configuration, session, identity or permission leakage | Accepted P2.1 preserves separate ScreenInstance / DigitalHumanInstance / DeviceEnrollment contexts and adds isolated capability snapshots and credential-scoped resolution; later batches must preserve these controls | Mitigated |
+| R-041 | Multi-screen configuration, session, identity or permission leakage | Accepted P2.2 preserves separate ScreenInstance / DigitalHumanInstance / DeviceEnrollment contexts, immutable capability/query snapshots and credential-scoped resolution/execution; later batches must preserve these controls | Mitigated |
 | R-043 | FineReport plugin external API, authentication, session, permission inheritance and upgrade stability are unknown | Keep the provider `Unverified` and unpublished until official documentation and isolated real-environment probes pass | Blocked |
 | R-044 | Reusing the POC admin token or local-only boundary would make production roles insecure | P1.1 proves the development-preview IAM, session, RBAC, separate device credential and immutable-audit slice; later batches must preserve it while production activation and custodian controls remain unverified | Open |
-| R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | Accepted P2.1 proves bounded SQLite plus screen-bound local/Mock timeout, cancellation and backpressure contracts, while real-provider pools and measured capacity remain later gates | Open |
-| R-046 | Plugin failure could fall back to a database or Excel source with broader permission | Accepted P2.1 permits only technical, equivalent screen-bound fallback and makes permission denial terminal; real plugin/query integration must preserve this rule | Open |
+| R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | Accepted P2.2 proves bounded SQLite plus screen-bound local/Mock and controlled-query timeout, cancellation, backpressure and recovery contracts; integrated measured capacity remains a later gate | Open |
+| R-046 | Plugin failure could fall back to a database or Excel source with broader permission | Accepted P2.2 preserves only technical, equivalent screen-bound fallback and makes permission/validation/cancellation failures terminal; real plugin integration must preserve this rule | Open |
 | R-047 | “FineReport / FVS 11.0+ target” may be interpreted as automatic compatibility | Publish only exact certified FineReport + FVS + plugin + browser + product combinations | Open |
 | R-048 | “No product hard cap” may be interpreted as unlimited throughput or SLA | Keep three-screen correctness as the first baseline and publish only measured capacity guidance | Mitigated |
 | R-049 | Real 2D / 3D assets, suppliers, formats and licenses are unavailable | P3 accepts only the Renderer / AvatarPackage contract and test renderer; real adapters require separate certification | Mitigated |
@@ -26,38 +26,32 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product State And Blockers
 
-### P2.1 Accepted; P2.2 User Decision Pending
+### P2.2 Accepted; P2.3 Awaiting Explicit Activation
 
-The user explicitly accepted P2.1 without conditions on 2026-07-28. Candidate
-`8f364b93b574c058cd8cd617f925107985318098`, tree
-`7c277e32b6419bd3720591c454e8282d94f081ec`, is the accepted runtime baseline.
-Accepted P1.3 remains the verified product-code and pre-`004` data rollback
-target. P2.2 implementation and expanded automated/browser/ephemeral-database
-gates pass. Its first immutable candidate failed independent review; the
-reported gaps were repaired. Replacement candidate
-`78b5af301a1c57915a4535d3decc11c59b79eba7` exposed one remaining closed-SQL
-expression family and was also rejected; sequence expressions, custom
-operators and user-defined casts are now fail-closed. Final candidate
-`a75d3327fdc1ab4b83b0bba501d387af150353c4` passed exact independent review
-with zero findings; explicit user acceptance remains.
+The user explicitly accepted P2.2 without conditions on 2026-07-28. Candidate
+`a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+`aaa499de416b522e21c02f41119024296fc2c3a0`, is the accepted runtime baseline.
+Accepted P2.1 plus the verified WAL-safe pre-`005` copy remains the P2.2
+product/data rollback target. P2.3 has not started.
 
-- P2.1 accepted capability-profile, three-screen resolution, migration,
-  recovery, Docker, Secret-scan and accepted-P1.3 rollback evidence; final
-  independent review returned PASS with zero findings.
-- Later batches must preserve P2.1 ownership, sibling non-disclosure, Secret
-  rejection, immutable history, device trust, release snapshots and recovery
-  controls.
+- P2.2 automated, browser, real-database, migration/recovery, Docker,
+  Secret-scan and accepted-P2.1 rollback evidence passes; final independent
+  review returned PASS with zero findings.
+- Later batches must preserve P2.2 ownership, sibling non-disclosure, Secret
+  rejection, immutable history, closed SQL, device trust, release snapshots,
+  terminal no-fallback behavior and recovery controls.
 - Real FVS/plugin behavior, production activation, external anti-rollback
   anchors, full-loss recovery, PostgreSQL and customer RPO/RTO certification
-  remain blocked or outside the accepted P2.1 result.
-- Accepted P2.1 keeps external Providers `unverified`, blocks their activation
+  remain blocked or outside the accepted P2.2 result.
+- Accepted P2.2 keeps external Providers `unverified`, blocks their activation
   and resolves legacy P1.3 releases as `NOT_CONFIGURED_P2_1` rather than using
   a global Mock fallback.
-- P2.2 must preserve the accepted P2.1 capability, ownership, release,
+- P2.3 must preserve the accepted P2.2 capability, query, ownership, release,
   recovery and isolation boundaries. No free-SQL path is authorized.
 - PostgreSQL 17, MySQL 8.4 and Oracle Free 23 passed isolated exact read-only
-  adapter tests. This closes only the candidate's deployment-local reference
-  evidence; customer/version product certification remains unverified.
+  adapter tests. This closes only the accepted result's deployment-local
+  reference evidence; customer/version product certification remains
+  unverified.
 
 ### P2 External Gate
 

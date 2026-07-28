@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `USER_DECISION_PENDING`
+- State: `ACCEPTED`
 - Candidate commit: `a75d3327fdc1ab4b83b0bba501d387af150353c4`
 - Candidate tree: `aaa499de416b522e21c02f41119024296fc2c3a0`
 - Scope: local P2.2 preview only

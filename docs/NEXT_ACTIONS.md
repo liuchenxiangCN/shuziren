@@ -9,78 +9,60 @@
 
 ## Current Phase
 
-`Productization P2.2 User Decision Pending`.
+`Productization P2.2 Accepted; P2.3 Awaiting Explicit Activation`.
 
-G0 and P1.0 through P2.1 are explicitly accepted. P2.1 candidate
-`8f364b93b574c058cd8cd617f925107985318098`, tree
-`7c277e32b6419bd3720591c454e8282d94f081ec`, fingerprint
-`516995361810AF2D3F3FC609F4676D5A2D620216E6BB9DA305EDC57CD8622332`
-over 36 files, schema `p1_control_plane_001` with migration
-`004_capability_profiles`, is the accepted runtime baseline. Its automated
-gates and final independent review pass; reviewer Huygens reported zero
-blocking and zero non-blocking findings.
+G0 and P1.0 through P2.2 are explicitly accepted. The user accepted P2.2
+without conditions or scope reduction through `确认验收` on 2026-07-28.
+Candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+`aaa499de416b522e21c02f41119024296fc2c3a0`, fingerprint
+`8A1A369FA328F6A516D9A36AD5F36C314629D2E683BBF38304510521817D357D`
+over 47 files, schema `p1_control_plane_001` with migration
+`005_controlled_querying`, is the accepted runtime baseline. Its automated
+gates, three exact ephemeral database adapters, fresh 1280 by 720 browser
+workflow, accepted-P2.1 rollback and final independent review pass; reviewer
+Einstein reported zero blocking and zero non-blocking findings.
 
-Accepted P1.3 candidate `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`,
-tree `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, remains the verified
-pre-`004` data rollback target.
-
-The user explicitly activated P2.2 with `完成P2.2` on 2026-07-28. Its result
-card and non-scope are frozen against accepted P2.1 in
-[acceptance/productization/P2.2/ACCEPTANCE_CARD.md](acceptance/productization/P2.2/ACCEPTANCE_CARD.md).
-Implementation, proportional automated gates, three exact ephemeral database
-adapters and a fresh 1280 by 720 browser workflow pass. The first immutable
-candidate was rejected by independent review and is not presentable; its SQL,
-OOXML, queued-cancel, authority-race, timeout, three-screen, recovery, audit
-and negative-coverage findings were repaired and re-tested. Replacement
-candidate `78b5af301a1c57915a4535d3decc11c59b79eba7` was then rejected for
-Oracle sequence expressions, PostgreSQL custom operators and user-defined
-casts that escaped the closed SQL grammar. Final candidate
-`a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-`aaa499de416b522e21c02f41119024296fc2c3a0`, rejects those expression
-families with cross-dialect regression coverage. Its automated gates,
-accepted-P2.1 rollback and exact independent re-review pass with zero
-blocking/non-blocking findings. P2.2 is ready for an explicit user decision
-but is not accepted.
+Accepted P2.1 candidate `8f364b93b574c058cd8cd617f925107985318098`,
+tree `7c277e32b6419bd3720591c454e8282d94f081ec`, plus the verified
+WAL-safe pre-`005` copy remains the product/data rollback target for P2.2.
+P2.3 is not active.
 
 ## Next Task
 
-Exercise the P2.2 result scenarios against candidate
-`a75d3327fdc1ab4b83b0bba501d387af150353c4` and record an explicit `通过`,
-`条件通过`, `不通过` or `Blocked` decision.
+Await an explicit user instruction to begin P2.3. On that instruction, freeze
+the complete P2.3 result card and non-scope against accepted P2.2 before
+implementing any integrated resilience or capacity-certification behavior.
 
-Do not start P2.3 or P2.4 and do not interpret implementation completion,
-automated success or user silence as acceptance.
+Acceptance of P2.2 does not activate P2.3 or P2.4.
 
-### Accepted P2.1 Baseline
-
-- [acceptance/productization/P2.1/ACCEPTANCE_CARD.md](acceptance/productization/P2.1/ACCEPTANCE_CARD.md)
-- [acceptance/productization/P2.1/AUTOMATED_SUMMARY.md](acceptance/productization/P2.1/AUTOMATED_SUMMARY.md)
-- [acceptance/productization/P2.1/KNOWN_LIMITATIONS.md](acceptance/productization/P2.1/KNOWN_LIMITATIONS.md)
-- [acceptance/productization/P2.1/RUNBOOK.md](acceptance/productization/P2.1/RUNBOOK.md)
-- [acceptance/productization/P2.1/manifest.json](acceptance/productization/P2.1/manifest.json)
-- [acceptance/productization/P2.1/USER_DECISION.md](acceptance/productization/P2.1/USER_DECISION.md)
-
-### Accepted Boundary
-
-- Migration `004_capability_profiles` is additive; accepted P1.3 tables and the
-  exact two-field `p1_screen_config_v1` base schema remain unchanged.
-- Browser evidence is an explicit semantic rebind from the earlier interactive
-  candidate because the UI/API-client/fixture inputs are byte-identical; the
-  final interactive workflow was not rerun.
-- All real Providers and the FineReport official plugin remain `unverified`;
-  Mock/local evidence does not establish compatibility or production support.
-- No QuerySource, Excel/database execution, free SQL, real Provider call,
-  executable action, production activation or customer certification is part
-  of P2.1.
-
-## Active Acceptance Package
+### Accepted P2.2 Baseline
 
 - [acceptance/productization/P2.2/ACCEPTANCE_CARD.md](acceptance/productization/P2.2/ACCEPTANCE_CARD.md)
 - [acceptance/productization/P2.2/AUTOMATED_SUMMARY.md](acceptance/productization/P2.2/AUTOMATED_SUMMARY.md)
+- [acceptance/productization/P2.2/IMPLEMENTED_API.md](acceptance/productization/P2.2/IMPLEMENTED_API.md)
+- [acceptance/productization/P2.2/IMPLEMENTED_DATA.md](acceptance/productization/P2.2/IMPLEMENTED_DATA.md)
 - [acceptance/productization/P2.2/KNOWN_LIMITATIONS.md](acceptance/productization/P2.2/KNOWN_LIMITATIONS.md)
-- [acceptance/productization/P2.2/manifest.json](acceptance/productization/P2.2/manifest.json)
 - [acceptance/productization/P2.2/RUNBOOK.md](acceptance/productization/P2.2/RUNBOOK.md)
+- [acceptance/productization/P2.2/manifest.json](acceptance/productization/P2.2/manifest.json)
 - [acceptance/productization/P2.2/USER_DECISION.md](acceptance/productization/P2.2/USER_DECISION.md)
-- [product/contracts/CONTROLLED_QUERYING.md](product/contracts/CONTROLLED_QUERYING.md)
 
-P2.3 and P2.4 remain queued/inactive.
+### Accepted Boundary
+
+- Migration `005_controlled_querying` is additive; accepted P1.3/P2.1 base
+  schemas and immutable release/profile structures remain unchanged.
+- Runtime callers can select only a published immutable dataset and submit
+  typed parameter values; free SQL, connection selectors and ownership
+  selectors remain prohibited.
+- PostgreSQL 17, MySQL 8.4 and Oracle Free 23 evidence is deployment-local.
+  Other versions, customer environments and the FineReport official plugin
+  remain `UNVERIFIED`.
+- P2.2 is an accepted local development-preview result, not production
+  activation, capacity/SLA certification or customer compatibility
+  certification.
+
+## Queued
+
+`Productization P2.3 Concurrent And Failure Isolation`.
+
+P2.3 has not started. Only a separate explicit start instruction can activate
+it. P2.4 remains queued and blocked by its external FineReport plugin gate.

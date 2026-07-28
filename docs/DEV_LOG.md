@@ -9,6 +9,25 @@
 
 ## 2026-07-28
 
+### P2.2 User Acceptance
+
+#### Completed Facts
+
+- The user explicitly accepted P2.2 through `确认验收` without conditions or
+  scope reduction.
+- P2.2 runtime candidate
+  `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+  `aaa499de416b522e21c02f41119024296fc2c3a0`, schema
+  `p1_control_plane_001` and migration `005_controlled_querying` became the
+  accepted runtime baseline.
+- Acceptance retains the candidate fingerprint, 67-file raw-evidence manifest,
+  exact real-database, browser, Docker, Secret-scan, recovery, accepted-P2.1
+  rollback and zero-finding independent-review evidence recorded by commit
+  `bacc172ed5b8811f46a8de89ba254306243f735b`.
+- ADR-0030 became `Accepted` through this explicit P2.2 decision.
+- Accepted P2.1 plus the verified WAL-safe pre-`005` copy remains the P2.2
+  product/data rollback target. P2.3 remains queued and has not started.
+
 ### P2.2 Controlled Querying Candidate Preparation
 
 #### Completed Facts
@@ -74,8 +93,8 @@
   rollback proof pass. Accepted P2.1 passed its 35 original tests and exposes
   only migration 004 with no P2.2 route/table.
 - Independent reviewer Einstein returned `PASS` for the exact final candidate
-  with zero blocking and zero non-blocking findings. P2.2 is waiting for an
-  explicit user decision; it is not accepted and P2.3 has not started.
+  with zero blocking and zero non-blocking findings. At candidate publication,
+  P2.2 was waiting for an explicit user decision and P2.3 had not started.
 
 ### P2.1 User Acceptance
 

@@ -12,9 +12,9 @@
 - [ADR-0027](ADR-0027-result-driven-development-and-document-lifecycle.md): result-driven development and document lifecycle.
 - [ADR-0028](ADR-0028-p1-control-plane-foundation.md): accepted P1 target domain, IAM, device trust, storage, recovery and API foundation.
 - [ADR-0029](ADR-0029-p2-1-capability-profile-sidecars.md): accepted additive immutable capability-profile sidecars that preserve the accepted P1.3 base schema.
-- [ADR-0030](ADR-0030-p2-2-controlled-query-sidecar.md): proposed additive
+- [ADR-0030](ADR-0030-p2-2-controlled-query-sidecar.md): accepted additive
   controlled-query sidecars, write-only connection material and screen-bound
-  bounded execution; pending explicit P2.2 acceptance.
+  bounded execution that preserve the accepted P1/P2.1 boundaries.
 
 ## Implemented POC Decisions
 

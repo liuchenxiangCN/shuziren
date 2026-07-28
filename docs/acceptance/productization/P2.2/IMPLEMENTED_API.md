@@ -3,14 +3,14 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `USER_DECISION_PENDING`
+- State: `ACCEPTED`
 - Candidate commit: `a75d3327fdc1ab4b83b0bba501d387af150353c4`
 - Candidate tree: `aaa499de416b522e21c02f41119024296fc2c3a0`
 - API version: `v1`
-- User decision: `PENDING`
+- User decision: `通过` without conditions or scope reduction on 2026-07-28
 
-This file describes the observable P2.2 candidate. It does not claim user
-acceptance or production certification.
+This file describes the accepted P2.2 development-preview result. Acceptance
+does not claim production certification.
 
 ## QuerySource And Dataset Routes
 

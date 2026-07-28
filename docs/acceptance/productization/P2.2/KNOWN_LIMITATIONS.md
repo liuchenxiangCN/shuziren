@@ -3,15 +3,15 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `USER_DECISION_PENDING`
+- State: `ACCEPTED`
 - Candidate commit: `a75d3327fdc1ab4b83b0bba501d387af150353c4`
 - Candidate tree: `aaa499de416b522e21c02f41119024296fc2c3a0`
-- User decision: `PENDING`
+- User decision: `通过` without conditions or scope reduction on 2026-07-28
 
 ## Frozen Limits
 
-- P2.2 is a local development-preview candidate, not accepted or production
-  activated.
+- P2.2 is an accepted local development-preview result, not production
+  activated or certified.
 - PostgreSQL 17, MySQL 8.4 and Oracle Free 23 passed isolated deployment-local
   tests. This is not a compatibility promise for other versions, operating
   systems, networks or customer configurations; product certification remains

@@ -15,22 +15,15 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P2.2 User Decision Pending`. G0 and P1.0
-through P2.1 are explicitly accepted. P1.1 proves local identity/device trust,
-P1.2 three-screen inventory and P1.3 draft/release/recovery. Accepted P2.1
-candidate
-`8f364b93b574c058cd8cd617f925107985318098`, tree
-`7c277e32b6419bd3720591c454e8282d94f081ec`, is the rollback baseline. P2.2
-implementation, expanded automated gates and fresh browser workflow pass. The
-first immutable candidate failed independent review and its blocking findings
-were repaired. Replacement candidate `78b5af301a1c57915a4535d3decc11c59b79eba7`
-then failed only the closed-SQL expression review; Oracle sequence expressions,
-PostgreSQL custom operators and user-defined casts are now rejected with new
-regressions. Final candidate
+Current phase: `Productization P2.2 Accepted; P2.3 Awaiting Explicit
+Activation`. G0 and P1.0 through P2.2 are explicitly accepted. P1.1 proves
+local identity/device trust, P1.2 three-screen inventory, P1.3
+draft/release/recovery and P2.1 per-screen capability profiles. P2.2 candidate
 `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-`aaa499de416b522e21c02f41119024296fc2c3a0`, passed the exact independent
-review with zero findings and is waiting for an explicit user decision. P2.2
-is not accepted and P2.3 has not started.
+`aaa499de416b522e21c02f41119024296fc2c3a0`, implements the frozen local
+controlled-querying result. Its automated, browser, exact real-database,
+rollback and independent-review gates passed, and the user accepted it without
+conditions on 2026-07-28. P2.3 is queued and not active.
 
 ## Frozen Product Boundaries
 
@@ -46,15 +39,17 @@ is not accepted and P2.3 has not started.
 
 ## Current As-Built Baseline
 
-The accepted runtime baseline is P2.1 commit
-`8f364b93b574c058cd8cd617f925107985318098`, tree
-`7c277e32b6419bd3720591c454e8282d94f081ec`. It retains the original POC route
-meanings and accepted P1 controls, then adds versioned per-screen capability
-profiles, immutable release snapshots and credential-scoped resolution.
-Accepted P1.3 commit `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`
-remains the verified product-code and pre-`004` data rollback target. Preview
-remains `MOCK_PASSED`, external Providers and FVS remain `UNVERIFIED`, and
-production readiness is not claimed.
+The accepted runtime baseline is P2.2 commit
+`a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+`aaa499de416b522e21c02f41119024296fc2c3a0`. It retains the original POC route
+meanings and accepted P1/P2.1 controls, then adds Site-owned immutable
+QuerySources and datasets, exact release query snapshots, write-only encrypted
+database credentials and bounded screen/device execution. Accepted P2.1
+commit `8f364b93b574c058cd8cd617f925107985318098`, tree
+`7c277e32b6419bd3720591c454e8282d94f081ec`, plus the verified WAL-safe
+pre-`005` copy remains the P2.2 product/data rollback target. External
+Providers and FVS remain `UNVERIFIED`, and production readiness is not
+claimed.
 
 Implemented POC contracts remain authoritative for the original POC namespaces:
 
@@ -63,9 +58,9 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 
 Accepted behavior is recorded under [acceptance/productization](acceptance/productization).
 P2.1/P2.2 target boundaries remain under [product/contracts](product/contracts);
-the P2.2 candidate facts and limitations are under
-[acceptance/productization/P2.2](acceptance/productization/P2.2). They do not
-become accepted behavior until an explicit user decision.
+the accepted P2.2 facts and limitations are under
+[acceptance/productization/P2.2](acceptance/productization/P2.2). P2.3 remains
+queued and requires a separate explicit activation instruction.
 
 ## Non-Negotiable Rules
 

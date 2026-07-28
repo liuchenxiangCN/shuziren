@@ -2,10 +2,10 @@
 
 ## Status
 
-Proposed
+Accepted
 
-P2.2 implementation and verification may prove this candidate, but only an
-explicit user decision can change this ADR to `Accepted`.
+The user explicitly accepted P2.2 without conditions or scope reduction on
+2026-07-28 through the instruction `确认验收`.
 
 ## Date
 
@@ -61,7 +61,6 @@ placing Secrets in ordinary reads or mutating a historical release.
 
 ## Follow-Up
 
-- Explicit P2.2 acceptance may mark this ADR `Accepted`.
 - P2.3 may measure integrated resilience and capacity without widening this
-  permission boundary.
+  permission boundary, but remains inactive until separately authorized.
 - P2.4 remains blocked on official FineReport plugin evidence.

@@ -4,7 +4,8 @@
   "lifecycle": "ACCEPTANCE_EVIDENCE",
   "generated_at": "2026-07-28T09:53:44Z",
   "gate_summary": "PASS",
-  "acceptance_state": "USER_DECISION_PENDING",
+  "acceptance_state": "ACCEPTED",
+  "accepted_at": "2026-07-28",
   "base_accepted": {
     "commit": "8f364b93b574c058cd8cd617f925107985318098",
     "tree": "7c277e32b6419bd3720591c454e8282d94f081ec",
@@ -185,9 +186,9 @@
     ]
   },
   "user_decision": {
-    "status": "PENDING",
-    "decision": null,
-    "date": null,
-    "conversation_reference": null
+    "status": "RECORDED",
+    "decision": "通过",
+    "date": "2026-07-28",
+    "conversation_reference": "Current Codex task; explicit user instruction 确认验收"
   }
 }

@@ -11,7 +11,7 @@
 
 ### Added
 
-- P2.2 candidate QuerySources for bounded `.xlsx`, PostgreSQL, MySQL and
+- Accepted P2.2 QuerySources for bounded `.xlsx`, PostgreSQL, MySQL and
   Oracle; write-only encrypted database credentials; immutable approved
   datasets; exact draft/release query sidecars; and screen/device-bound
   asynchronous execution with timeout, cancellation and backpressure.
@@ -63,12 +63,13 @@
 
 ### Changed
 
-- G0 and P1.0 through P2.1 are explicitly accepted. P2.1 candidate
-  `8f364b93b574c058cd8cd617f925107985318098`, tree
-  `7c277e32b6419bd3720591c454e8282d94f081ec`, is the accepted runtime baseline.
-  P1.3 remains the verified product-code and pre-`004` data rollback target;
-  P2.2 is a completed implementation candidate pending immutable review and
-  explicit user acceptance.
+- G0 and P1.0 through P2.2 are explicitly accepted. P2.2 candidate
+  `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+  `aaa499de416b522e21c02f41119024296fc2c3a0`, is the accepted runtime
+  baseline. P2.1 plus the verified WAL-safe pre-`005` copy remains the P2.2
+  product/data rollback target; P2.3 awaits explicit activation.
+- ADR-0030 is accepted with P2.2; its additive controlled-query sidecar
+  decision does not activate P2.3 or certify a customer/version combination.
 - ADR-0029 is accepted with P2.1; its additive immutable capability-profile
   sidecar decision does not activate P2.2 or certify a real Provider.
 - P1.2 local implementation is accepted at candidate `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`; its automated and independent-review evidence passes with zero final findings.
@@ -95,6 +96,10 @@
 
 ### Security
 
+- P2.2 accepts connection material only through write-only Secret routes,
+  rejects free SQL and closed-grammar escapes, binds immutable datasets to
+  screen/device release snapshots and makes permission, validation and
+  cancellation failures terminal without fallback.
 - P2.1 rejects Secret-, endpoint-, credential-, DSN-, query-language-,
   executable- and Prompt-like material across profile metadata and specs;
   unknown Provider and validation failures return generic bounded errors, and
@@ -135,14 +140,14 @@
   implement real FineReport/FVS/plugin connectivity, production activation,
   offline/full-loss recovery, external anti-rollback authority, PostgreSQL
   recovery or customer RPO/RTO certification.
-- Accepted P2.1 performs no real Provider call. QuerySource,
-  Excel/database execution and P2.2 remain unimplemented; its browser evidence
-  is an explicit byte-identical semantic rebind rather than a final-candidate
-  interactive rerun.
+- Accepted P2.2 remains a local development-preview result. It does not certify
+  other database versions or customer environments, P2.3 capacity/SLA,
+  production activation, Secret rotation, a PostgreSQL control plane,
+  full-loss recovery or FineReport official-plugin compatibility.
 - P1.2 does not connect to FineReport/FVS, publish configuration, configure a renderer/avatar/provider, implement backup/restore or claim production readiness; FVS remains `UNVERIFIED` and runtime inventory remains `NOT_CONFIGURED_P1_3`.
 - P1.1 is an accepted development-preview result, not a production-readiness claim. Production custodian/person binding, external monotonic anchors, production activation, complete user onboarding and recovery are not implemented.
 - G0 changes documentation and development governance only.
 - P1.0 is target contract design only. Its RBAC, device trust, multi-screen storage, API, migration, backup and restore behaviors are not implemented.
-- Remaining target control-plane behavior beyond accepted P2.1, database
-  querying, FineReport plugin calling and real 2D / 3D rendering remain
-  unimplemented product targets.
+- Remaining target control-plane behavior beyond accepted P2.2, integrated
+  capacity certification, FineReport plugin calling and real 2D / 3D
+  rendering remain unimplemented product targets.
