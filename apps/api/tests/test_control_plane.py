@@ -3476,6 +3476,42 @@ def test_p1_3_validation_failure_is_recorded_as_invalid_draft(
         assert tuple(record) == ("INVALID", None, None)
 
 
+def test_p1_3_backup_creation_rejects_invalid_source_snapshot(
+    control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, service, database_path = control_plane
+    admin_a, csrf_a = login(app, "admin-a")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute(
+            """
+            INSERT INTO role_assignments(
+                assignment_id, user_id, role_id, scope_type, scope_id, created_at
+            ) VALUES (
+                'rla_orphan_backup_source', 'usr_missing_backup_source',
+                'auditor', 'DEPLOYMENT', 'deployment-test', ?
+            )
+            """,
+            (service.clock(),),
+        )
+        connection.commit()
+    rejected = admin_a.post(
+        "/api/v1/control-plane/backups",
+        headers=mutation_headers(
+            csrf_a,
+            **{"Idempotency-Key": "invalid-source-backup"},
+        ),
+        json={"reason": "invalid source snapshot must fail before verified"},
+    )
+    assert rejected.status_code == 503
+    assert rejected.json()["error"]["code"] == "STORAGE_UNAVAILABLE"
+    with service.store.connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM backup_records").fetchone()[0] == 0
+        assert connection.execute("PRAGMA foreign_key_check").fetchall()
+    assert not list(service.p1_3.backups.backup_root.glob("backup-*"))
+    assert not list(service.p1_3.backups.backup_root.glob(".*.tmp-*"))
+
+
 def test_p1_3_encrypted_backup_tamper_wrong_key_and_staged_restore(
     control_plane: tuple[FastAPI, ControlPlaneService, Path],
     monkeypatch: pytest.MonkeyPatch,

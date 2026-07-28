@@ -96,7 +96,10 @@ class BackupManager:
         stage_dir.mkdir(parents=False, exist_ok=False)
         try:
             snapshot_bytes = self._online_snapshot_bytes(stage_dir)
+            verified_row_counts = self._validate_snapshot(snapshot_bytes)
             logical_export, row_counts, audit_head = self._logical_export(snapshot_bytes)
+            if row_counts != verified_row_counts:
+                raise BackupIntegrityError("Backup verification row counts changed")
             native_hash = hashlib.sha256(snapshot_bytes).hexdigest()
             logical_hash = hashlib.sha256(logical_export).hexdigest()
             migrations = [
