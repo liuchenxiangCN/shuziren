@@ -11,6 +11,16 @@
 
 ### Added
 
+- P2.1 final candidate for Site-owned capability profiles, immutable profile
+  versions, exact draft assignments, immutable ReleaseTarget capability
+  snapshots and credential-scoped applied-profile resolution across three
+  screens.
+- Closed seven-capability/21-Provider registry, three product presets, five
+  distinct state meanings, technical-only equivalent fallback and bounded
+  local/Mock timeout, cancellation and backpressure diagnostics.
+- Checksum-backed additive `004_capability_profiles`, exact accepted-P1.3
+  copied upgrade, `/manage` capability-profile workflow, local launchers and
+  candidate-bound API, browser, Docker, recovery, rollback and review evidence.
 - Accepted P1.3 configuration drafts, Mock validation/preview,
   different-user approval, immutable normal/rollback releases, per-screen and
   group publication, credential-bound acknowledgement, diffs and audit
@@ -48,8 +58,11 @@
 - G0 and P1.0 through P1.3 are explicitly accepted. P1.3 candidate
   `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
   `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, is the accepted runtime rollback
-  baseline. The user explicitly activated P2.1; its capability-profile result
-  card and non-scope are frozen while implementation remains in progress.
+  baseline. P2.1 candidate
+  `8f364b93b574c058cd8cd617f925107985318098`, tree
+  `7c277e32b6419bd3720591c454e8282d94f081ec`, passed automated gates and final
+  independent review with zero findings and is ready for explicit user
+  acceptance. It is not yet accepted, and P2.2 has not started.
 - P1.2 local implementation is accepted at candidate `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`; its automated and independent-review evidence passes with zero final findings.
 - P1.1 local implementation is accepted at candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets were remediated, and the third independent review passed with zero findings.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
@@ -74,6 +87,17 @@
 
 ### Security
 
+- P2.1 rejects Secret-, endpoint-, credential-, DSN-, query-language-,
+  executable- and Prompt-like material across profile metadata and specs;
+  unknown Provider and validation failures return generic bounded errors, and
+  denial audit targets use canonical route families.
+- P2.1 validates complete migration/schema objects and recovery reverse
+  references, preserves validation-time fingerprint epochs across restore and
+  later draft revision, and prevents restored idempotency or consumed
+  publication/rollback evidence from returning phantom success.
+- All P2.1 API startup paths disable request-target access logging. Permission
+  denial, invalid input, unauthorized template and cancellation are terminal
+  and cannot trigger fallback.
 - P1.3 binds verified bundle identity and hashes to immutable backup records,
   validates source snapshots before recording backup success and serializes
   restore cutover with supported control-plane mutations so no acknowledged
@@ -103,10 +127,14 @@
   implement real FineReport/FVS/plugin connectivity, production activation,
   offline/full-loss recovery, external anti-rollback authority, PostgreSQL
   recovery or customer RPO/RTO certification.
+- The unaccepted P2.1 candidate performs no real Provider call. QuerySource,
+  Excel/database execution and P2.2 remain unimplemented; its browser evidence
+  is an explicit byte-identical semantic rebind rather than a final-candidate
+  interactive rerun.
 - P1.2 does not connect to FineReport/FVS, publish configuration, configure a renderer/avatar/provider, implement backup/restore or claim production readiness; FVS remains `UNVERIFIED` and runtime inventory remains `NOT_CONFIGURED_P1_3`.
 - P1.1 is an accepted development-preview result, not a production-readiness claim. Production custodian/person binding, external monotonic anchors, production activation, complete user onboarding and recovery are not implemented.
 - G0 changes documentation and development governance only.
 - P1.0 is target contract design only. Its RBAC, device trust, multi-screen storage, API, migration, backup and restore behaviors are not implemented.
-- Remaining target control-plane behavior beyond accepted P1.3, database
-  querying, FineReport plugin calling and real 2D / 3D rendering remain
-  unimplemented product targets.
+- Remaining target control-plane behavior beyond accepted P1.3 and the
+  unaccepted P2.1 candidate, database querying, FineReport plugin calling and
+  real 2D / 3D rendering remain unimplemented product targets.

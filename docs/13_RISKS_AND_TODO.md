@@ -16,8 +16,8 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 | R-041 | Multi-screen configuration, session, identity or permission leakage | Accepted P1.3 preserves separate ScreenInstance / DigitalHumanInstance / DeviceEnrollment contexts and passes publication, acknowledgement, rollback, recovery and independent-review isolation gates; later batches must preserve these controls | Mitigated |
 | R-043 | FineReport plugin external API, authentication, session, permission inheritance and upgrade stability are unknown | Keep the provider `Unverified` and unpublished until official documentation and isolated real-environment probes pass | Blocked |
 | R-044 | Reusing the POC admin token or local-only boundary would make production roles insecure | P1.1 proves the development-preview IAM, session, RBAC, separate device credential and immutable-audit slice; later batches must preserve it while production activation and custodian controls remain unverified | Open |
-| R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | Accepted P1.3 proves the bounded local SQLite preview; P2 must introduce instance-bound providers, pools, timeouts, cancellation and backpressure without broadening the claim | Open |
-| R-046 | Plugin failure could fall back to a database or Excel source with broader permission | Permit fallback only for technical unavailability and equivalent ScreenInstance-bound permission scope; never for permission denial | Open |
+| R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | Accepted P1.3 proves bounded SQLite; the unaccepted P2.1 candidate proves screen-bound local/Mock timeout, cancellation and backpressure contracts, while real-provider pools and measured capacity remain later gates | Open |
+| R-046 | Plugin failure could fall back to a database or Excel source with broader permission | The P2.1 candidate permits only technical, equivalent screen-bound fallback and makes permission denial terminal; real plugin/query integration must preserve this rule | Open |
 | R-047 | “FineReport / FVS 11.0+ target” may be interpreted as automatic compatibility | Publish only exact certified FineReport + FVS + plugin + browser + product combinations | Open |
 | R-048 | “No product hard cap” may be interpreted as unlimited throughput or SLA | Keep three-screen correctness as the first baseline and publish only measured capacity guidance | Mitigated |
 | R-049 | Real 2D / 3D assets, suppliers, formats and licenses are unavailable | P3 accepts only the Renderer / AvatarPackage contract and test renderer; real adapters require separate certification | Mitigated |
@@ -32,7 +32,9 @@ The user explicitly accepted P1.3 without conditions on 2026-07-28. Candidate
 `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
 `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, is the accepted runtime rollback
 baseline. The user explicitly activated P2.1 on 2026-07-28. Its result card is
-frozen; implementation and verification are in progress.
+frozen. Final candidate `8f364b93b574c058cd8cd617f925107985318098`,
+tree `7c277e32b6419bd3720591c454e8282d94f081ec`, implements the bounded local
+result and is ready for explicit user acceptance.
 
 - P1.3 accepted migration, publication, acknowledgement, rollback,
   backup/restore, retention, browser, Secret-scan, Docker and accepted-P1.2
@@ -45,6 +47,14 @@ frozen; implementation and verification are in progress.
 - P2.1 must keep external Providers `unverified`, block their activation and
   resolve legacy P1.3 releases as `NOT_CONFIGURED_P2_1` rather than using a
   global Mock fallback.
+- Candidate gates cover capability/profile closure, RBAC, sibling
+  non-disclosure, Secret rejection, three-screen resolution, terminal
+  no-fallback, timeout/cancellation/backpressure, migration, recovery, Docker
+  and accepted-P1.3 rollback. Final independent review passed with zero
+  blocking and zero non-blocking findings.
+- The remaining P2.1 acceptance condition is the user's explicit result
+  decision. P1.3 remains the accepted runtime baseline and P2.2 has not
+  started.
 
 ### P2 External Gate
 

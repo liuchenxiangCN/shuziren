@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "batch": "P2.1",
+  "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "generated_at": "2026-07-28T04:42:18.3506881Z",
+  "gate_summary": "PASS",
+  "acceptance_state": "READY_FOR_USER_ACCEPTANCE",
+  "base_accepted": {
+    "commit": "0f210cffa5a9b49fd93d36dbb42bd36bb2899f54",
+    "tree": "04bcbb940fbedb5fbb8957e538f46a4422e15db2",
+    "acceptance_record": "c24f041a0414ea5361a6fcb7216d7be99ea0bb56"
+  },
+  "candidate": {
+    "commit": "8f364b93b574c058cd8cd617f925107985318098",
+    "tree": "7c277e32b6419bd3720591c454e8282d94f081ec",
+    "branch": "codex/p2-1-capability-profiles",
+    "fingerprint_sha256": "516995361810AF2D3F3FC609F4676D5A2D620216E6BB9DA305EDC57CD8622332",
+    "fingerprint_file_count": 36,
+    "fingerprint_evidence": {
+      "path": "logs/productization/P2.1-20260728-100208/candidate-fingerprint.json",
+      "sha256": "D6A6096E7D96076A618F3310A928D0308E6D6656C37C4FB5AE472958D8C76B0E"
+    }
+  },
+  "database": {
+    "logical_schema_version": "p1_control_plane_001",
+    "latest_migration": "004_capability_profiles",
+    "migration_checksum_sha256": "c0522a5a5dc596355812333a5895a204acf16c5ad80b0b83be1a16da3f3116cd",
+    "capability_profile_schema": "p2_capability_profile_v1",
+    "provider_registry_schema": "p2_provider_registry_001"
+  },
+  "evidence_root": "logs/productization/P2.1-20260728-100208",
+  "raw_evidence_manifest": {
+    "path": "logs/productization/P2.1-20260728-100208/evidence-manifest.json",
+    "sha256": "F89AEA6BED6B1AC91428E226C9C34DBA38F35D1764DCEA9AFA8716D8F74229F5",
+    "file_count": 53
+  },
+  "manifest_verification": {
+    "path": "logs/productization/P2.1-20260728-100208/verification/manifest-verification.json",
+    "sha256": "B9581CA42760E22D89EB12B8238492ECA225E67A94547C8207DF5C808BDCD648",
+    "missing": 0,
+    "unexpected": 0,
+    "mismatched": 0
+  },
+  "gates": [
+    {
+      "id": "backend_quality_and_negative_tests",
+      "status": "PASS",
+      "note": "Ruff passed over 13 candidate Python files, API import exposed 98 routes, and all 35 backend cases passed with one dependency deprecation warning.",
+      "evidence": [
+        "test-results/api-gate-binding.json",
+        "test-results/api-ruff-format.txt",
+        "test-results/api-ruff-check.txt",
+        "test-results/api-import.txt",
+        "test-results/api-pytest.txt"
+      ]
+    },
+    {
+      "id": "p2_capability_contract",
+      "status": "PASS",
+      "note": "Both PowerShell hosts passed 206 validation checks and all 51 mutation cases.",
+      "evidence": [
+        "provider-contract/candidate-binding.json",
+        "provider-contract/validator-pwsh7.txt",
+        "provider-contract/validator-winps.txt",
+        "provider-contract/self-test-pwsh7.txt",
+        "provider-contract/self-test-winps.txt"
+      ]
+    },
+    {
+      "id": "migration_recovery_and_runtime_isolation",
+      "status": "PASS",
+      "note": "Migration 004, accepted-P1.3 source integrity, immutable sidecars, three-screen resolution, backup/restore reverse integrity and historical epoch regression passed in the backend suite.",
+      "evidence": [
+        "test-results/api-pytest.txt"
+      ]
+    },
+    {
+      "id": "frontend_build_and_browser_workflow",
+      "status": "PASS",
+      "note": "Pinned pnpm 9.15.4 built 19 modules. The 1280 by 720 workflow ran on candidate 3062b148 and is semantically rebound through byte-identical UI/API-client/fixture inputs plus the dual-host-tested no-access-log launcher delta; it was not interactively rerun on the final candidate.",
+      "evidence": [
+        "test-results/pnpm-version-pinned.txt",
+        "test-results/web-build-pinned.txt",
+        "browser/browser-evidence-source.json",
+        "browser/browser-evidence.json",
+        "screenshots/capability-profile-top-1280x720.png",
+        "screenshots/capability-profile-editor-1280x720.png"
+      ]
+    },
+    {
+      "id": "startup_access_log",
+      "status": "PASS",
+      "note": "All three P2.1 API entrypoints and runtime probes passed under both PowerShell hosts with request-target access logging disabled.",
+      "evidence": [
+        "verification/startup-access-log.json",
+        "test-results/startup-access-log-pwsh7.txt",
+        "test-results/startup-access-log-winps.txt"
+      ]
+    },
+    {
+      "id": "docker_compose",
+      "status": "PASS",
+      "note": "Exact-candidate images built, all eight HTTP probes passed, exact migration/schema objects were observed, logs were sanitized and cleanup completed.",
+      "evidence": [
+        "docker/exact-candidate-compose-smoke.json",
+        "docker/exact-candidate-compose-smoke.md"
+      ]
+    },
+    {
+      "id": "secret_surfaces",
+      "status": "PASS",
+      "note": "Exact local-root-key and dangerous-pattern scanning returned zero findings; the final stable-package scan hash is bound below.",
+      "evidence": [
+        "security/candidate-binding.json",
+        "security/secret-scan.json"
+      ],
+      "evidence_sha256": "620416473AB1E466D2FA5A0832AD921AA58EDC7DB112C02410405998595A7A8B"
+    },
+    {
+      "id": "accepted_p1_3_rollback",
+      "status": "PASS",
+      "note": "The accepted-P1.3 archive passed 22 tests, retained migration 003 and exposed no P2.1 route/schema object; the exact WAL-safe pre-004 copy passed 12 checks.",
+      "evidence": [
+        "rollback/final-candidate-reuse-binding.json",
+        "rollback/accepted-p1-3-api-pytest.txt",
+        "rollback/accepted-p1-3-boundary-probe.json",
+        "rollback/pre-004-copy-verification.json"
+      ]
+    },
+    {
+      "id": "p1_contract_and_document_lifecycle",
+      "status": "PASS",
+      "note": "Both hosts passed 2722 P1 checks and 191 mutation cases. Final acceptance-package lifecycle lint passed 379 checks under both hosts; independent candidate review passed 378 checks and all 21 self-test fixtures.",
+      "evidence": [
+        "test-results/p1-target-validator-pwsh7.txt",
+        "test-results/p1-target-validator-winps.txt",
+        "test-results/p1-target-self-test-pwsh7.txt",
+        "verification/git-candidate-diff-check.json",
+        "test-results/doc-lifecycle-lint-pwsh7.txt",
+        "test-results/doc-lifecycle-lint-winps.txt",
+        "review/independent-review-final-pass.md"
+      ]
+    }
+  ],
+  "independent_reviews": [
+    {
+      "candidate": "3062b14863d1ed0a1f92f4f6a203a602cc4c6045",
+      "tree": "273eedaa8753bd33367010fc21105bf7721980df",
+      "status": "FAIL",
+      "blocking_findings": 7,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-first-fail.md",
+      "report_sha256": "8B93AAA1539E9EE27B15C08F873D941D8726E2CD9C780748BACC0D3AD3A851CC",
+      "disposition": "REMEDIATED"
+    },
+    {
+      "candidate": "c9cd471762eb202371c11361c69b814cecffea1c",
+      "tree": "6be86ecc1f22d526a327242f5f9c2f156a796c42",
+      "status": "FAIL",
+      "blocking_finding_families": 6,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-second-fail.md",
+      "report_sha256": "86EE78B4E6813A396D23BA24C17CFB0C132771945AA69792395346453113141F",
+      "disposition": "REMEDIATED"
+    },
+    {
+      "candidate": "6e43b17b4c9c75885c32b400112c985a0265b2ec",
+      "tree": "110f1d43852ba6516e1676e78a0549caee4c02e7",
+      "status": "FAIL",
+      "blocking_findings": 2,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-third-fail.md",
+      "report_sha256": "624BBCF9103EF0DBBC6A52B99711F9FF134B0E7D218AA333605CDFC61085D28E",
+      "disposition": "REMEDIATED"
+    },
+    {
+      "candidate": "eba052678d3293448036d7426c61409063cb7c93",
+      "tree": "38eca41c06d1e547eda2d14dec2eb53eda29d49c",
+      "status": "FAIL",
+      "blocking_findings": 1,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-fourth-fail.md",
+      "report_sha256": "6157954260C5DEB7635BD945A082AC38926054C800E0ABE0B609613A2AF74760",
+      "disposition": "REMEDIATED"
+    },
+    {
+      "task_id": "/root/p21_fresh_audit",
+      "reviewer": "Huygens",
+      "candidate": "8f364b93b574c058cd8cd617f925107985318098",
+      "tree": "7c277e32b6419bd3720591c454e8282d94f081ec",
+      "independent_archive_sha256": "C4C6A33FD7CE69EB4734ED9516942593B942E3B1E6925CDF92F07C602A3B0A74",
+      "independent_archive_size_bytes": 12759040,
+      "status": "PASS",
+      "blocking_findings": 0,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-final-pass.md",
+      "report_sha256": "B12B9F278AA4E38D43C239532BCB74DCD9B32452985569970FFAF7348AE3B92E"
+    }
+  ],
+  "independent_review_status": "PASS",
+  "rollback": {
+    "status": "PASS",
+    "target_commit": "0f210cffa5a9b49fd93d36dbb42bd36bb2899f54",
+    "target_tree": "04bcbb940fbedb5fbb8957e538f46a4422e15db2",
+    "runtime_archive_sha256": "7c6c5e22958253b926ff6005160c7507172ea0bbe72503f9e7af4c8d664cccaf",
+    "pre_004_database_sha256": "4d32f1d5429e09f1336b5d60ea8b374d5188b4db0701116ba4071f7ed9aa333d",
+    "evidence": [
+      "rollback/final-candidate-reuse-binding.json",
+      "rollback/accepted-p1-3-runtime.zip",
+      "rollback/accepted-p1-3-api-pytest.txt",
+      "rollback/accepted-p1-3-boundary-probe.json",
+      "rollback/pre-004-copy-verification.json"
+    ]
+  },
+  "user_decision": {
+    "status": "PENDING",
+    "decision": null,
+    "date": null,
+    "conversation_reference": null
+  }
+}

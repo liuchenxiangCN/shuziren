@@ -3,8 +3,9 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `IMPLEMENTATION_PRESENT; FINAL_VERIFICATION_PENDING`
-- Candidate commit / tree: `PENDING`
+- State: `READY_FOR_USER_ACCEPTANCE`
+- Candidate commit: `8f364b93b574c058cd8cd617f925107985318098`
+- Candidate tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
 - Scope: local P2.1 preview only
 - Production use: forbidden
 
@@ -65,7 +66,9 @@ Open:
 http://localhost:18000/manage
 ```
 
-The local API listens on `127.0.0.1:18080`; Vite proxies `/api` to it.
+The local API listens on `127.0.0.1:18080`; Vite proxies `/api` to it. The
+P2.1 local, browser-gate and Docker API entrypoints disable Uvicorn request
+access logging so untrusted request targets do not enter ordinary logs.
 
 ## Capability Profile Walkthrough
 
@@ -153,4 +156,10 @@ Select that exact accepted P1.3 runtime together with the verified WAL-safe
 pre-004 SQLite copy. Never point P1.3 code at a database that depends on
 migration 004. Post-rollback verification must run the original 22 P1.3 tests,
 show migration 003 and three bindings, and prove every P2.1 route is absent.
-Final rollback evidence remains `PENDING`.
+The final candidate rollback gate passed those 22 tests, retained migration
+003, found zero P2.1 routes or schema objects and verified the exact WAL-safe
+pre-004 online copy with 12 checks.
+
+P2.1 remains unaccepted until the user records an explicit decision. Do not
+activate P2.2 from this runbook, passing automation, reviewer success or user
+silence.

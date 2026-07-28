@@ -3,17 +3,19 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `IMPLEMENTATION_PRESENT; FINAL_VERIFICATION_PENDING`
-- Candidate commit / tree: `PENDING`
+- State: `READY_FOR_USER_ACCEPTANCE`
+- Candidate commit: `8f364b93b574c058cd8cd617f925107985318098`
+- Candidate tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
 - Logical schema: `p1_control_plane_001`
 - Latest migration: `004_capability_profiles`
+- Migration checksum SHA-256: `c0522a5a5dc596355812333a5895a204acf16c5ad80b0b83be1a16da3f3116cd`
 - Profile / registry schema: `p2_capability_profile_v1` /
   `p2_provider_registry_001`
 - Acceptance: `PENDING`
 
-This document describes the additive SQLite structures currently present in
-the candidate worktree. Final migration hashes, evidence hashes and gate
-results remain `PENDING`.
+This document describes the additive SQLite structures in the exact candidate
+that passed automated gates and independent review. The candidate remains
+unaccepted until the user records an explicit decision.
 
 ## Additive Structures
 
@@ -27,8 +29,12 @@ results remain `PENDING`.
 Migration `004_capability_profiles` follows the checksummed 001, 002 and 003
 registry entries. It adds tables, indexes, foreign keys and triggers without
 rebuilding the accepted P1.3 tables or widening `p1_screen_config_v1`.
-Initialization validates the exact ordered migration registry and fails closed
-on unknown, reordered or checksum-changed state.
+Initialization validates the exact ordered migration registry and every
+expected user table, index, trigger and view definition. It fails closed on a
+missing, unknown, reordered, checksum-changed or structurally changed object.
+The accepted-P1.3 copied-upgrade command proves the complete source schema
+before copying or applying migration 004; registry rows alone are not accepted
+as source-integrity evidence.
 
 ## Profile Identity And Versions
 
@@ -85,6 +91,29 @@ DigitalHumanInstance, ReleaseTarget, ProfileVersion and the optional
 non-authoritative session label. It is derived per request and is not a shared
 provider-session store.
 
+## Recovery And Historical-Evidence Integrity
+
+Snapshot validation walks both surviving P2.1 rows and immutable P1.3 evidence
+that requires P2.1 sidecars. It rejects complete or partial profile/version,
+assignment or release-snapshot loss, including a profile-only store whose rows
+would otherwise disappear self-consistently. It recomputes canonical profile,
+registry, state, dependency, effective-envelope and ResolutionFingerprint
+hashes and reverse-binds validation, preview, approval, normal release and
+rollback evidence to their authoritative inputs.
+
+Resolution fingerprints retain their validation-time control-plane epoch.
+After restore and a later draft revision, snapshot validation derives that
+historical epoch from immutable evidence instead of the draft's mutable
+current epoch. Tamper, restore, re-login, revise, online snapshot validation,
+subsequent backup, second restore and discarded-branch pruning are covered by
+executable regression.
+
+Restore reconciliation is phase-aware for idempotency and protected domain
+actions. A successful response is not reusable when its referenced restored
+object is absent, and consumed publication or rollback actions whose domain
+effect is no longer present are retained as failed history rather than revived
+authority.
+
 ## Backup And Restore Integration
 
 The existing encrypted online SQLite backup path includes the four new tables
@@ -100,7 +129,8 @@ in its native snapshot and logical export. Snapshot validation now checks:
 These checks run during backup creation, fresh verification and staged restore
 validation. The existing live-security reconciliation, mutation barrier,
 retained pre-restore store and protected retention semantics remain in place.
-Final backup/restore and rollback evidence is still `PENDING`.
+The final candidate backup/restore regressions and the accepted-P1.3
+product-code plus exact pre-004 data rollback gate passed.
 
 ## Explicitly Absent
 

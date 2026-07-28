@@ -9,6 +9,77 @@
 
 ## 2026-07-28
 
+### P2.1 Capability Profiles Candidate
+
+#### Completed Facts
+
+- Froze final runtime candidate
+  `8f364b93b574c058cd8cd617f925107985318098`, tree
+  `7c277e32b6419bd3720591c454e8282d94f081ec`, fingerprint
+  `516995361810AF2D3F3FC609F4676D5A2D620216E6BB9DA305EDC57CD8622332`
+  over 36 files.
+- Added checksummed additive migration `004_capability_profiles` without
+  changing accepted `p1_screen_config_v1` or rebuilding accepted P1.3 tables.
+  The four structures hold Site-owned profile envelopes, immutable versions,
+  exact draft-revision assignments and immutable ReleaseTarget capability
+  snapshots.
+- Added the closed seven-capability/21-Provider catalog, three immutable
+  presets, five state meanings, Site/profile version management, exact draft
+  assignment, release/rollback snapshot integration, authorized screen reads
+  and credential-derived device resolution.
+- Added the `/manage` capability-profile and three-screen effective-state
+  workflow. External Providers remain unverified and disabled; the candidate
+  performs only bounded local/Mock diagnostics and no real external request.
+- Closed public-metadata, response-reflection and denial-audit surfaces;
+  disabled request-target access logs in every P2.1 startup path; implemented
+  terminal no-fallback plus bounded timeout, cancellation and backpressure.
+- Made initialization and accepted-P1.3 copied upgrade validate the complete
+  table/index/trigger/view structure. Recovery now validates reverse
+  profile/assignment/snapshot/effective/fingerprint/approval/release
+  references, rejects complete P2.1 row loss, uses immutable historical
+  validation epochs and fails restored phantom idempotency/action results.
+
+#### Verification
+
+- Candidate-scoped Ruff passed over 13 Python files; API import exposed 98
+  routes; all 35 backend cases passed with one dependency deprecation warning.
+- P2.1 validation passed 206 checks and all 51 mutation cases under both
+  PowerShell hosts. P1 regression passed 2,722 checks and 191 mutation cases
+  under both hosts.
+- Pinned pnpm 9.15.4 TypeScript/Vite build passed with 19 transformed modules.
+- The 1280 by 720 interactive workflow was executed on candidate
+  `3062b14863d1ed0a1f92f4f6a203a602cc4c6045`. The final candidate uses an
+  explicit semantic rebind because the Vue UI, API client and browser fixture
+  are byte-identical; the only launcher delta adds `--no-access-log` and passed
+  runtime probes under both PowerShell hosts. The final interactive workflow
+  was not rerun.
+- Exact-candidate Docker/Compose build/runtime smoke passed all eight HTTP
+  probes, migration/schema, log-sanitization, restart and cleanup checks.
+- Accepted-P1.3 product rollback passed its original 22 tests, retained
+  migration 003 and exposed no P2.1 route or schema object. The WAL-safe exact
+  pre-004 online copy passed 12 verification checks.
+- Candidate Secret scans, Git diff, fingerprint and lifecycle gates passed.
+  Final evidence hashes remain bound in the P2.1 machine manifest after the
+  stable acceptance package scan.
+
+#### Independent Review And Decision State
+
+- The first candidate `3062b14863d1ed0a1f92f4f6a203a602cc4c6045`
+  failed with seven blockers. The second candidate
+  `c9cd471762eb202371c11361c69b814cecffea1c` failed with six blocking
+  finding families. The third candidate
+  `6e43b17b4c9c75885c32b400112c985a0265b2ec` failed with two blockers. The
+  fourth candidate `eba052678d3293448036d7426c61409063cb7c93` failed with one
+  recovery blocker. Every finding is remediated in the final candidate.
+- Reviewer Huygens independently archived and tested the final candidate.
+  Archive SHA-256
+  `C4C6A33FD7CE69EB4734ED9516942593B942E3B1E6925CDF92F07C602A3B0A74`,
+  size 12,759,040 bytes. The final review returned PASS with zero blocking and
+  zero non-blocking findings.
+- P2.1 is ready for explicit user acceptance but remains unaccepted. P1.3 is
+  still the accepted runtime rollback baseline, the user decision is
+  `PENDING`, and P2.2 has not started.
+
 ### P2.1 Activation And Result Freeze
 
 #### Completed Facts

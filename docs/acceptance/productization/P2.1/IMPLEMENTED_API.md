@@ -3,16 +3,17 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `IMPLEMENTATION_PRESENT; FINAL_VERIFICATION_PENDING`
-- Candidate commit / tree: `PENDING`
+- State: `READY_FOR_USER_ACCEPTANCE`
+- Candidate commit: `8f364b93b574c058cd8cd617f925107985318098`
+- Candidate tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
 - API version: `v1`
 - Profile schema: `p2_capability_profile_v1`
 - Provider registry: `p2_provider_registry_001`
 - Acceptance: `PENDING`
 
-This document describes the P2.1 API currently present in the candidate
-worktree. It is not a gate result or an acceptance decision. The frozen result
-card remains [ACCEPTANCE_CARD.md](ACCEPTANCE_CARD.md).
+This document describes the exact P2.1 API candidate that passed automated
+gates and independent review. It is not a user acceptance decision. The frozen
+result card remains [ACCEPTANCE_CARD.md](ACCEPTANCE_CARD.md).
 
 ## Added Routes
 
@@ -55,6 +56,13 @@ diagnostics, dependency findings and `activation_eligible`; clients cannot
 submit those results. An enabled `unverified` primary or fallback remains
 inspectable but makes the version ineligible for release validation.
 
+Unknown Provider identifiers and rejected model fields are returned only
+through generic, bounded error categories. The API does not reflect the
+submitted identifier, attacker-selected validation locator, raw input, parser
+context or request target. Denial audit records use canonical route families
+instead of untrusted path text. Profile names and descriptions are revalidated
+when a backup snapshot is created or verified.
+
 ## Existing Flow Integration
 
 The accepted P1.3 endpoints keep their route meanings and two-field
@@ -73,6 +81,12 @@ The accepted P1.3 endpoints keep their route meanings and two-field
 An applied P1.3 ReleaseTarget without a P2.1 snapshot returns
 `NOT_CONFIGURED_P2_1`. It never inherits a global profile or Mock Provider.
 
+Restore remains phase-aware for request-bound idempotency. A result can be
+reused only when its referenced domain state remains valid in the restored
+phase. Consumed publish or rollback HighRiskActions whose effects are absent
+after restore become failed historical evidence instead of replaying a phantom
+success.
+
 The optional `X-Runtime-Session-ID` header is a non-authoritative correlation
 label. The device response returns a SHA-256 isolation key bound to Tenant,
 Deployment, credential-derived screen, DigitalHumanInstance, ReleaseTarget,
@@ -87,6 +101,12 @@ eligible only for `timeout`, `unavailable` or `unsupported`, with equivalent
 screen-bound permission scope and an activatable fallback state.
 `permission_denied`, `invalid_request`, `unauthorized_template` and
 `cancelled` are terminal.
+
+The local diagnostic executor has bounded timeout, cancellation and
+backpressure behavior. Queue saturation is an explicit isolated result; it
+does not wait without a bound or spill work into another screen. Cancellation
+does not trigger fallback. These checks prove only the executable local/Mock
+contract, not a real-provider scheduler or vendor behavior.
 
 No route executes FineReport, FVS, an official plugin, QuerySource, SQL, Dora,
 RAGFlow, LLM, ASR, TTS or another external Provider. Real-provider support and

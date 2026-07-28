@@ -15,9 +15,8 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase:
-`Productization P2.1 Capability Profiles Active`. G0 and P1.0 through P1.3 are
-explicitly accepted.
+Current phase: `Productization P2.1 Capability Profiles Active`. G0 and P1.0
+through P1.3 are explicitly accepted.
 
 P1.0 froze the target control-plane contract. P1.1 proved local identity,
 RBAC, audit and screen-device trust. P1.2 proved three-screen inventory and
@@ -27,8 +26,11 @@ draft/release, publication/acknowledgement, forward rollback, encrypted
 online-source backup/restore and three-day retention slice. Its gates and final
 independent review passed with zero findings, and the user accepted it without
 conditions on 2026-07-28. The user explicitly activated P2.1 on 2026-07-28.
-Its complete capability-profile result card and non-scope are frozen; runtime
-implementation and verification are in progress and are not yet accepted.
+Final candidate `8f364b93b574c058cd8cd617f925107985318098`, tree
+`7c277e32b6419bd3720591c454e8282d94f081ec`, implements the frozen local
+capability-profile result. Its automated gates and independent review pass
+with zero findings. P1.3 remains the accepted runtime until the user records
+an explicit P2.1 decision.
 
 ## Frozen Product Boundaries
 
@@ -60,11 +62,11 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 Accepted behavior is recorded under
 [acceptance/productization/P1.1](acceptance/productization/P1.1),
 [acceptance/productization/P1.2](acceptance/productization/P1.2) and
-[acceptance/productization/P1.3](acceptance/productization/P1.3). The active
-P2.1 target is frozen in
+[acceptance/productization/P1.3](acceptance/productization/P1.3). The verified
+but unaccepted P2.1 candidate and its frozen boundary are recorded in
 [acceptance/productization/P2.1/ACCEPTANCE_CARD.md](acceptance/productization/P2.1/ACCEPTANCE_CARD.md)
 and [product/contracts/CAPABILITY_PROFILES.md](product/contracts/CAPABILITY_PROFILES.md).
-It remains unimplemented/unaccepted until candidate evidence proves otherwise.
+P2.2 remains queued and has not started.
 
 ## Non-Negotiable Rules
 

@@ -3,22 +3,24 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `ACTIVE_FROZEN`
+- State: `READY_FOR_USER_ACCEPTANCE`
 - Result: versioned per-screen capability profiles and credential-scoped runtime resolution
 - Base accepted runtime: commit `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree `04bcbb940fbedb5fbb8957e538f46a4422e15db2`
 - Base acceptance record: commit `c24f041a0414ea5361a6fcb7216d7be99ea0bb56`
-- Candidate commit: `PENDING`
-- Candidate tree: `PENDING`
-- Candidate fingerprint: `PENDING`
+- Candidate commit: `8f364b93b574c058cd8cd617f925107985318098`
+- Candidate tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
+- Candidate fingerprint: `516995361810AF2D3F3FC609F4676D5A2D620216E6BB9DA305EDC57CD8622332` over 36 files
 - Logical schema / migration: `p1_control_plane_001` / `004_capability_profiles`
 - Capability schemas: `p2_capability_profile_v1` / `p2_provider_registry_001`
-- Gate summary: `PENDING`
-- Independent review: `PENDING`
+- Gate summary: automated candidate gates `PASS`
+- Independent review: `PASS`; reviewer Huygens, zero blocking and zero non-blocking findings
 - User decision: `PENDING`
 
-This card freezes the complete P2.1 result and non-scope before runtime
-implementation. No P2.1 implementation, gate or provider result is claimed by
-this freeze.
+This card froze the complete P2.1 result and non-scope before runtime
+implementation. The candidate above implements the bounded local
+development-preview result and has passed its automated gates and final
+independent review. It is not accepted until the user records an explicit
+decision.
 
 ## Frozen Observable Outcome
 
