@@ -1392,10 +1392,17 @@ async def control_plane_error_handler(request: Request, exc: ControlPlaneError) 
     actor_type = getattr(request.state, "control_plane_actor_type", None)
     if service is not None and actor_type is not None:
         try:
+            route = request.scope.get("route")
+            route_path = getattr(route, "path", None)
+            audit_target = (
+                f"{request.method} {route_path}"
+                if isinstance(route_path, str)
+                else f"{request.method} UNRESOLVED_ROUTE"
+            )
             service.record_denial(
                 actor_type=actor_type,
                 actor_id=getattr(request.state, "control_plane_actor_id", None),
-                target_id=f"{request.method} {request.url.path}",
+                target_id=audit_target,
                 code=exc.code,
             )
         except (sqlite3.Error, ValueError):

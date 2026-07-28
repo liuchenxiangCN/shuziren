@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import unicodedata
 from typing import Any
 
 from app.control_plane.errors import ControlPlaneError
@@ -283,9 +284,20 @@ _SECRET_ASSIGNMENT = re.compile(
     r"""(?ix)
     \b(
         api[-_\s]?key|access[-_\s]?key|client[-_\s]?secret|private[-_\s]?key|
-        password|passwd|passphrase|pwd|token|cookie|authorization|auth|
-        secret|credential|dsn|connection[-_\s]?string
-    )(?:[-_\s]?(?:ref|reference))?\s*[:=]
+        password|passwd|passphrase|pwd|token|cookie|authorization|
+        secret|credential|dsn|connection[-_\s]?string|data[-_\s]?source
+    )(?:[-_\s]?(?:ref|reference))?\s*(?:[:=]|\s)
+    """
+)
+_SENSITIVE_DESCRIPTOR = re.compile(
+    r"""(?ix)
+    \b(
+        api[-_\s]?key|access[-_\s]?key|client[-_\s]?secret|private[-_\s]?key|
+        password|passwd|passphrase|pwd|token|cookie|authorization|
+        bearer|basic[-_\s]?auth|secret(?:[-_\s]?(?:ref|reference))?|
+        credentials?|dsn|connection[-_\s]?string|data[-_\s]?source|
+        initial[-_\s]?catalog|endpoint
+    )\b
     """
 )
 _SECRET_VALUE = re.compile(
@@ -296,38 +308,46 @@ _SECRET_VALUE = re.compile(
         \bAIza[a-z0-9_-]{20,}|
         \bxox[baprs]-[a-z0-9-]{16,}|
         \b(?:sk|rk)_live_[a-z0-9]{16,}|
-        \b(?:bearer|basic)\s+[a-z0-9._~+/-]{8,}|
+        \b(?:bearer|basic)\s+\S+|
         \b[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\b|
         -----BEGIN\s+(?:RSA\s+|EC\s+|OPENSSH\s+)?PRIVATE\s+KEY-----
     )"""
 )
 _DSN_VALUE = re.compile(
-    r"(?ix)\b(?:jdbc:|postgres(?:ql)?://|mysql://|oracle://|mongodb(?:\+srv)?://|redis://)"
+    r"""(?ix)\b(
+        jdbc:|odbc:|postgres(?:ql)?://|mysql://|mariadb://|sqlserver://|
+        oracle://|mongodb(?:\+srv)?://|redis://|amqp(?:s)?://
+    )"""
 )
 _ENDPOINT_VALUE = re.compile(
     r"""(?ix)(
         \b[a-z][a-z0-9+.-]{1,31}://|
+        \b(?:localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d{1,5})\b|
         \b(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d{1,5})?(?:[/?:#][^\s]*)?
     )"""
 )
 _FREE_SQL_VALUE = re.compile(
     r"""(?isx)(
-        (?:^|[;\n])\s*select\b.+?\bfrom\b|
-        (?:^|[;\n])\s*insert\s+into\b|
-        (?:^|[;\n])\s*update\s+\S+\s+set\b|
-        (?:^|[;\n])\s*delete\s+from\b|
-        (?:^|[;\n])\s*(?:drop|alter|create)\s+(?:table|database)\b|
-        (?:^|[;\n])\s*(?:grant|revoke)\b|
-        (?:^|[;\n])\s*merge\s+into\b
+        \bselect\b.+?\bfrom\b|
+        \binsert\s+into\b|
+        \bupdate\s+\S+\s+set\b|
+        \bdelete\s+from\b|
+        \b(?:drop|alter|create)\s+(?:table|database|schema|index|trigger)\b|
+        \b(?:grant|revoke)\b|
+        \bmerge\s+into\b
     )"""
 )
 _EXECUTABLE_VALUE = re.compile(
-    r"""(?ix)(
-        <\s*/?\s*script\b|
+    r"""(?isx)(
+        <\s*/?\s*(?:script|iframe|object|embed|svg|form|img)\b|
+        \bon[a-z]{3,32}\s*=|
         \bjavascript\s*:|
         \beval\s*\(|
         \bnew\s+function\b|
-        \b(?:child_process|subprocess)\b
+        \b(?:child_process|subprocess)\b|
+        \b(?:shell(?:\s+command)?|powershell|pwsh|cmd(?:\.exe)?|bash)\b|
+        \b(?:rm|del|erase|rmdir|curl|wget|chmod|chown|sudo|python|node)\s+(?:[-/]|[^\s])|
+        \$\(|`|&&|\|\|
     )"""
 )
 _OWNERSHIP_SELECTOR = re.compile(
@@ -359,6 +379,47 @@ def fallback_decision(
         "decision": decision,
         "fallback_allowed": decision == "FALLBACK_ALLOWED",
         "terminal": decision == "TERMINAL",
+    }
+
+
+def diagnostic_failure_decision(
+    signal: str,
+    permission_equivalent: bool,
+    fallback_provider_state: str,
+) -> dict[str, Any]:
+    normalized_signal = signal.strip().casefold()
+    signal_contract = {
+        "timeout": {
+            "error_code": "timeout",
+            "provider_execution_started": True,
+            "queue_admission": "N/A",
+        },
+        "cancellation": {
+            "error_code": "cancelled",
+            "provider_execution_started": True,
+            "queue_admission": "N/A",
+        },
+        "backpressure": {
+            "error_code": "unavailable",
+            "provider_execution_started": False,
+            "queue_admission": "REJECTED",
+        },
+    }
+    contract = signal_contract.get(normalized_signal)
+    if contract is None:
+        raise ValueError("Unsupported diagnostic failure signal")
+    decision = fallback_decision(
+        error_code=contract["error_code"],
+        permission_equivalent=permission_equivalent,
+        fallback_provider_state=fallback_provider_state,
+    )
+    return {
+        **decision,
+        "signal": normalized_signal,
+        "provider_execution_started": contract["provider_execution_started"],
+        "queue_admission": contract["queue_admission"],
+        "retry_enqueued": False,
+        "unbounded_queue_growth": False,
     }
 
 
@@ -2107,16 +2168,18 @@ class P21ControlPlane:
 
     @staticmethod
     def _reject_secret_material(value: str, label: str) -> None:
+        normalized = unicodedata.normalize("NFKC", value)
         if (
-            _SECRET_ASSIGNMENT.search(value)
-            or _SECRET_VALUE.search(value)
-            or _DSN_VALUE.search(value)
-            or _ENDPOINT_VALUE.search(value)
-            or _FREE_SQL_VALUE.search(value)
-            or _EXECUTABLE_VALUE.search(value)
+            _SECRET_ASSIGNMENT.search(normalized)
+            or _SENSITIVE_DESCRIPTOR.search(normalized)
+            or _SECRET_VALUE.search(normalized)
+            or _DSN_VALUE.search(normalized)
+            or _ENDPOINT_VALUE.search(normalized)
+            or _FREE_SQL_VALUE.search(normalized)
+            or _EXECUTABLE_VALUE.search(normalized)
         ):
             raise ControlPlaneError(
                 422,
                 "SECRET_MATERIAL_FORBIDDEN",
-                f"{label} cannot contain credentials, DSNs, or Secret material",
+                f"{label} cannot contain sensitive, executable, or connection material",
             )

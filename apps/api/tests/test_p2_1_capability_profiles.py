@@ -35,6 +35,7 @@ from app.control_plane.router import (
 )
 from app.control_plane.security import PurposeKeyring, canonical_json
 from app.control_plane.service import ControlPlaneService
+from app.control_plane.store import ControlPlaneStore
 
 CAPABILITIES = {
     "dora",
@@ -76,6 +77,22 @@ TERMINAL_FALLBACK_REASONS = {
     "unauthorized_template",
     "cancelled",
 }
+P21_TABLES = (
+    "release_target_capability_snapshots",
+    "config_draft_capability_assignments",
+    "capability_profile_versions",
+    "capability_profiles",
+)
+P21_TRIGGERS = (
+    "capability_profile_versions_no_update",
+    "capability_profile_versions_no_delete",
+    "capability_profiles_head_monotonic",
+    "draft_capability_assignment_scope_insert",
+    "config_draft_capability_assignments_no_update",
+    "config_draft_capability_assignments_no_delete",
+    "release_target_capability_snapshots_no_update",
+    "release_target_capability_snapshots_no_delete",
+)
 
 
 @pytest.fixture()
@@ -362,7 +379,7 @@ def _publish_and_ack(
 def test_provider_registry_and_fallback_decision_are_closed(
     p21_control_plane: tuple[FastAPI, ControlPlaneService, Path],
 ) -> None:
-    from app.control_plane.p2_1 import fallback_decision
+    from app.control_plane.p2_1 import diagnostic_failure_decision, fallback_decision
 
     app, _, _ = p21_control_plane
     implementation, _ = login(app, "implementation")
@@ -423,6 +440,56 @@ def test_provider_registry_and_fallback_decision_are_closed(
                 fallback_provider_state="available",
             )["fallback_allowed"]
             is False
+        )
+
+    timeout = diagnostic_failure_decision(
+        signal="timeout",
+        permission_equivalent=True,
+        fallback_provider_state="mock",
+    )
+    assert timeout["error_code"] == "timeout"
+    assert timeout["fallback_allowed"] is True
+    assert timeout["provider_execution_started"] is True
+    assert timeout["retry_enqueued"] is False
+    assert timeout["unbounded_queue_growth"] is False
+
+    cancellation = diagnostic_failure_decision(
+        signal="cancellation",
+        permission_equivalent=True,
+        fallback_provider_state="available",
+    )
+    assert cancellation["error_code"] == "cancelled"
+    assert cancellation["terminal"] is True
+    assert cancellation["fallback_allowed"] is False
+    assert cancellation["retry_enqueued"] is False
+
+    backpressure = diagnostic_failure_decision(
+        signal="backpressure",
+        permission_equivalent=True,
+        fallback_provider_state="degraded",
+    )
+    assert backpressure["error_code"] == "unavailable"
+    assert backpressure["fallback_allowed"] is True
+    assert backpressure["provider_execution_started"] is False
+    assert backpressure["queue_admission"] == "REJECTED"
+    assert backpressure["retry_enqueued"] is False
+    assert backpressure["unbounded_queue_growth"] is False
+
+    for permission_equivalent, state in ((False, "mock"), (True, "unverified")):
+        assert (
+            diagnostic_failure_decision(
+                signal="backpressure",
+                permission_equivalent=permission_equivalent,
+                fallback_provider_state=state,
+            )["fallback_allowed"]
+            is False
+        )
+
+    with pytest.raises(ValueError, match="Unsupported diagnostic failure signal"):
+        diagnostic_failure_decision(
+            signal="queue_full",
+            permission_equivalent=True,
+            fallback_provider_state="mock",
         )
 
 
@@ -588,31 +655,37 @@ def test_profile_versions_are_immutable_strong_and_secret_closed(
     assert auditor_mutation.status_code == 403
     assert auditor_mutation.json()["error"]["code"] == "FORBIDDEN"
 
-    for index, secret_value in enumerate(
-        (
-            "password=not-allowed",
-            "postgresql://user:secret@db.example.test/app",
-            "Bearer should-never-enter-a-profile",
-        )
-    ):
+    rejected_public_values = (
+        "password=not-allowed",
+        "postgresql://user:synthetic@db.example.test/app",
+        "Bearer abc123",
+        "customer endpoint 127.0.0.1:5432",
+        "please run SELECT * FROM users",
+        "shell command rm -rf /srv/app",
+        "secret_ref sec-production",
+        "Data Source=synthetic-host;Initial Catalog=synthetic-db",
+        '<img src="x" onerror="run()">',
+    )
+    for index, rejected_value in enumerate(rejected_public_values):
         rejected = implementation.post(
             "/api/v1/control-plane/capability-profiles",
             headers=mutation_headers(
                 csrf_impl,
-                **{"Idempotency-Key": f"p21-secret-reject-{index}"},
+                **{"Idempotency-Key": f"p21-sensitive-reject-{index}"},
             ),
             json={
                 "site_id": site_id,
-                "name": f"Secret rejection {index}",
-                "description": secret_value,
+                "name": f"Sensitive input rejection {index}",
+                "description": rejected_value,
                 "source_preset_id": "text_only",
             },
         )
         assert rejected.status_code == 422
         assert rejected.json()["error"]["code"] == "SECRET_MATERIAL_FORBIDDEN"
+        assert rejected_value not in rejected.text
 
     provider_payloads = (
-        ("primary_provider_id", "postgresql://user:secret@db.example.test/app"),
+        ("primary_provider_id", "postgresql://user:synthetic@db.example.test/app"),
         ("fallback_provider_ids", "https://private.example.test/api"),
         ("primary_provider_id", "select * from private_table"),
         ("fallback_provider_ids", "javascript:eval(payload)"),
@@ -662,6 +735,11 @@ def test_profile_versions_are_immutable_strong_and_secret_closed(
     assert unknown.json()["error"]["code"] == "SCHEMA_VALIDATION_FAILED"
     assert unknown_provider_id not in unknown.text
 
+    path_submitted_value = "api_key=synthetic-path-value"
+    path_denial = implementation.get(f"/api/v1/control-plane/capability-profiles/{path_submitted_value}")
+    assert path_denial.status_code == 404
+    assert path_submitted_value not in path_denial.text
+
     audit_response = auditor.get("/api/v1/control-plane/audit-events?limit=200")
     assert audit_response.status_code == 200, audit_response.text
     persisted_surfaces = audit_response.content
@@ -670,7 +748,10 @@ def test_profile_versions_are_immutable_strong_and_secret_closed(
             persisted_surfaces += path.read_bytes()
     for _, submitted_value in provider_payloads:
         assert submitted_value.encode() not in persisted_surfaces
+    for rejected_value in rejected_public_values:
+        assert rejected_value.encode() not in persisted_surfaces
     assert unknown_provider_id.encode() not in persisted_surfaces
+    assert path_submitted_value.encode() not in persisted_surfaces
 
 
 def test_unverified_profile_is_inspectable_but_cannot_validate(
@@ -1117,6 +1198,69 @@ def test_p21_backup_restore_tamper_and_retention_preserve_sidecars(
     assert verified.status_code == 200, verified.text
     assert verified.json()["outcome"] == "VERIFIED"
 
+    def database_copy(label: str) -> Path:
+        copied_path = database_path.parent / f"tampered-{label}.db"
+        source = service.store.connect()
+        target = sqlite3.connect(copied_path)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+            source.close()
+        return copied_path
+
+    def persist_tamper(connection: sqlite3.Connection) -> None:
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        connection.close()
+
+    missing_tables_path = database_copy("missing-p21-tables")
+    connection = sqlite3.connect(missing_tables_path)
+    try:
+        connection.execute("PRAGMA foreign_keys=OFF")
+        for table in P21_TABLES:
+            connection.execute(f'DROP TABLE "{table}"')
+        persist_tamper(connection)
+    except Exception:
+        connection.close()
+        raise
+    with pytest.raises(BackupIntegrityError):
+        BackupManager._validate_snapshot(missing_tables_path.read_bytes())
+    with pytest.raises(RuntimeError, match="schema object integrity"):
+        ControlPlaneStore(missing_tables_path).initialize(now=1_750_000_000.0)
+
+    missing_triggers_path = database_copy("missing-p21-triggers")
+    connection = sqlite3.connect(missing_triggers_path)
+    try:
+        for trigger in P21_TRIGGERS:
+            connection.execute(f'DROP TRIGGER "{trigger}"')
+        persist_tamper(connection)
+    except Exception:
+        connection.close()
+        raise
+    with pytest.raises(BackupIntegrityError):
+        BackupManager._validate_snapshot(missing_triggers_path.read_bytes())
+
+    weakened_trigger_path = database_copy("weakened-p21-trigger")
+    connection = sqlite3.connect(weakened_trigger_path)
+    try:
+        connection.execute("DROP TRIGGER capability_profile_versions_no_update")
+        connection.execute(
+            """
+            CREATE TRIGGER capability_profile_versions_no_update
+            BEFORE UPDATE ON capability_profile_versions
+            BEGIN
+                SELECT 1;
+            END
+            """
+        )
+        persist_tamper(connection)
+    except Exception:
+        connection.close()
+        raise
+    with pytest.raises(BackupIntegrityError):
+        BackupManager._validate_snapshot(weakened_trigger_path.read_bytes())
+
     for column, value in (
         ("capability_envelope_hash", "0" * 64),
         ("profile_version_id", "cpv_missing_reference"),
@@ -1157,6 +1301,143 @@ def test_p21_backup_restore_tamper_and_retention_preserve_sidecars(
     )
     assert changed.status_code == 201, changed.text
     assert changed.json()["head_version_id"] != profile["head_version_id"]
+    changed_profile = changed.json()
+    third_spec = json.loads(json.dumps(changed_profile["head_version"]["spec"]))
+    third_spec["tts"]["timeout_ms"] += 100
+    third = implementation.post(
+        f"/api/v1/control-plane/capability-profiles/{profile['profile_id']}/versions",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": changed_profile["etag"],
+                "Idempotency-Key": "p21-post-backup-version-three",
+            },
+        ),
+        json={"spec": third_spec},
+    )
+    assert third.status_code == 201, third.text
+    assert third.json()["head_version_number"] == 3
+
+    version_gap_path = database_copy("profile-version-gap")
+    connection = sqlite3.connect(version_gap_path)
+    try:
+        trigger_sql = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'trigger' AND name = 'capability_profile_versions_no_delete'
+            """
+        ).fetchone()[0]
+        connection.execute("DROP TRIGGER capability_profile_versions_no_delete")
+        connection.execute(
+            "DELETE FROM capability_profile_versions WHERE profile_version_id = ?",
+            (changed_profile["head_version_id"],),
+        )
+        connection.execute(trigger_sql)
+        persist_tamper(connection)
+    except Exception:
+        connection.close()
+        raise
+    with pytest.raises(BackupIntegrityError):
+        BackupManager._validate_snapshot(version_gap_path.read_bytes())
+
+    missing_assignment_path = database_copy("missing-release-assignment")
+    connection = sqlite3.connect(missing_assignment_path)
+    try:
+        trigger_sql = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'trigger'
+              AND name = 'config_draft_capability_assignments_no_delete'
+            """
+        ).fetchone()[0]
+        connection.execute("DROP TRIGGER config_draft_capability_assignments_no_delete")
+        connection.execute(
+            """
+            DELETE FROM config_draft_capability_assignments
+            WHERE draft_id = ? AND draft_revision = ?
+            """,
+            (
+                release["normal_provenance"]["draft_id"],
+                release["normal_provenance"]["draft_revision"],
+            ),
+        )
+        connection.execute(trigger_sql)
+        persist_tamper(connection)
+    except Exception:
+        connection.close()
+        raise
+    with pytest.raises(BackupIntegrityError):
+        BackupManager._validate_snapshot(missing_assignment_path.read_bytes())
+
+    missing_p21_rows_path = database_copy("missing-all-p21-rows")
+    connection = sqlite3.connect(missing_p21_rows_path)
+    try:
+        trigger_sql_by_name = {
+            row[0]: row[1]
+            for row in connection.execute(
+                """
+                SELECT name, sql FROM sqlite_master
+                WHERE type = 'trigger' AND name IN (
+                    'capability_profile_versions_no_delete',
+                    'config_draft_capability_assignments_no_delete',
+                    'release_target_capability_snapshots_no_delete'
+                )
+                """
+            ).fetchall()
+        }
+        for trigger in trigger_sql_by_name:
+            connection.execute(f'DROP TRIGGER "{trigger}"')
+        connection.execute("PRAGMA foreign_keys=OFF")
+        for table in P21_TABLES:
+            connection.execute(f'DELETE FROM "{table}"')
+        for trigger_sql in trigger_sql_by_name.values():
+            connection.execute(trigger_sql)
+        persist_tamper(connection)
+    except Exception:
+        connection.close()
+        raise
+    with pytest.raises(BackupIntegrityError):
+        BackupManager._validate_snapshot(missing_p21_rows_path.read_bytes())
+
+    tampered_fingerprint_path = database_copy("tampered-p21-fingerprint-input")
+    connection = sqlite3.connect(tampered_fingerprint_path)
+    try:
+        connection.row_factory = sqlite3.Row
+        trigger_sql = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'trigger' AND name = 'resolution_fingerprints_no_update'
+            """
+        ).fetchone()["sql"]
+        fingerprint = connection.execute(
+            """
+            SELECT fingerprint_id, resolution_inputs_json
+            FROM resolution_fingerprints
+            WHERE draft_id = ? AND draft_revision = ?
+            """,
+            (
+                release["normal_provenance"]["draft_id"],
+                release["normal_provenance"]["draft_revision"],
+            ),
+        ).fetchone()
+        resolution_inputs = json.loads(fingerprint["resolution_inputs_json"])
+        resolution_inputs[0]["capability_profile"]["profile_content_hash"] = "0" * 64
+        connection.execute("DROP TRIGGER resolution_fingerprints_no_update")
+        connection.execute(
+            """
+            UPDATE resolution_fingerprints
+            SET resolution_inputs_json = ?
+            WHERE fingerprint_id = ?
+            """,
+            (canonical_json(resolution_inputs), fingerprint["fingerprint_id"]),
+        )
+        connection.execute(trigger_sql)
+        persist_tamper(connection)
+    except Exception:
+        connection.close()
+        raise
+    with pytest.raises(BackupIntegrityError):
+        BackupManager._validate_snapshot(tampered_fingerprint_path.read_bytes())
 
     plan_response = admin_a.post(
         "/api/v1/control-plane/restore-plans",
@@ -1205,9 +1486,54 @@ def test_p21_backup_restore_tamper_and_retention_preserve_sidecars(
     restored_profile = relogged.get(f"/api/v1/control-plane/capability-profiles/{profile['profile_id']}")
     assert restored_profile.status_code == 200, restored_profile.text
     assert restored_profile.json()["head_version_id"] == profile["head_version_id"]
+    with service.store.connect() as connection:
+        assert (
+            connection.execute(
+                """
+                SELECT COUNT(*) FROM capability_profile_versions
+                WHERE profile_version_id = ?
+                """,
+                (changed_profile["head_version_id"],),
+            ).fetchone()[0]
+            == 0
+        )
     restored_release = relogged.get(f"/api/v1/control-plane/config-releases/{release['release_id']}")
     assert restored_release.status_code == 200, restored_release.text
     assert (
         restored_release.json()["targets"][0]["capability_snapshot"]["profile_version_id"]
         == profile["head_version_id"]
     )
+
+    relogged_implementation, relogged_csrf_impl = login(app, "implementation")
+    recreated = relogged_implementation.post(
+        f"/api/v1/control-plane/capability-profiles/{profile['profile_id']}/versions",
+        headers=mutation_headers(
+            relogged_csrf_impl,
+            **{
+                "If-Match": profile["etag"],
+                "Idempotency-Key": "p21-post-backup-version",
+            },
+        ),
+        json={"spec": changed_spec},
+    )
+    assert recreated.status_code == 201, recreated.text
+    assert recreated.json()["head_version_number"] == 2
+    assert recreated.json()["head_version_id"] != changed_profile["head_version_id"]
+    persisted_recreated = relogged_implementation.get(
+        f"/api/v1/control-plane/capability-profiles/{profile['profile_id']}"
+    )
+    assert persisted_recreated.status_code == 200, persisted_recreated.text
+    assert persisted_recreated.json()["head_version_id"] == recreated.json()["head_version_id"]
+    exact_replay = relogged_implementation.post(
+        f"/api/v1/control-plane/capability-profiles/{profile['profile_id']}/versions",
+        headers=mutation_headers(
+            relogged_csrf_impl,
+            **{
+                "If-Match": profile["etag"],
+                "Idempotency-Key": "p21-post-backup-version",
+            },
+        ),
+        json={"spec": changed_spec},
+    )
+    assert exact_replay.status_code == 201, exact_replay.text
+    assert exact_replay.json() == recreated.json()

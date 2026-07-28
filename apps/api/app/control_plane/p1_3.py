@@ -35,6 +35,21 @@ SECURITY_RECONCILIATION_TABLES = (
     "restore_plans",
     "restore_executions",
 )
+LIVE_RECONCILED_IDEMPOTENCY_PHASES = (
+    "approveHighRiskAction",
+    "claimDeviceEnrollment",
+    "createBackup",
+    "createRestorePlan",
+    "execute:issueDeviceEnrollment",
+    "rejectHighRiskAction",
+    "request:createUser",
+    "request:executeRestorePlan",
+    "request:issueDeviceEnrollment",
+    "request:revokeDeviceCredential",
+    "rotateDeviceCredential",
+    "verifyBackup",
+)
+SESSION_IDEMPOTENCY_PHASES = ("reauthenticateAuthSession",)
 
 
 class DraftValidationFailure(ControlPlaneError):
@@ -3089,7 +3104,14 @@ class P13ControlPlane:
             row["name"] for row in connection.execute("PRAGMA table_info(idempotency_records)").fetchall()
         ]
         idempotency_rows = []
-        for row in connection.execute("SELECT * FROM idempotency_records").fetchall():
+        placeholders = ", ".join("?" for _ in LIVE_RECONCILED_IDEMPOTENCY_PHASES)
+        for row in connection.execute(
+            f"""
+            SELECT * FROM idempotency_records
+            WHERE phase IN ({placeholders})
+            """,
+            LIVE_RECONCILED_IDEMPOTENCY_PHASES,
+        ).fetchall():
             item = {column: row[column] for column in idempotency_columns}
             for name in (
                 "response_nonce",
@@ -3208,7 +3230,18 @@ class P13ControlPlane:
                 live_security["tables"]["restore_executions"],
             )
             connection.execute("DELETE FROM auth_sessions")
-            connection.execute("DELETE FROM idempotency_records")
+            idempotency_phases_to_replace = (
+                *LIVE_RECONCILED_IDEMPOTENCY_PHASES,
+                *SESSION_IDEMPOTENCY_PHASES,
+            )
+            placeholders = ", ".join("?" for _ in idempotency_phases_to_replace)
+            connection.execute(
+                f"""
+                DELETE FROM idempotency_records
+                WHERE phase IN ({placeholders})
+                """,
+                idempotency_phases_to_replace,
+            )
             self._insert_rows(
                 connection,
                 "idempotency_records",

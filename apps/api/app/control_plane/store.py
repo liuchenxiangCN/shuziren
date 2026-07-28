@@ -1321,6 +1321,32 @@ MIGRATIONS = (
 MIGRATION_VERSION = MIGRATION_004_VERSION
 MIGRATION_CHECKSUM_SHA256 = MIGRATION_004_CHECKSUM_SHA256
 
+P21_SCHEMA_OBJECT_NAMES = (
+    "capability_profiles",
+    "capability_profile_versions",
+    "config_draft_capability_assignments",
+    "release_target_capability_snapshots",
+    "idx_users_tenant_deployment_user",
+    "idx_capability_profiles_scope",
+    "idx_capability_profile_versions_profile",
+    "idx_draft_capability_assignments_profile",
+    "idx_release_capability_snapshots_profile",
+    "capability_profile_versions_no_update",
+    "capability_profile_versions_no_delete",
+    "capability_profiles_head_monotonic",
+    "draft_capability_assignment_scope_insert",
+    "config_draft_capability_assignments_no_update",
+    "config_draft_capability_assignments_no_delete",
+    "release_target_capability_snapshots_no_update",
+    "release_target_capability_snapshots_no_delete",
+)
+P21_SCHEMA_TABLE_NAMES = (
+    "capability_profiles",
+    "capability_profile_versions",
+    "config_draft_capability_assignments",
+    "release_target_capability_snapshots",
+)
+
 
 class ControlPlaneStore:
     def __init__(self, path: str | Path) -> None:
@@ -1396,6 +1422,7 @@ class ControlPlaneStore:
                         """,
                         (version, checksum, now),
                     )
+                self.validate_p21_schema_integrity(connection)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -1420,6 +1447,62 @@ class ControlPlaneStore:
                 statement = ""
         if statement.strip():
             raise RuntimeError("Incomplete control-plane migration statement")
+
+    @staticmethod
+    def validate_p21_schema_integrity(connection: sqlite3.Connection) -> None:
+        registered = connection.execute(
+            """
+            SELECT checksum_sha256 FROM schema_migrations
+            WHERE version = ?
+            """,
+            (MIGRATION_004_VERSION,),
+        ).fetchone()
+        if registered is None:
+            return
+        if registered["checksum_sha256"] != MIGRATION_004_CHECKSUM_SHA256:
+            raise RuntimeError("Control-plane migration checksum mismatch")
+
+        reference = sqlite3.connect(":memory:")
+        reference.row_factory = sqlite3.Row
+        try:
+            reference.execute("PRAGMA foreign_keys=ON")
+            for _, _, script in MIGRATIONS:
+                ControlPlaneStore._execute_script(reference, script)
+            expected = ControlPlaneStore._schema_object_definitions(reference)
+        finally:
+            reference.close()
+        actual = ControlPlaneStore._schema_object_definitions(connection)
+        if actual != expected:
+            raise RuntimeError("Control-plane P2.1 schema object integrity mismatch")
+
+    @staticmethod
+    def _schema_object_definitions(
+        connection: sqlite3.Connection,
+    ) -> tuple[tuple[str, str, str, str], ...]:
+        name_placeholders = ", ".join("?" for _ in P21_SCHEMA_OBJECT_NAMES)
+        table_placeholders = ", ".join("?" for _ in P21_SCHEMA_TABLE_NAMES)
+        rows = connection.execute(
+            f"""
+            SELECT type, name, tbl_name, sql
+            FROM sqlite_master
+            WHERE name IN ({name_placeholders})
+               OR (
+                   type IN ('index', 'trigger')
+                   AND tbl_name IN ({table_placeholders})
+               )
+            ORDER BY type, name
+            """,
+            (*P21_SCHEMA_OBJECT_NAMES, *P21_SCHEMA_TABLE_NAMES),
+        ).fetchall()
+        return tuple(
+            (
+                row["type"],
+                row["name"],
+                row["tbl_name"],
+                row["sql"],
+            )
+            for row in rows
+        )
 
     def _backfill_preview_inventory(
         self,
