@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Candidate commit: `8f364b93b574c058cd8cd617f925107985318098`
 - Candidate tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
 - Logical schema: `p1_control_plane_001`
@@ -11,11 +11,10 @@
 - Migration checksum SHA-256: `c0522a5a5dc596355812333a5895a204acf16c5ad80b0b83be1a16da3f3116cd`
 - Profile / registry schema: `p2_capability_profile_v1` /
   `p2_provider_registry_001`
-- Acceptance: `PENDING`
+- Acceptance: `通过` on 2026-07-28
 
-This document describes the additive SQLite structures in the exact candidate
-that passed automated gates and independent review. The candidate remains
-unaccepted until the user records an explicit decision.
+This document describes the additive SQLite structures in the exact accepted
+candidate that passed automated gates and independent review.
 
 ## Additive Structures
 

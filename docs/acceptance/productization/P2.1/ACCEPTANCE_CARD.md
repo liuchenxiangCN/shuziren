@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Result: versioned per-screen capability profiles and credential-scoped runtime resolution
 - Base accepted runtime: commit `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree `04bcbb940fbedb5fbb8957e538f46a4422e15db2`
 - Base acceptance record: commit `c24f041a0414ea5361a6fcb7216d7be99ea0bb56`
@@ -14,13 +14,13 @@
 - Capability schemas: `p2_capability_profile_v1` / `p2_provider_registry_001`
 - Gate summary: automated candidate gates `PASS`
 - Independent review: `PASS`; reviewer Huygens, zero blocking and zero non-blocking findings
-- User decision: `PENDING`
+- User decision: `通过` on 2026-07-28
 
 This card froze the complete P2.1 result and non-scope before runtime
 implementation. The candidate above implements the bounded local
-development-preview result and has passed its automated gates and final
-independent review. It is not accepted until the user records an explicit
-decision.
+development-preview result, passed its automated gates and final independent
+review, and was explicitly accepted without conditions on 2026-07-28. It is
+now the accepted runtime baseline for subsequent productization batches.
 
 ## Frozen Observable Outcome
 

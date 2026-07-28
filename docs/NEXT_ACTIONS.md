@@ -9,63 +9,39 @@
 
 ## Current Phase
 
-`Productization P2.1 Capability Profiles Active`.
+`Productization P2.1 Accepted; P2.2 Awaiting Explicit Activation`.
 
-G0 and P1.0 through P1.3 are explicitly accepted. P1.3 runtime candidate
-`0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
-`04bcbb940fbedb5fbb8957e538f46a4422e15db2`, schema
-`p1_control_plane_001` with migration `003_publish_rollback_recovery`, remains
-the accepted runtime and rollback baseline.
-
-P2.1 final candidate
+G0 and P1.0 through P2.1 are explicitly accepted. P2.1 candidate
 `8f364b93b574c058cd8cd617f925107985318098`, tree
 `7c277e32b6419bd3720591c454e8282d94f081ec`, fingerprint
 `516995361810AF2D3F3FC609F4676D5A2D620216E6BB9DA305EDC57CD8622332`
-over 36 files, implements only the frozen local development-preview result.
-Its automated gates and final independent review pass. Reviewer Huygens
-reported zero blocking and zero non-blocking findings. The candidate is ready
-for explicit user acceptance but is not yet accepted.
+over 36 files, schema `p1_control_plane_001` with migration
+`004_capability_profiles`, is the accepted runtime baseline. Its automated
+gates and final independent review pass; reviewer Huygens reported zero
+blocking and zero non-blocking findings.
+
+Accepted P1.3 candidate `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`,
+tree `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, remains the verified
+product-code and pre-`004` data rollback target. P2.2 is not active.
 
 ## Next Task
 
-Review the complete P2.1 result package and record one explicit user decision:
-`通过`, `条件通过`, `不通过` or `Blocked`.
+Await an explicit user instruction to begin P2.2. On that instruction, freeze
+the complete P2.2 result card and non-scope against accepted P2.1 before
+implementing any QuerySource, dataset or Excel/database execution behavior.
 
-No additional P2.1 implementation scope is authorized while this decision is
-pending. Automated success, reviewer success and user silence do not accept
-P2.1 or activate P2.2.
+Acceptance and publication of P2.1 do not activate P2.2.
 
-### User-Visible Result
-
-1. `/manage` exposes seven fixed per-screen capabilities, three immutable
-   presets, 21 closed Provider descriptors and all five state meanings.
-2. An implementation engineer can create a Site-owned profile and append
-   immutable versions without changing an older version.
-3. An exact ProfileVersion can be assigned through a new P1.3 draft revision;
-   stale validation, preview and approval evidence is invalidated.
-4. NORMAL release, publication, acknowledgement and forward rollback preserve
-   an exact immutable per-screen capability snapshot.
-5. Three screens can publish, acknowledge and resolve different profiles with
-   the same correlation label without sharing screen or Provider state.
-6. Unverified Providers remain inspectable but cannot validate or release, and
-   no external request occurs.
-7. Permission denial and cancellation are terminal; only bounded technical
-   failures may use an equivalent screen-bound fallback.
-8. Encrypted backup/restore preserves P2.1 rows and historical evidence, while
-   accepted-P1.3 product/data rollback remains usable.
-
-### Result Package
+### Accepted P2.1 Baseline
 
 - [acceptance/productization/P2.1/ACCEPTANCE_CARD.md](acceptance/productization/P2.1/ACCEPTANCE_CARD.md)
 - [acceptance/productization/P2.1/AUTOMATED_SUMMARY.md](acceptance/productization/P2.1/AUTOMATED_SUMMARY.md)
-- [acceptance/productization/P2.1/IMPLEMENTED_API.md](acceptance/productization/P2.1/IMPLEMENTED_API.md)
-- [acceptance/productization/P2.1/IMPLEMENTED_DATA.md](acceptance/productization/P2.1/IMPLEMENTED_DATA.md)
 - [acceptance/productization/P2.1/KNOWN_LIMITATIONS.md](acceptance/productization/P2.1/KNOWN_LIMITATIONS.md)
 - [acceptance/productization/P2.1/RUNBOOK.md](acceptance/productization/P2.1/RUNBOOK.md)
 - [acceptance/productization/P2.1/manifest.json](acceptance/productization/P2.1/manifest.json)
 - [acceptance/productization/P2.1/USER_DECISION.md](acceptance/productization/P2.1/USER_DECISION.md)
 
-### Verified Boundary
+### Accepted Boundary
 
 - Migration `004_capability_profiles` is additive; accepted P1.3 tables and the
   exact two-field `p1_screen_config_v1` base schema remain unchanged.
@@ -82,5 +58,5 @@ P2.1 or activate P2.2.
 
 `Productization P2.2 Controlled Excel And Database Querying`.
 
-P2.2 has not started. Only explicit P2.1 user acceptance followed by a
-separate start instruction can activate it.
+P2.2 has not started. Only a separate explicit start instruction can activate
+it.

@@ -9,6 +9,23 @@
 
 ## 2026-07-28
 
+### P2.1 User Acceptance
+
+#### Completed Facts
+
+- The user explicitly accepted P2.1 (`通过P2.1`) without conditions or scope
+  reduction.
+- P2.1 runtime candidate
+  `8f364b93b574c058cd8cd617f925107985318098`, tree
+  `7c277e32b6419bd3720591c454e8282d94f081ec`, schema
+  `p1_control_plane_001` and migration `004_capability_profiles` became the
+  accepted runtime baseline.
+- The acceptance package retains the complete gate, review, evidence-hash,
+  recovery and accepted-P1.3 rollback record.
+- ADR-0029 became `Accepted` through this explicit P2.1 decision.
+- Accepted P1.3 remains the verified product-code and pre-`004` data rollback
+  target. P2.2 was not activated by this acceptance decision.
+
 ### P2.1 Capability Profiles Candidate
 
 #### Completed Facts
@@ -76,9 +93,8 @@
   `C4C6A33FD7CE69EB4734ED9516942593B942E3B1E6925CDF92F07C602A3B0A74`,
   size 12,759,040 bytes. The final review returned PASS with zero blocking and
   zero non-blocking findings.
-- P2.1 is ready for explicit user acceptance but remains unaccepted. P1.3 is
-  still the accepted runtime rollback baseline, the user decision is
-  `PENDING`, and P2.2 has not started.
+- The user subsequently accepted P2.1 without conditions as recorded above.
+  P1.3 remains the verified rollback target, and P2.2 has not started.
 
 ### P2.1 Activation And Result Freeze
 

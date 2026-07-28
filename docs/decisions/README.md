@@ -11,10 +11,7 @@
 - [ADR-0026](ADR-0026-finereport-fvs-productization.md): FineReport / FVS multi-screen productization boundary.
 - [ADR-0027](ADR-0027-result-driven-development-and-document-lifecycle.md): result-driven development and document lifecycle.
 - [ADR-0028](ADR-0028-p1-control-plane-foundation.md): accepted P1 target domain, IAM, device trust, storage, recovery and API foundation.
-
-## Proposed Product Decisions
-
-- [ADR-0029](ADR-0029-p2-1-capability-profile-sidecars.md): additive immutable capability-profile sidecars that preserve the accepted P1.3 base schema. It becomes Accepted only after explicit P2.1 user acceptance.
+- [ADR-0029](ADR-0029-p2-1-capability-profile-sidecars.md): accepted additive immutable capability-profile sidecars that preserve the accepted P1.3 base schema.
 
 ## Implemented POC Decisions
 

@@ -3,17 +3,18 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Candidate commit: `8f364b93b574c058cd8cd617f925107985318098`
 - Candidate tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
 - API version: `v1`
 - Profile schema: `p2_capability_profile_v1`
 - Provider registry: `p2_provider_registry_001`
-- Acceptance: `PENDING`
+- Acceptance: `通过` on 2026-07-28
 
-This document describes the exact P2.1 API candidate that passed automated
-gates and independent review. It is not a user acceptance decision. The frozen
-result card remains [ACCEPTANCE_CARD.md](ACCEPTANCE_CARD.md).
+This document describes the exact accepted P2.1 API result that passed
+automated gates and independent review. The frozen result card and user
+decision remain [ACCEPTANCE_CARD.md](ACCEPTANCE_CARD.md) and
+[USER_DECISION.md](USER_DECISION.md).
 
 ## Added Routes
 

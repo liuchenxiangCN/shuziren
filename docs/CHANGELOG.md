@@ -11,7 +11,7 @@
 
 ### Added
 
-- P2.1 final candidate for Site-owned capability profiles, immutable profile
+- Accepted P2.1 Site-owned capability profiles, immutable profile
   versions, exact draft assignments, immutable ReleaseTarget capability
   snapshots and credential-scoped applied-profile resolution across three
   screens.
@@ -55,14 +55,13 @@
 
 ### Changed
 
-- G0 and P1.0 through P1.3 are explicitly accepted. P1.3 candidate
-  `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
-  `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, is the accepted runtime rollback
-  baseline. P2.1 candidate
+- G0 and P1.0 through P2.1 are explicitly accepted. P2.1 candidate
   `8f364b93b574c058cd8cd617f925107985318098`, tree
-  `7c277e32b6419bd3720591c454e8282d94f081ec`, passed automated gates and final
-  independent review with zero findings and is ready for explicit user
-  acceptance. It is not yet accepted, and P2.2 has not started.
+  `7c277e32b6419bd3720591c454e8282d94f081ec`, is the accepted runtime baseline.
+  P1.3 remains the verified product-code and pre-`004` data rollback target;
+  P2.2 has not started.
+- ADR-0029 is accepted with P2.1; its additive immutable capability-profile
+  sidecar decision does not activate P2.2 or certify a real Provider.
 - P1.2 local implementation is accepted at candidate `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`; its automated and independent-review evidence passes with zero final findings.
 - P1.1 local implementation is accepted at candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets were remediated, and the third independent review passed with zero findings.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
@@ -127,7 +126,7 @@
   implement real FineReport/FVS/plugin connectivity, production activation,
   offline/full-loss recovery, external anti-rollback authority, PostgreSQL
   recovery or customer RPO/RTO certification.
-- The unaccepted P2.1 candidate performs no real Provider call. QuerySource,
+- Accepted P2.1 performs no real Provider call. QuerySource,
   Excel/database execution and P2.2 remain unimplemented; its browser evidence
   is an explicit byte-identical semantic rebind rather than a final-candidate
   interactive rerun.
@@ -135,6 +134,6 @@
 - P1.1 is an accepted development-preview result, not a production-readiness claim. Production custodian/person binding, external monotonic anchors, production activation, complete user onboarding and recovery are not implemented.
 - G0 changes documentation and development governance only.
 - P1.0 is target contract design only. Its RBAC, device trust, multi-screen storage, API, migration, backup and restore behaviors are not implemented.
-- Remaining target control-plane behavior beyond accepted P1.3 and the
-  unaccepted P2.1 candidate, database querying, FineReport plugin calling and
-  real 2D / 3D rendering remain unimplemented product targets.
+- Remaining target control-plane behavior beyond accepted P2.1, database
+  querying, FineReport plugin calling and real 2D / 3D rendering remain
+  unimplemented product targets.

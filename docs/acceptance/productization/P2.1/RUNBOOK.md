@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Candidate commit: `8f364b93b574c058cd8cd617f925107985318098`
 - Candidate tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
 - Scope: local P2.1 preview only
@@ -160,6 +160,6 @@ The final candidate rollback gate passed those 22 tests, retained migration
 003, found zero P2.1 routes or schema objects and verified the exact WAL-safe
 pre-004 online copy with 12 checks.
 
-P2.1 remains unaccepted until the user records an explicit decision. Do not
-activate P2.2 from this runbook, passing automation, reviewer success or user
-silence.
+P2.1 was explicitly accepted on 2026-07-28. Do not activate P2.2 from this
+runbook or from the P2.1 acceptance decision; P2.2 requires a separate explicit
+start instruction.

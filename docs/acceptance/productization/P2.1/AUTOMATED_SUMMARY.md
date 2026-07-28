@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Candidate commit: `8f364b93b574c058cd8cd617f925107985318098`
 - Candidate tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
 - Candidate fingerprint: `516995361810AF2D3F3FC609F4676D5A2D620216E6BB9DA305EDC57CD8622332` across 36 files
@@ -12,12 +12,13 @@
   `B9581CA42760E22D89EB12B8238492ECA225E67A94547C8207DF5C808BDCD648`
 - Gate summary: automated candidate gates `PASS`
 - Independent review: `PASS`; reviewer Huygens, zero blocking and zero non-blocking findings
-- User decision: `PENDING`
+- User decision: `通过` on 2026-07-28
 
 Sanitized raw evidence is under ignored local path
 `logs/productization/P2.1-20260728-100208/`. The tracked `manifest.json` binds
 the candidate, gates, independent-review history, rollback and final evidence
-hashes. P2.1 remains unaccepted until the user records an explicit decision.
+hashes. The user explicitly accepted this result without conditions on
+2026-07-28.
 
 ## Candidate Gate Results
 
@@ -97,5 +98,5 @@ independently hashed archive of final candidate
 12,759,040 bytes. The final result is `PASS` with zero blocking and zero
 non-blocking findings.
 
-`USER_DECISION.md` remains `PENDING`; automated completion and independent
-review do not accept P2.1 or activate P2.2.
+`USER_DECISION.md` records `通过` on 2026-07-28. This acceptance does not
+activate P2.2.

@@ -33,7 +33,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [acceptance/productization/P1.1](acceptance/productization/P1.1) | Acceptance evidence | Accepted P1.1 identity and device-trust result |
 | [acceptance/productization/P1.2](acceptance/productization/P1.2) | Acceptance evidence | Accepted P1.2 three-screen inventory result and decision |
 | [acceptance/productization/P1.3](acceptance/productization/P1.3) | Acceptance evidence | Accepted P1.3 publish, rollback and recovery result and decision |
-| [acceptance/productization/P2.1](acceptance/productization/P2.1) | Acceptance evidence | Verified P2.1 capability-profile package ready for explicit user acceptance |
+| [acceptance/productization/P2.1](acceptance/productization/P2.1) | Acceptance evidence | Accepted P2.1 capability-profile result and decision |
 
 ## Product Target
 
@@ -48,6 +48,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [decisions/ADR-0026-finereport-fvs-productization.md](decisions/ADR-0026-finereport-fvs-productization.md) | Accepted ADR | Productization decision |
 | [decisions/ADR-0027-result-driven-development-and-document-lifecycle.md](decisions/ADR-0027-result-driven-development-and-document-lifecycle.md) | Accepted ADR | Result-driven development and document lifecycle |
 | [decisions/ADR-0028-p1-control-plane-foundation.md](decisions/ADR-0028-p1-control-plane-foundation.md) | Accepted ADR | P1 control-plane foundation accepted with P1.0 |
+| [decisions/ADR-0029-p2-1-capability-profile-sidecars.md](decisions/ADR-0029-p2-1-capability-profile-sidecars.md) | Accepted ADR | P2.1 immutable capability-profile sidecars accepted with P2.1 |
 
 ## Implemented POC Baseline
 

@@ -15,8 +15,8 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P2.1 Capability Profiles Active`. G0 and P1.0
-through P1.3 are explicitly accepted.
+Current phase: `Productization P2.1 Accepted; P2.2 Awaiting Explicit
+Activation`. G0 and P1.0 through P2.1 are explicitly accepted.
 
 P1.0 froze the target control-plane contract. P1.1 proved local identity,
 RBAC, audit and screen-device trust. P1.2 proved three-screen inventory and
@@ -25,12 +25,12 @@ was the three-screen inventory baseline. P1.3 candidate
 draft/release, publication/acknowledgement, forward rollback, encrypted
 online-source backup/restore and three-day retention slice. Its gates and final
 independent review passed with zero findings, and the user accepted it without
-conditions on 2026-07-28. The user explicitly activated P2.1 on 2026-07-28.
-Final candidate `8f364b93b574c058cd8cd617f925107985318098`, tree
+conditions on 2026-07-28. P2.1 candidate
+`8f364b93b574c058cd8cd617f925107985318098`, tree
 `7c277e32b6419bd3720591c454e8282d94f081ec`, implements the frozen local
-capability-profile result. Its automated gates and independent review pass
-with zero findings. P1.3 remains the accepted runtime until the user records
-an explicit P2.1 decision.
+capability-profile result. Its automated gates and independent review passed
+with zero findings, and the user accepted it without conditions on 2026-07-28.
+P2.2 is queued and not active.
 
 ## Frozen Product Boundaries
 
@@ -46,26 +46,24 @@ an explicit P2.1 decision.
 
 ## Current As-Built Baseline
 
-The accepted runtime baseline is P1.3 commit
-`0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
-`04bcbb940fbedb5fbb8957e538f46a4422e15db2`. It retains the original POC route
-meanings, P1.1 IAM/device trust and P1.2 three-screen inventory, then adds the
-bounded publication, rollback, recovery and retention result. Preview remains
-`MOCK_PASSED`, FVS remains `UNVERIFIED`, and production readiness is not
-claimed.
+The accepted runtime baseline is P2.1 commit
+`8f364b93b574c058cd8cd617f925107985318098`, tree
+`7c277e32b6419bd3720591c454e8282d94f081ec`. It retains the original POC route
+meanings and accepted P1 controls, then adds versioned per-screen capability
+profiles, immutable release snapshots and credential-scoped resolution.
+Accepted P1.3 commit `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`
+remains the verified product-code and pre-`004` data rollback target. Preview
+remains `MOCK_PASSED`, external Providers and FVS remain `UNVERIFIED`, and
+production readiness is not claimed.
 
 Implemented POC contracts remain authoritative for the original POC namespaces:
 
 - [06_API_CONTRACT.md](06_API_CONTRACT.md)
 - [07_DATA_CONTRACT.md](07_DATA_CONTRACT.md)
 
-Accepted behavior is recorded under
-[acceptance/productization/P1.1](acceptance/productization/P1.1),
-[acceptance/productization/P1.2](acceptance/productization/P1.2) and
-[acceptance/productization/P1.3](acceptance/productization/P1.3). The verified
-but unaccepted P2.1 candidate and its frozen boundary are recorded in
-[acceptance/productization/P2.1/ACCEPTANCE_CARD.md](acceptance/productization/P2.1/ACCEPTANCE_CARD.md)
-and [product/contracts/CAPABILITY_PROFILES.md](product/contracts/CAPABILITY_PROFILES.md).
+Accepted behavior is recorded under [acceptance/productization](acceptance/productization).
+The P2.1 frozen target boundary remains in
+[product/contracts/CAPABILITY_PROFILES.md](product/contracts/CAPABILITY_PROFILES.md);
 P2.2 remains queued and has not started.
 
 ## Non-Negotiable Rules

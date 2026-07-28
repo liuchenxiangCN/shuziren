@@ -2,10 +2,10 @@
 
 ## Status
 
-Proposed
+Accepted
 
-This decision becomes Accepted only after explicit P2.1 user acceptance.
-Implementation and automated evidence alone do not accept it.
+The user explicitly accepted P2.1 on 2026-07-28. This acceptance does not
+activate P2.2 or broaden local/Mock evidence into real Provider support.
 
 ## Date
 

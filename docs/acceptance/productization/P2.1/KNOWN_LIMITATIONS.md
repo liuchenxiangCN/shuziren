@@ -3,16 +3,16 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `READY_FOR_USER_ACCEPTANCE`
+- State: `ACCEPTED`
 - Candidate commit: `8f364b93b574c058cd8cd617f925107985318098`
 - Candidate tree: `7c277e32b6419bd3720591c454e8282d94f081ec`
-- User decision: `PENDING`
+- User decision: `通过` on 2026-07-28
 
 ## Frozen Limits
 
-- P2.1 is a verified local development-preview candidate. Automated gates,
-  rollback and independent review pass; explicit user acceptance remains
-  `PENDING`.
+- P2.1 is an accepted local development-preview result. Automated gates,
+  rollback and independent review pass; acceptance does not broaden the
+  verified local/Mock boundary.
 - Every Provider descriptor has `external_calls_enabled=false`. The runtime
   performs only closed local/Mock diagnostic selection; it does not establish,
   authenticate or call a real Provider.

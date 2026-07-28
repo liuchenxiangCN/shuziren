@@ -2,9 +2,10 @@
   "schema_version": 1,
   "batch": "P2.1",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
-  "generated_at": "2026-07-28T04:42:18.3506881Z",
+  "generated_at": "2026-07-28T06:43:33.5830588Z",
   "gate_summary": "PASS",
-  "acceptance_state": "READY_FOR_USER_ACCEPTANCE",
+  "acceptance_state": "ACCEPTED",
+  "accepted_at": "2026-07-28",
   "base_accepted": {
     "commit": "0f210cffa5a9b49fd93d36dbb42bd36bb2899f54",
     "tree": "04bcbb940fbedb5fbb8957e538f46a4422e15db2",
@@ -213,9 +214,9 @@
     ]
   },
   "user_decision": {
-    "status": "PENDING",
-    "decision": null,
-    "date": null,
-    "conversation_reference": null
+    "status": "RECORDED",
+    "decision": "通过",
+    "date": "2026-07-28",
+    "conversation_reference": "Codex task in which the user stated 通过P2.1，commit&push"
   }
 }
