@@ -4,7 +4,7 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: Productization P1-P5 outcome roadmap
-- Last reviewed: 2026-07-27
+- Last reviewed: 2026-07-28
 - Historical plan: [archive/poc-v1/root-snapshots/DEVELOPMENT_PLAN_FULL_HISTORY.md](archive/poc-v1/root-snapshots/DEVELOPMENT_PLAN_FULL_HISTORY.md)
 
 ## Planning Model
@@ -45,7 +45,7 @@ The following rules apply to every phase:
 | --- | --- | --- | --- |
 | P0 | Product boundary | Product scope, target customer and constraints are frozen | Done |
 | G0 | Documentation and result governance | Codex reads one current task and every batch has an evidence gate | Accepted |
-| P1 | Multi-screen control closed loop | Three screens can be registered, configured, published and rolled back independently | P1.0, P1.1 and P1.2 accepted; P1.3 active with frozen result card; authority: [NEXT_ACTIONS.md](NEXT_ACTIONS.md) |
+| P1 | Multi-screen control closed loop | Three screens can be registered, configured, published and rolled back independently | P1.0, P1.1 and P1.2 accepted; P1.3 ready for explicit user acceptance; authority: [NEXT_ACTIONS.md](NEXT_ACTIONS.md) |
 | P2 | Per-screen capabilities and querying | Different provider combinations and controlled data sources work without cross-screen impact | Planned |
 | P3 | Renderer extension mechanism | Test renderers and asset versions can switch safely without claiming real 2D / 3D support | Planned |
 | P4 | Management and operations closed loops | Each product role completes its daily task without editing code or YAML | Planned |

@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "batch": "P1.3",
+  "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "generated_at": "2026-07-28T00:47:52.3208038Z",
+  "gate_summary": "PASS",
+  "acceptance_state": "READY_FOR_USER_ACCEPTANCE",
+  "base_accepted": {
+    "commit": "2ddd2116aad19babc9acbfde1110802eb3187c2b",
+    "tree": "565dbb3567e2a4ae5b872177d97449120477fe8c",
+    "acceptance_record": "7e7bf28a8393878185d55ea532b4212eee818586"
+  },
+  "candidate": {
+    "commit": "0f210cffa5a9b49fd93d36dbb42bd36bb2899f54",
+    "tree": "04bcbb940fbedb5fbb8957e538f46a4422e15db2",
+    "branch": "codex/p1-3-publish-rollback-recovery",
+    "fingerprint_sha256": "8cf8cdb380f849b947a76abeef2ff895fb79f7696effbb1abbdf9bdc0bb04e55",
+    "fingerprint_file_count": 29,
+    "fingerprint_evidence": {
+      "path": "logs/productization/P1.3-20260728-final-0f210cf/candidate-fingerprint.json",
+      "sha256": "6babb4ae3c17cc39de17e19f0941cde28b8626ef42249b9ade4be77238a12fbe"
+    }
+  },
+  "database": {
+    "logical_schema_version": "p1_control_plane_001",
+    "latest_migration": "003_publish_rollback_recovery",
+    "migration_checksum_sha256": "4dd3fbb74e71d669e7ee0a7c22ecb2edfbca278609eba1724dc01163dc1bfe31"
+  },
+  "evidence_root": "logs/productization/P1.3-20260728-final-0f210cf",
+  "raw_evidence_manifest": {
+    "path": "logs/productization/P1.3-20260728-final-0f210cf/evidence-manifest.json",
+    "sha256": "aaf278cc3a106ac3d93236718ed2239d8a36bc04a23e84ff92fbc1d6f3c6dd25",
+    "file_count": 49
+  },
+  "gates": [
+    {
+      "id": "backend_quality_and_negative_tests",
+      "status": "PASS",
+      "note": "Ruff format/check and API import passed; all 22 backend integration cases passed.",
+      "evidence": [
+        "test-results/api-ruff-format.txt",
+        "test-results/api-ruff-check.txt",
+        "test-results/api-import.txt",
+        "test-results/api-pytest.txt"
+      ]
+    },
+    {
+      "id": "frontend_build_and_browser_workflow",
+      "status": "PASS",
+      "note": "Pinned pnpm 9.15.4 build and unchanged 1280 by 720 release-center workflow passed with no overflow or captured console warning/error.",
+      "evidence": [
+        "test-results/pnpm-version-pinned.txt",
+        "test-results/web-build-pinned.txt",
+        "browser-evidence.json",
+        "screenshots/release-center-1280x720.png"
+      ]
+    },
+    {
+      "id": "migration_and_source_integrity",
+      "status": "PASS",
+      "note": "The accepted P1.2 source remained unchanged; its copy reached exact migration 003 and invalid source snapshots failed before backup success.",
+      "evidence": [
+        "migration/accepted-p1-2-upgrade-summary.json",
+        "test-results/backup-source-integrity-probe.json"
+      ]
+    },
+    {
+      "id": "backup_restore_and_retention",
+      "status": "PASS",
+      "note": "Verified local backup/restore recovered three bindings, retained the old store, exposed no false-success mutation and preserved protected rows during three-day cleanup.",
+      "evidence": [
+        "test-results/recovery-duration-probe.json",
+        "test-results/retention-probe.json"
+      ]
+    },
+    {
+      "id": "secret_surfaces",
+      "status": "PASS",
+      "note": "Final exact local-root-key and dangerous-pattern scan returned zero findings.",
+      "evidence": [
+        "security/secret-scan.json"
+      ],
+      "evidence_sha256": "73e5327835e2c732d277adadd400b5fd21fe2c9f768e3be79e283a2d721d0458"
+    },
+    {
+      "id": "docker_compose",
+      "status": "PASS",
+      "note": "Exact-candidate images built; API and web returned 200 with migration 003, three screens, three bindings and clean foreign keys; shutdown was clean.",
+      "evidence": [
+        "test-results/docker-build.txt",
+        "test-results/docker-probe.json",
+        "test-results/docker-down.txt"
+      ]
+    },
+    {
+      "id": "target_contract_and_document_lifecycle",
+      "status": "PASS",
+      "note": "Both target validators passed 2722 checks, all 191 contract self-test cases passed, and final lifecycle lint passed under both PowerShell hosts.",
+      "evidence": [
+        "test-results/target-contract-validator-pwsh7.txt",
+        "test-results/target-contract-validator-winps.txt",
+        "test-results/target-contract-self-test.txt",
+        "test-results/doc-lifecycle-lint-pwsh7.txt",
+        "test-results/doc-lifecycle-lint-winps.txt"
+      ]
+    }
+  ],
+  "independent_reviews": [
+    {
+      "candidate": "93bae87f028f50d0f1abd09c5d6c458490d52273",
+      "status": "FAIL",
+      "blocking_findings": 4,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-first-fail.md",
+      "report_sha256": "643015920812b27c5496dbb2cbae8aa5c2c6981b4f6ea9965be7f9222d5d9b12",
+      "disposition": "REMEDIATED"
+    },
+    {
+      "candidate": "20a2be319fd74f689c8a581734b1cb3b21e6b0a3",
+      "status": "FAIL",
+      "blocking_findings": 1,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-second-fail.md",
+      "report_sha256": "7a3fdff304a93ab596721f5c16f9fda166c467673f6bb293394fe93db8efcd23",
+      "disposition": "REMEDIATED"
+    },
+    {
+      "task_id": "/root/p1_3_independent_review",
+      "reviewer": "Dewey",
+      "candidate": "0f210cffa5a9b49fd93d36dbb42bd36bb2899f54",
+      "tree": "04bcbb940fbedb5fbb8957e538f46a4422e15db2",
+      "status": "PASS",
+      "blocking_findings": 0,
+      "nonblocking_findings": 0,
+      "report": "review/independent-review-final-pass.md",
+      "report_sha256": "4b27fe5ed56ddbff7cbc4bc9aac693399c673992087e9d02fb8f4551a4b1de45"
+    }
+  ],
+  "independent_review_status": "PASS",
+  "rollback": {
+    "status": "PASS",
+    "target_commit": "2ddd2116aad19babc9acbfde1110802eb3187c2b",
+    "target_tree": "565dbb3567e2a4ae5b872177d97449120477fe8c",
+    "runtime_archive_sha256": "0835ab691146bab4e27016c2759c0921d2e86ed2f006141d07a30ae91620b813",
+    "pre_003_database_sha256": "2de19013f7a6c5b57b9fdf37312b1b0902ace2f01f45a7a83de8d65462a44d6b",
+    "evidence": [
+      "rollback/accepted-p1-2-pytest.txt",
+      "rollback/accepted-p1-2-route-probe.json",
+      "rollback/accepted-p1-2-runtime.zip"
+    ]
+  },
+  "user_decision": {
+    "status": "PENDING",
+    "decision": null,
+    "date": null,
+    "conversation_reference": null
+  }
+}

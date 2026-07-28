@@ -4,8 +4,61 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: factual work completed after productization began
-- Last reviewed: 2026-07-27
+- Last reviewed: 2026-07-28
 - Full POC and initial P0 history: [archive/poc-v1/root-snapshots/DEV_LOG_FULL_HISTORY.md](archive/poc-v1/root-snapshots/DEV_LOG_FULL_HISTORY.md)
+
+## 2026-07-28
+
+### P1.3 Publish, Rollback And Recovery Candidate
+
+#### Completed Facts
+
+- Final runtime candidate
+  `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
+  `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, implements the frozen local
+  development-preview result without changing accepted POC route meanings.
+- Added checksummed migration `003_publish_rollback_recovery`, complete
+  draft/validation/Mock preview/different-user approval, immutable normal
+  releases, per-screen/group publication, credential-bound exact
+  acknowledgement and immutable forward rollback.
+- Added an encrypted four-file local bundle, source-snapshot validation,
+  backup-record identity binding, fresh verification, staged online-source
+  restore, live security-state reconciliation, retained pre-restore store and a
+  global control-plane mutation barrier across backup/restore consistency
+  boundaries.
+- Added three-day runtime-detail cleanup while protecting users, device history,
+  releases, publications, restore evidence and SecurityAuditEvent rows.
+- Added the `/manage` release center and explicit P1.3 initialize, accepted-P1.2
+  copied-upgrade, local launcher, browser-gate and Secret-scan scripts.
+- Kept FVS `UNVERIFIED`, preview `MOCK_PASSED` and real FineReport/FVS/plugin,
+  production activation, full-loss recovery, PostgreSQL and customer RPO/RTO
+  certification outside the candidate.
+
+#### Verification To Date
+
+- Ruff format/check, API import and all 22 backend integration cases pass.
+  Pinned pnpm 9.15.4 builds the 19-module web bundle.
+- The 1280 by 720 release-center workflow completes draft, validation/preview,
+  different-user release approval and typed publication with no horizontal
+  overflow or captured console warning/error.
+- An exact accepted-P1.2 database copy reaches migration 003 with its source
+  unchanged, three bindings and clean foreign keys; repeat initialization
+  leaves the upgraded file unchanged. The accepted P1.2 runtime still passes
+  its original 14 tests and exposes no P1.3 route.
+- Invalid-source backup creation returns 503 and leaves no record or bundle.
+  Verified backup/restore recovers three bindings, retains the old store and
+  cannot report a successful mutation that disappears across cutover.
+- Three-day cleanup deletes expired runtime detail without deleting the
+  protected control-plane rows. Exact-candidate Docker/Compose, P1 target
+  validation and Secret scanning pass.
+- The first independent review rejected candidate
+  `93bae87f028f50d0f1abd09c5d6c458490d52273` with four blocking findings; the
+  second rejected `20a2be319fd74f689c8a581734b1cb3b21e6b0a3` with one additional
+  backup-source validation finding. All five paths are repaired in the final
+  candidate and pass independent focused regression; the complete final
+  independent review passed with zero blocking and zero non-blocking findings.
+- User decision remains Pending. P1.2 remains the accepted runtime rollback
+  baseline and P2.1 remains queued.
 
 ## 2026-07-27
 

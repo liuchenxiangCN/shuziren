@@ -4,31 +4,32 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: exactly one active result batch
-- Last reviewed: 2026-07-27
+- Last reviewed: 2026-07-28
 - Historical tasks: [archive/poc-v1/root-snapshots/NEXT_ACTIONS_FULL_HISTORY.md](archive/poc-v1/root-snapshots/NEXT_ACTIONS_FULL_HISTORY.md)
 
 ## Current Phase
 
 `Productization P1.3 Publish, Rollback And Recovery`.
 
-G0, P1.0, P1.1 and P1.2 were explicitly accepted on 2026-07-27. Accepted P1.2
-runtime candidate `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree
-`565dbb3567e2a4ae5b872177d97449120477fe8c`, schema
-`p1_control_plane_001` with migration `002_three_screen_inventory`, is the
-rollback baseline. The user explicitly activated P1.3 on 2026-07-27. Its result
-card and non-scope are frozen; implementation has not started.
+G0, P1.0, P1.1 and P1.2 were accepted on 2026-07-27. P1.2 candidate
+`2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree
+`565dbb3567e2a4ae5b872177d97449120477fe8c`, is the rollback baseline. The user
+activated P1.3 on 2026-07-27; its result card and non-scope were frozen before
+implementation. Final candidate
+`0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
+`04bcbb940fbedb5fbb8957e538f46a4422e15db2`, implements the bounded local
+development-preview result and has passed its automated gates and final
+independent review with zero findings. P1.2 remains the accepted runtime and
+rollback baseline until P1.3 receives an explicit user decision.
 
 ## Next Task
 
-Implement the complete vertical P1.3 result exactly as frozen in
-[acceptance/productization/P1.3/ACCEPTANCE_CARD.md](acceptance/productization/P1.3/ACCEPTANCE_CARD.md).
+Review the complete P1.3 result package and record one explicit user decision:
+`通过`, `条件通过`, `不通过` or `Blocked`.
 
-Start with the checksummed `003_publish_rollback_recovery` migration and
-accepted-P1.2 copied-database upgrade gates. Then implement the draft/release,
-publication/device acknowledgement, forward rollback, encrypted online-source
-backup/restore, three-day runtime-detail retention, management preview,
-evidence, rollback proof and independent review. Do not split the batch into
-separately accepted backend/frontend/recovery tasks.
+No additional P1.3 implementation scope is authorized while this decision is
+pending. Do not activate P2.1 from automated success, reviewer success or user
+silence.
 
 ### User-Visible Result
 
@@ -51,11 +52,13 @@ separately accepted backend/frontend/recovery tasks.
 ### Result Package
 
 - [acceptance/productization/P1.3/ACCEPTANCE_CARD.md](acceptance/productization/P1.3/ACCEPTANCE_CARD.md)
+- [acceptance/productization/P1.3/AUTOMATED_SUMMARY.md](acceptance/productization/P1.3/AUTOMATED_SUMMARY.md)
+- [acceptance/productization/P1.3/IMPLEMENTED_API.md](acceptance/productization/P1.3/IMPLEMENTED_API.md)
+- [acceptance/productization/P1.3/IMPLEMENTED_DATA.md](acceptance/productization/P1.3/IMPLEMENTED_DATA.md)
+- [acceptance/productization/P1.3/KNOWN_LIMITATIONS.md](acceptance/productization/P1.3/KNOWN_LIMITATIONS.md)
+- [acceptance/productization/P1.3/RUNBOOK.md](acceptance/productization/P1.3/RUNBOOK.md)
+- [acceptance/productization/P1.3/manifest.json](acceptance/productization/P1.3/manifest.json)
 - [acceptance/productization/P1.3/USER_DECISION.md](acceptance/productization/P1.3/USER_DECISION.md)
-
-The automated summary, implemented API/data record, limitations and
-machine-readable manifest are created only when factual candidate evidence
-exists.
 
 ### Required Gate Families
 

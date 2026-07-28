@@ -4,13 +4,23 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: standard-product changes
-- Last reviewed: 2026-07-27
+- Last reviewed: 2026-07-28
 - Historical POC changelog: [archive/poc-v1/root-snapshots/CHANGELOG_FULL_HISTORY.md](archive/poc-v1/root-snapshots/CHANGELOG_FULL_HISTORY.md)
 
 ## Unreleased
 
 ### Added
 
+- P1.3 final candidate for configuration drafts, Mock validation/preview,
+  different-user approval, immutable normal/rollback releases, per-screen and
+  group publication, credential-bound acknowledgement, diffs and audit
+  evidence.
+- Checksum-backed `003_publish_rollback_recovery`, encrypted verified local
+  backup, staged online-source restore with retained pre-restore store and
+  three-day runtime-detail retention.
+- P1.3 release center, local initialization/upgrade launchers, accepted-P1.2
+  rollback package and candidate-bound browser, recovery, Docker and acceptance
+  evidence.
 - Accepted P1.2 inventory with one default Site, screen group and three isolated ScreenInstances, each with non-secret FVS inventory, one active DigitalHumanInstance, device-trust summary and a same-screen RuntimeBinding.
 - Checksum-backed `002_three_screen_inventory` copied-database upgrade, opaque snapshot pagination, scope-aware inventory APIs, strong ETags, idempotent creates and the `/manage` multi-screen inventory workflow.
 - P1.2 local initialization, accepted-P1.1 copied-upgrade, API launcher and isolated browser-gate scripts.
@@ -35,7 +45,10 @@
 
 ### Changed
 
-- G0, P1.0, P1.1 and P1.2 are explicitly accepted. P1.3 Publish, Rollback And Recovery remains queued pending an explicit start instruction.
+- G0, P1.0, P1.1 and P1.2 are explicitly accepted. P1.3 candidate
+  `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54` passes its automated gates and is
+  final independent review with zero findings; it is ready for explicit user
+  acceptance. P1.2 remains the accepted rollback baseline until that decision.
 - P1.2 local implementation is accepted at candidate `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`; its automated and independent-review evidence passes with zero final findings.
 - P1.1 local implementation is accepted at candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets were remediated, and the third independent review passed with zero findings.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.
@@ -60,6 +73,16 @@
 
 ### Security
 
+- P1.3 binds verified bundle identity and hashes to immutable backup records,
+  validates source snapshots before recording backup success and serializes
+  restore cutover with supported control-plane mutations so no acknowledged
+  write silently disappears.
+- P1.3 persists sanitized HTTP 200 `INVALID` validation evidence without a
+  fabricated fingerprint and applies business/technical permissions only to
+  changed configuration leaves.
+- Publication, rollback and restore consume exact typed different-user
+  approvals; device apply derives screen scope from the active credential and
+  requires the exact desired target, generation and content hash.
 - P1.2 inventory requests derive tenant/deployment/Site/screen lineage from the authenticated session and path; screen-scoped readers cannot enumerate sibling Site/group membership, and auditors cannot use any inventory mutation.
 - P1.2 rejects Secret-like FVS references, cross-Site members, stale ETags, changed-command idempotency replay, duplicate slugs and second active digital-human instances without partial effects.
 - P1.2 preserves the accepted P1.1 migration checksum, fixture screen ID, device/credential history and original immutable audit chain while appending only a sanitized migration event.
@@ -75,8 +98,14 @@
 
 ### Not Implemented
 
+- P1.3 remains a local development-preview candidate pending explicit
+  acceptance. It does not implement real FineReport/FVS/plugin connectivity,
+  production activation, offline/full-loss recovery, external anti-rollback
+  authority, PostgreSQL recovery or customer RPO/RTO certification.
 - P1.2 does not connect to FineReport/FVS, publish configuration, configure a renderer/avatar/provider, implement backup/restore or claim production readiness; FVS remains `UNVERIFIED` and runtime inventory remains `NOT_CONFIGURED_P1_3`.
 - P1.1 is an accepted development-preview result, not a production-readiness claim. Production custodian/person binding, external monotonic anchors, production activation, complete user onboarding and recovery are not implemented.
 - G0 changes documentation and development governance only.
 - P1.0 is target contract design only. Its RBAC, device trust, multi-screen storage, API, migration, backup and restore behaviors are not implemented.
-- P1.3 publication/recovery, the remaining target control-plane APIs beyond the P1.2 subset, database querying, FineReport plugin calling and real 2D / 3D rendering remain unimplemented product targets.
+- Remaining target control-plane behavior beyond the P1.3 candidate, database
+  querying, FineReport plugin calling and real 2D / 3D rendering remain
+  unimplemented product targets.

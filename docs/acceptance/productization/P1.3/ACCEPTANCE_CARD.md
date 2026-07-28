@@ -3,19 +3,22 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `FROZEN_NOT_STARTED`
+- State: `READY_FOR_USER_ACCEPTANCE`
 - Result: publish, forward rollback and verified development-preview recovery
 - Base accepted runtime: commit `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`
 - Base acceptance record: commit `7e7bf28a8393878185d55ea532b4212eee818586`
-- Candidate: Pending
+- Candidate commit: `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`
+- Candidate tree: `04bcbb940fbedb5fbb8957e538f46a4422e15db2`
+- Candidate fingerprint: `8cf8cdb380f849b947a76abeef2ff895fb79f7696effbb1abbdf9bdc0bb04e55` over 29 files
 - Target logical schema / migration: `p1_control_plane_001` / `003_publish_rollback_recovery`
-- Gate summary: Pending
-- Independent review: Pending
+- Gate summary: automated candidate gates `PASS`
+- Independent review: `PASS`; zero blocking and zero non-blocking findings
 - User decision: Pending
 
-This card freezes the complete P1.3 result and non-scope before implementation.
-Nothing in this card claims that draft, release, publication, rollback, backup,
-restore or retention behavior is already implemented.
+This card froze the complete P1.3 result and non-scope before implementation.
+The candidate above implements the bounded local development-preview result and
+has passed its automated gates and final independent review. It is not accepted
+until the user records an explicit decision.
 
 ## Frozen Observable Outcome
 

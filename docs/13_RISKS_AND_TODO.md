@@ -4,7 +4,7 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: active standard-product risks and current external blockers
-- Last reviewed: 2026-07-27
+- Last reviewed: 2026-07-28
 - Historical POC risks: [archive/poc-v1/root-snapshots/RISKS_AND_TODO_FULL_HISTORY.md](archive/poc-v1/root-snapshots/RISKS_AND_TODO_FULL_HISTORY.md)
 
 Customer-specific and POC现场 issues are not tracked here. They remain in customer documents or the archive.
@@ -21,7 +21,7 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 | R-047 | “FineReport / FVS 11.0+ target” may be interpreted as automatic compatibility | Publish only exact certified FineReport + FVS + plugin + browser + product combinations | Open |
 | R-048 | “No product hard cap” may be interpreted as unlimited throughput or SLA | Keep three-screen correctness as the first baseline and publish only measured capacity guidance | Mitigated |
 | R-049 | Real 2D / 3D assets, suppliers, formats and licenses are unavailable | P3 accepts only the Renderer / AvatarPackage contract and test renderer; real adapters require separate certification | Mitigated |
-| R-050 | A user who does not review code could receive superficially working but insecure or unrecoverable results | Enforce result cards, automated gates, independent Codex review, evidence packages and rollback proof | Open |
+| R-050 | A user who does not review code could receive superficially working but insecure or unrecoverable results | Enforce result cards, automated gates, independent Codex review, evidence packages and rollback proof | Mitigated |
 | R-051 | Historical POC instructions could redirect Codex away from the product phase | G0 created one current phase / task, archived long histories and added lifecycle lint | Mitigated |
 
 ## Current Product Blockers
@@ -36,9 +36,13 @@ result/non-scope is frozen before implementation in the P1.3 acceptance card.
 
 - P1.2 proves the local default Site, group and independently addressable screen inventory without claiming publication or real FVS connectivity.
 - P1.3 must preserve accepted ownership, sibling non-disclosure, Secret rejection, immutable audit and device-trust behavior.
-- P1.3 implementation and all required migration, publication, acknowledgement,
-  rollback, backup/restore, retention, browser, Secret-scan and independent-review
-  evidence are pending.
+- Final candidate `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54` implements the
+  frozen local development-preview slice. Migration, publication,
+  acknowledgement, rollback, backup/restore, retention, browser, Secret-scan,
+  Docker and accepted-P1.2 rollback gates pass.
+- The final isolated independent review returned PASS with zero blocking and
+  zero non-blocking findings. The only remaining P1.3 acceptance condition is
+  the user's explicit result decision.
 - Real FVS/plugin behavior, production activation, external anti-rollback
   anchors, full-loss recovery, PostgreSQL and customer RPO/RTO certification
   remain blocked or outside the frozen P1.3 result.
