@@ -135,11 +135,162 @@ export interface ScreenInventory {
   etag: string;
 }
 
-interface InventoryPage<T> {
+export interface InventoryPage<T> {
   api_version: 'v1';
   items: T[];
   next_cursor?: string | null;
   snapshot_expires_at?: number | null;
+}
+
+export type CapabilityKey =
+  | 'dora'
+  | 'knowledge'
+  | 'direct_llm'
+  | 'asr'
+  | 'tts'
+  | 'querying'
+  | 'fvs_control';
+
+export type CapabilityState =
+  | 'disabled'
+  | 'mock'
+  | 'unverified'
+  | 'available'
+  | 'degraded';
+
+export interface CapabilitySelection {
+  enabled: boolean;
+  primary_provider_id: string | null;
+  fallback_provider_ids: string[];
+  timeout_ms: number;
+}
+
+export type CapabilityProfileSpec = Record<CapabilityKey, CapabilitySelection>;
+
+export interface CapabilityProviderDescriptor {
+  provider_id: string;
+  capability: CapabilityKey;
+  state: Exclude<CapabilityState, 'disabled'>;
+  adapter_kind: string;
+  certification_state: string;
+  permission_scope: string;
+  supports_cancellation: boolean;
+  streaming_mode: string;
+  session_mode: string;
+  external_calls_enabled: boolean;
+  boundary: string;
+}
+
+export interface CapabilityProviderCatalog {
+  api_version: 'v1';
+  registry_version: 'p2_provider_registry_001';
+  registry_hash: string;
+  state_definitions: Record<CapabilityState, string>;
+  fallback_policy: {
+    allowed_reasons: string[];
+    terminal_reasons: string[];
+    require_permission_equivalence: boolean;
+  };
+  items: CapabilityProviderDescriptor[];
+}
+
+export interface CapabilityProfilePreset {
+  preset_id: 'text_only' | 'mock_voice' | 'mock_presenter';
+  name: string;
+  description: string;
+  spec: CapabilityProfileSpec;
+  state_summary: Record<CapabilityKey, CapabilityState>;
+  dependency_findings: Array<Record<string, unknown>>;
+  activation_eligible: boolean;
+  immutable: true;
+}
+
+export interface CapabilityProfilePresetCatalog {
+  api_version: 'v1';
+  schema_version: 'p2_capability_profile_v1';
+  registry_version: 'p2_provider_registry_001';
+  registry_hash: string;
+  items: CapabilityProfilePreset[];
+}
+
+export interface CapabilityProfileVersion {
+  profile_version_id: string;
+  profile_id: string;
+  version_number: number;
+  schema_version: 'p2_capability_profile_v1';
+  spec: CapabilityProfileSpec;
+  content_hash: string;
+  provider_registry_version: 'p2_provider_registry_001';
+  provider_registry_hash: string;
+  state_summary: Record<CapabilityKey, CapabilityState>;
+  dependency_findings: Array<Record<string, unknown>>;
+  activation_eligible: boolean;
+  created_by_user_id: string;
+  created_at: number;
+  immutable: true;
+}
+
+export interface CapabilityProfile {
+  profile_id: string;
+  site_id: string;
+  name: string;
+  description: string;
+  source_preset_id?: string | null;
+  head_version_id: string;
+  head_version_number: number;
+  head_version: CapabilityProfileVersion;
+  resource_revision: number;
+  created_at: number;
+  updated_at: number;
+  etag: string;
+}
+
+export interface CapabilityProfileAssignment {
+  profile_id: string;
+  profile_version_id: string;
+  version_number: number;
+  profile_name?: string;
+  content_hash: string;
+  provider_registry_version: string;
+  provider_registry_hash: string;
+  state_summary: Record<CapabilityKey, CapabilityState>;
+  activation_eligible: boolean;
+}
+
+export interface CapabilityResolutionSnapshot {
+  schema_version: 'p2_capability_profile_v1';
+  screen_id: string;
+  digital_human_instance_id: string;
+  profile_id: string;
+  profile_version_id: string;
+  version_number: number;
+  content_hash: string;
+  provider_registry_version: 'p2_provider_registry_001';
+  provider_registry_hash: string;
+  spec: CapabilityProfileSpec;
+  state_summary: Record<CapabilityKey, CapabilityState>;
+  dependency_findings: Array<Record<string, unknown>>;
+  activation_eligible: boolean;
+  capability_envelope_hash: string;
+  immutable: true;
+}
+
+export interface CapabilityReleaseResolution {
+  state: string;
+  release_id: string | null;
+  release_target_id: string | null;
+  binding_generation: number;
+  profile_snapshot?: CapabilityResolutionSnapshot | null;
+}
+
+export interface ScreenEffectiveCapabilities {
+  screen_id: string;
+  digital_human_instance_id?: string | null;
+  binding_generation: number;
+  state: string;
+  desired?: CapabilityReleaseResolution | null;
+  applied?: CapabilityReleaseResolution | null;
+  effective?: CapabilityResolutionSnapshot | null;
 }
 
 export interface ConfigDraft {
@@ -171,6 +322,7 @@ export interface ConfigDraft {
     last_editor_user_id: string;
     reason: string;
   } | null;
+  capability_profile?: CapabilityProfileAssignment | null;
   etag: string;
 }
 
@@ -180,6 +332,7 @@ export interface ConfigReleaseTarget {
   screen_id: string;
   effective_config: Record<string, string>;
   content_hash: string;
+  capability_snapshot?: CapabilityResolutionSnapshot | null;
   rollback_source_release_id?: string | null;
   rollback_source_target_id?: string | null;
   immutable: true;
@@ -337,6 +490,85 @@ export function listScreenGroups(): Promise<InventoryPage<ScreenGroupInventory>>
 
 export function listScreenInstances(): Promise<InventoryPage<ScreenInventory>> {
   return controlPlaneRequest('/api/v1/control-plane/screen-instances');
+}
+
+export function listCapabilityProviders(): Promise<CapabilityProviderCatalog> {
+  return controlPlaneRequest('/api/v1/control-plane/capability-providers');
+}
+
+export function listCapabilityProfilePresets(): Promise<CapabilityProfilePresetCatalog> {
+  return controlPlaneRequest('/api/v1/control-plane/capability-profile-presets');
+}
+
+export function listCapabilityProfiles(): Promise<InventoryPage<CapabilityProfile>> {
+  return controlPlaneRequest('/api/v1/control-plane/capability-profiles');
+}
+
+export function getCapabilityProfile(profileId: string): Promise<CapabilityProfile> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/capability-profiles/${encodeURIComponent(profileId)}`,
+  );
+}
+
+export function createCapabilityProfile(payload: {
+  site_id: string;
+  name: string;
+  description: string;
+  source_preset_id: CapabilityProfilePreset['preset_id'];
+}): Promise<CapabilityProfile> {
+  return controlPlaneRequest(
+    '/api/v1/control-plane/capability-profiles',
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('capability-profile-create') },
+      body: JSON.stringify(payload),
+    },
+    { csrf: true },
+  );
+}
+
+export function createCapabilityProfileVersion(
+  profile: CapabilityProfile,
+  spec: CapabilityProfileSpec,
+): Promise<CapabilityProfile> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/capability-profiles/${encodeURIComponent(profile.profile_id)}/versions`,
+    {
+      method: 'POST',
+      headers: {
+        'If-Match': profile.etag,
+        'Idempotency-Key': randomIdempotencyKey('capability-profile-version-create'),
+      },
+      body: JSON.stringify({ spec }),
+    },
+    { csrf: true },
+  );
+}
+
+export function assignCapabilityProfileToDraft(
+  draft: ConfigDraft,
+  profileVersionId: string,
+): Promise<ConfigDraft> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/config-drafts/${encodeURIComponent(draft.draft_id)}/capability-profile`,
+    {
+      method: 'PUT',
+      headers: {
+        'If-Match': draft.etag,
+        'Idempotency-Key': randomIdempotencyKey('draft-capability-profile-assign'),
+      },
+      body: JSON.stringify({ profile_version_id: profileVersionId }),
+    },
+    { csrf: true },
+  );
+}
+
+export function getScreenEffectiveCapabilities(
+  screenId: string,
+): Promise<ScreenEffectiveCapabilities> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/effective-capabilities`,
+  );
 }
 
 export function getRuntimeBinding(screenId: string): Promise<RuntimeBindingInventory> {

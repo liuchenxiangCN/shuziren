@@ -95,6 +95,38 @@ class ConfigDraftSpecRequest(StrictModel):
     fvs_binding_ref: str = Field(min_length=1, max_length=512)
 
 
+class CapabilitySelectionRequest(StrictModel):
+    enabled: bool
+    primary_provider_id: str | None = Field(default=None, min_length=1, max_length=128)
+    fallback_provider_ids: list[str] = Field(max_length=32)
+    timeout_ms: int = Field(ge=100, le=120000)
+
+
+class CapabilityProfileSpecRequest(StrictModel):
+    dora: CapabilitySelectionRequest
+    knowledge: CapabilitySelectionRequest
+    direct_llm: CapabilitySelectionRequest
+    asr: CapabilitySelectionRequest
+    tts: CapabilitySelectionRequest
+    querying: CapabilitySelectionRequest
+    fvs_control: CapabilitySelectionRequest
+
+
+class CapabilityProfileCreateRequest(StrictModel):
+    site_id: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=500)
+    source_preset_id: str = Field(min_length=1, max_length=64)
+
+
+class CapabilityProfileVersionCreateRequest(StrictModel):
+    spec: CapabilityProfileSpecRequest
+
+
+class DraftCapabilityProfileAssignmentRequest(StrictModel):
+    profile_version_id: str = Field(min_length=1, max_length=200)
+
+
 class ConfigDraftDecisionRequest(StrictModel):
     reason: str = Field(min_length=3, max_length=500)
 
@@ -711,6 +743,106 @@ def list_audit_events(
     return {"items": service_from_request(request).list_audit_events(context.principal, limit)}
 
 
+@router.get(f"{CONTROL_PREFIX}/capability-providers")
+def list_capability_providers(request: Request) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_1.list_providers(context.principal)
+
+
+@router.get(f"{CONTROL_PREFIX}/capability-profile-presets")
+def list_capability_profile_presets(request: Request) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_1.list_presets(context.principal)
+
+
+@router.get(f"{CONTROL_PREFIX}/capability-profiles")
+def list_capability_profiles(request: Request) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_1.list_profiles(context.principal)
+
+
+@router.post(f"{CONTROL_PREFIX}/capability-profiles", status_code=201)
+def create_capability_profile(
+    payload: CapabilityProfileCreateRequest,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p2_1.create_profile(
+        context.principal,
+        site_id=payload.site_id,
+        name=payload.name,
+        description=payload.description,
+        source_preset_id=payload.source_preset_id,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/capability-profiles/{{profile_id}}")
+def get_capability_profile(
+    profile_id: str,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).p2_1.get_profile(
+        context.principal,
+        profile_id,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/capability-profiles/{{profile_id}}/versions",
+    status_code=201,
+)
+def create_capability_profile_version(
+    profile_id: str,
+    payload: CapabilityProfileVersionCreateRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p2_1.create_profile_version(
+        context.principal,
+        profile_id,
+        spec=payload.spec.model_dump(),
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.put(
+    f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}/capability-profile",
+)
+def assign_config_draft_capability_profile(
+    draft_id: str,
+    payload: DraftCapabilityProfileAssignmentRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p2_1.assign_draft_profile(
+        context.principal,
+        draft_id,
+        profile_version_id=payload.profile_version_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
 @router.post(f"{CONTROL_PREFIX}/config-drafts", status_code=201)
 def create_config_draft(
     payload: ConfigDraftCreateRequest,
@@ -728,6 +860,20 @@ def create_config_draft(
     )
     response.headers["ETag"] = result["etag"]
     return result
+
+
+@router.get(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/effective-capabilities",
+)
+def get_effective_screen_capabilities(
+    screen_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_1.effective_screen_capabilities(
+        context.principal,
+        screen_id,
+    )
 
 
 @router.get(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}")
@@ -1207,6 +1353,21 @@ def get_device_runtime_binding(request: Request) -> dict[str, Any]:
 def get_device_current_release(request: Request) -> dict[str, Any]:
     context = device_from_request(request)
     return service_from_request(request).p1_3.get_device_current_release(context)
+
+
+@router.get(f"{DEVICE_PREFIX}/capabilities/current")
+def get_device_current_capabilities(
+    request: Request,
+    runtime_session_id: Annotated[
+        str | None,
+        Header(alias="X-Runtime-Session-ID", min_length=1, max_length=128),
+    ] = None,
+) -> dict[str, Any]:
+    context = device_from_request(request)
+    return service_from_request(request).p2_1.current_device_capabilities(
+        context,
+        runtime_session_id,
+    )
 
 
 @router.post(f"{DEVICE_PREFIX}/config-releases/{{release_target_id}}:ack")

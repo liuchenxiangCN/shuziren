@@ -16,6 +16,7 @@ from cryptography.exceptions import InvalidTag
 
 from app.control_plane.errors import ControlPlaneError
 from app.control_plane.p1_3 import P13ControlPlane
+from app.control_plane.p2_1 import P21ControlPlane
 from app.control_plane.security import (
     Ciphertext,
     PasswordPolicy,
@@ -151,6 +152,18 @@ IDEMPOTENCY_OPERATION_ROUTES = {
     "createConfigDraft": (
         "createConfigDraft",
         "/api/v1/control-plane/config-drafts",
+    ),
+    "createCapabilityProfile": (
+        "createCapabilityProfile",
+        "/api/v1/control-plane/capability-profiles",
+    ),
+    "createCapabilityProfileVersion": (
+        "createCapabilityProfileVersion",
+        "/api/v1/control-plane/capability-profiles/{profile_id}/versions",
+    ),
+    "assignDraftCapabilityProfile": (
+        "assignDraftCapabilityProfile",
+        "/api/v1/control-plane/config-drafts/{draft_id}/capability-profile",
     ),
     "reviseConfigDraft": (
         "reviseConfigDraft",
@@ -326,6 +339,7 @@ class ControlPlaneService:
             if backup_root is not None
             else Path(database_path).resolve().parent / "control-plane-backups",
         )
+        self.p2_1 = P21ControlPlane(self)
 
     def status(self) -> dict[str, Any]:
         with self.store.connect() as connection:

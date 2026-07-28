@@ -229,6 +229,12 @@ class P13ControlPlane:
                     now,
                 ),
             )
+            self.owner.p2_1.copy_draft_assignment_forward(
+                connection,
+                draft_id=draft_id,
+                source_revision=draft["current_revision"],
+                target_revision=next_draft_revision,
+            )
             connection.execute(
                 """
                 UPDATE config_drafts SET
@@ -533,6 +539,12 @@ class P13ControlPlane:
                     now,
                 ),
             )
+            self.owner.p2_1.copy_draft_assignment_forward(
+                connection,
+                draft_id=draft_id,
+                source_revision=draft["current_revision"],
+                target_revision=next_revision,
+            )
             metadata = self.owner._metadata(connection)
             connection.execute(
                 """
@@ -687,6 +699,7 @@ class P13ControlPlane:
                 ),
             )
             for target in resolution["targets"]:
+                release_target_id = opaque_id("rlt")
                 connection.execute(
                     """
                     INSERT INTO release_targets(
@@ -697,7 +710,7 @@ class P13ControlPlane:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        opaque_id("rlt"),
+                        release_target_id,
                         principal.tenant_id,
                         principal.deployment_id,
                         release_id,
@@ -706,6 +719,13 @@ class P13ControlPlane:
                         target["content_hash"],
                         now,
                     ),
+                )
+                self.owner.p2_1.insert_release_snapshot(
+                    connection,
+                    release_target_id=release_target_id,
+                    target=target,
+                    capability_resolution=resolution["capability_resolution"],
+                    now=now,
                 )
             connection.execute(
                 """
@@ -1032,7 +1052,10 @@ class P13ControlPlane:
                 "screen_id": context.screen_id,
                 "state": "DESIRED_AVAILABLE",
                 "binding_generation": binding["binding_generation"],
-                "release_target": self._release_target_response(target),
+                "release_target": self._release_target_response(
+                    connection,
+                    target,
+                ),
             }
 
     def acknowledge_device_release(
@@ -1246,6 +1269,10 @@ class P13ControlPlane:
             "release_targets",
             "publications",
             "publication_targets",
+            "capability_profiles",
+            "capability_profile_versions",
+            "config_draft_capability_assignments",
+            "release_target_capability_snapshots",
             "security_audit_events",
         )
         now = self.owner.clock()
@@ -1258,9 +1285,16 @@ class P13ControlPlane:
                     "recorded": False,
                     "reason": "CONTROL_PLANE_NOT_INITIALIZED",
                 }
+            existing_tables = {
+                row["name"]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
             counts = {
                 table: connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]
                 for table in protected_tables
+                if table in existing_tables
             }
             protected_hash = hashlib.sha256(canonical_json(counts).encode("utf-8")).hexdigest()
             retention_run_id = opaque_id("rtn")
@@ -1783,6 +1817,9 @@ class P13ControlPlane:
                             "message": "FVS remains unverified; preview uses Mock evidence only.",
                         }
                     ]
+                    capability_resolution = resolution["capability_resolution"]
+                    if capability_resolution is not None:
+                        findings.extend(capability_resolution["dependency_findings"])
                     findings_json = canonical_json(findings)
                     validation_id = opaque_id("val")
                     connection.execute(
@@ -1802,7 +1839,11 @@ class P13ControlPlane:
                             fingerprint_hash,
                             findings_json,
                             hashlib.sha256(findings_json.encode("utf-8")).hexdigest(),
-                            "p1_3_preview_validator_v1",
+                            (
+                                "p2_1_capability_profile_validator_v1"
+                                if capability_resolution is not None
+                                else "p1_3_preview_validator_v1"
+                            ),
                             principal.user_id,
                             now,
                         ),
@@ -1850,6 +1891,9 @@ class P13ControlPlane:
                     "provider": "MOCK_FVS",
                     "outcome": "MOCK_PASSED",
                     "real_provider_verified": False,
+                    "capabilities": self.owner.p2_1.preview_capability_evidence(
+                        resolution["capability_resolution"]
+                    ),
                     "targets": [
                         {
                             "screen_id": target["screen_id"],
@@ -2118,6 +2162,8 @@ class P13ControlPlane:
             targets.append(
                 {
                     "screen_id": screen["screen_id"],
+                    "site_id": screen["site_id"],
+                    "digital_human_instance_id": digital_human["digital_human_instance_id"],
                     "effective_config": effective,
                     "canonical_effective_config_json": effective_json,
                     "content_hash": content_hash,
@@ -2133,6 +2179,29 @@ class P13ControlPlane:
                     "digital_human_revision": digital_human["revision"],
                 }
             )
+        capability_resolution = self.owner.p2_1.resolve_draft_capabilities(
+            connection,
+            draft_id=draft["draft_id"],
+            draft_revision=draft["current_revision"],
+            targets=targets,
+        )
+        if capability_resolution is not None:
+            if not capability_resolution["activation_eligible"]:
+                raise DraftValidationFailure(
+                    "CAPABILITY_PROFILE_NOT_ACTIVATION_ELIGIBLE",
+                    "Assigned capability profile contains an unverified Provider",
+                )
+            assignment = capability_resolution["assignment"]
+            for item in inputs:
+                item["capability_profile"] = {
+                    "profile_id": assignment["profile_id"],
+                    "profile_version_id": assignment["profile_version_id"],
+                    "version_number": assignment["version_number"],
+                    "profile_content_hash": assignment["profile_content_hash"],
+                    "provider_registry_version": assignment["provider_registry_version"],
+                    "provider_registry_hash": assignment["provider_registry_hash"],
+                    "capability_envelope_hash": capability_resolution["envelope_hashes"][item["screen_id"]],
+                }
         target_set = sorted(target["screen_id"] for target in targets)
         target_set_hash = hashlib.sha256(canonical_json(target_set).encode("utf-8")).hexdigest()
         effective_hashes = {target["screen_id"]: target["content_hash"] for target in targets}
@@ -2145,6 +2214,9 @@ class P13ControlPlane:
             "group_revision": group_revision,
             "inputs": inputs,
             "effective_hashes": effective_hashes,
+            "capability_envelope_hashes": (
+                capability_resolution["envelope_hashes"] if capability_resolution is not None else {}
+            ),
             "control_plane_epoch": metadata["revision"],
         }
         return {
@@ -2154,6 +2226,7 @@ class P13ControlPlane:
             "inputs": inputs,
             "effective_hashes": effective_hashes,
             "targets": targets,
+            "capability_resolution": capability_resolution,
             "fingerprint_hash": hashlib.sha256(
                 canonical_json(fingerprint_payload).encode("utf-8")
             ).hexdigest(),
@@ -2760,6 +2833,12 @@ class P13ControlPlane:
                     source["release_target_id"],
                     now,
                 ),
+            )
+            self.owner.p2_1.copy_release_snapshot_forward(
+                connection,
+                source_release_target_id=source["release_target_id"],
+                target_release_target_id=target_id,
+                now=now,
             )
             new_targets.append(
                 {
@@ -3542,6 +3621,11 @@ class P13ControlPlane:
             },
             "schema_version": row["schema_version"],
             "spec": json.loads(row["working_spec_json"]),
+            "capability_profile": self.owner.p2_1.draft_assignment_response(
+                connection,
+                row["draft_id"],
+                row["current_revision"],
+            ),
             "content_hash": row["content_hash"],
             "state": row["state"],
             "draft_revision": row["current_revision"],
@@ -3649,7 +3733,7 @@ class P13ControlPlane:
                 if release["creation_kind"] == "ROLLBACK"
                 else None
             ),
-            "targets": [self._release_target_response(row) for row in rows],
+            "targets": [self._release_target_response(connection, row) for row in rows],
             "reason": release["reason"],
             "created_by_user_id": release["created_by_user_id"],
             "created_at": release["created_at"],
@@ -3657,14 +3741,21 @@ class P13ControlPlane:
             "immutable": True,
         }
 
-    @staticmethod
-    def _release_target_response(row: sqlite3.Row) -> dict[str, Any]:
+    def _release_target_response(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> dict[str, Any]:
         return {
             "release_target_id": row["release_target_id"],
             "release_id": row["release_id"],
             "screen_id": row["screen_id"],
             "effective_config": json.loads(row["canonical_effective_config_json"]),
             "content_hash": row["content_hash"],
+            "capability_snapshot": self.owner.p2_1.release_snapshot_response(
+                connection,
+                row["release_target_id"],
+            ),
             "rollback_source_release_id": row["rollback_source_release_id"],
             "rollback_source_target_id": row["rollback_source_target_id"],
             "created_at": row["created_at"],
@@ -4100,3 +4191,4 @@ class P13ControlPlane:
             actual = hashlib.sha256(row["canonical_effective_config_json"].encode("utf-8")).hexdigest()
             if actual != row["content_hash"]:
                 raise BackupIntegrityError("Staged restore release hash changed")
+        BackupManager._validate_p21_capability_data(connection)

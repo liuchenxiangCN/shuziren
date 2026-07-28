@@ -17,6 +17,15 @@ from typing import Any
 
 from cryptography.exceptions import InvalidTag
 
+from app.control_plane.errors import ControlPlaneError
+from app.control_plane.p2_1 import (
+    CAPABILITY_KEYS,
+    PROFILE_SCHEMA_VERSION,
+    PROFILE_STATES,
+    PROVIDER_REGISTRY_HASH,
+    PROVIDER_REGISTRY_VERSION,
+    P21ControlPlane,
+)
 from app.control_plane.security import Ciphertext, PurposeKeyring, canonical_json
 from app.control_plane.store import LOGICAL_SCHEMA_VERSION, MIGRATIONS, ControlPlaneStore
 
@@ -428,6 +437,7 @@ class BackupManager:
                     ).hexdigest()
                     if actual != row["content_hash"]:
                         raise BackupIntegrityError("Backup release hash verification failed")
+                BackupManager._validate_p21_capability_data(connection)
                 BackupManager._validate_audit_chain(connection)
                 tables = [
                     row["name"]
@@ -462,6 +472,238 @@ class BackupManager:
                 raise BackupIntegrityError("Backup database verification failed") from exc
             finally:
                 connection.close()
+
+    @staticmethod
+    def _validate_p21_capability_data(connection: sqlite3.Connection) -> None:
+        required_tables = {
+            "capability_profiles",
+            "capability_profile_versions",
+            "config_draft_capability_assignments",
+            "release_target_capability_snapshots",
+        }
+        present = {
+            row["name"]
+            for row in connection.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name IN (
+                    'capability_profiles',
+                    'capability_profile_versions',
+                    'config_draft_capability_assignments',
+                    'release_target_capability_snapshots'
+                )
+                """
+            ).fetchall()
+        }
+        if not present:
+            return
+        if present != required_tables:
+            raise BackupIntegrityError("Capability profile table set is incomplete")
+
+        validator = object.__new__(P21ControlPlane)
+        versions = connection.execute(
+            "SELECT * FROM capability_profile_versions ORDER BY profile_id, version_number"
+        ).fetchall()
+        version_by_id = {row["profile_version_id"]: row for row in versions}
+        for row in versions:
+            try:
+                spec = json.loads(row["canonical_spec_json"])
+                canonical_spec, derived = validator._validate_and_derive_spec(spec)
+            except (ControlPlaneError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise BackupIntegrityError("Capability profile version content is invalid") from exc
+            if (
+                row["schema_version"] != PROFILE_SCHEMA_VERSION
+                or canonical_spec != row["canonical_spec_json"]
+                or hashlib.sha256(canonical_spec.encode("utf-8")).hexdigest() != row["content_hash"]
+                or row["provider_registry_version"] != PROVIDER_REGISTRY_VERSION
+                or row["provider_registry_hash"] != PROVIDER_REGISTRY_HASH
+                or canonical_json(derived["state_summary"]) != row["state_summary_json"]
+                or canonical_json(derived["dependency_findings"]) != row["dependency_findings_json"]
+                or int(derived["activation_eligible"]) != row["activation_eligible"]
+            ):
+                raise BackupIntegrityError("Capability profile version hash or registry binding changed")
+            state_summary = derived["state_summary"]
+            if set(state_summary) != set(CAPABILITY_KEYS) or any(
+                state not in PROFILE_STATES for state in state_summary.values()
+            ):
+                raise BackupIntegrityError("Capability profile state summary is invalid")
+
+        profiles = connection.execute("SELECT * FROM capability_profiles ORDER BY profile_id").fetchall()
+        for profile in profiles:
+            head = version_by_id.get(profile["head_version_id"])
+            if (
+                head is None
+                or head["profile_id"] != profile["profile_id"]
+                or head["tenant_id"] != profile["tenant_id"]
+                or head["deployment_id"] != profile["deployment_id"]
+                or head["site_id"] != profile["site_id"]
+                or head["version_number"] != profile["head_version_number"]
+            ):
+                raise BackupIntegrityError("Capability profile head reference is invalid")
+
+        assignments = connection.execute(
+            """
+            SELECT a.*, d.target_type, d.screen_id AS draft_screen_id,
+                   d.screen_group_id AS draft_group_id,
+                   s.site_id AS screen_site_id, g.site_id AS group_site_id
+            FROM config_draft_capability_assignments a
+            JOIN config_drafts d ON d.draft_id = a.draft_id
+            LEFT JOIN screen_instances s
+              ON d.target_type = 'SCREEN'
+             AND s.screen_id = d.screen_id
+             AND s.tenant_id = d.tenant_id
+             AND s.deployment_id = d.deployment_id
+            LEFT JOIN screen_groups g
+              ON d.target_type = 'SCREEN_GROUP'
+             AND g.screen_group_id = d.screen_group_id
+             AND g.tenant_id = d.tenant_id
+             AND g.deployment_id = d.deployment_id
+            ORDER BY a.draft_id, a.draft_revision
+            """
+        ).fetchall()
+        for assignment in assignments:
+            version = version_by_id.get(assignment["profile_version_id"])
+            target_site_id = (
+                assignment["screen_site_id"]
+                if assignment["target_type"] == "SCREEN"
+                else assignment["group_site_id"]
+            )
+            if (
+                version is None
+                or target_site_id != assignment["site_id"]
+                or assignment["tenant_id"] != version["tenant_id"]
+                or assignment["deployment_id"] != version["deployment_id"]
+                or assignment["site_id"] != version["site_id"]
+                or assignment["profile_id"] != version["profile_id"]
+                or assignment["version_number"] != version["version_number"]
+                or assignment["profile_content_hash"] != version["content_hash"]
+                or assignment["provider_registry_version"] != version["provider_registry_version"]
+                or assignment["provider_registry_hash"] != version["provider_registry_hash"]
+                or assignment["state_summary_json"] != version["state_summary_json"]
+                or assignment["dependency_findings_json"] != version["dependency_findings_json"]
+                or assignment["activation_eligible"] != version["activation_eligible"]
+            ):
+                raise BackupIntegrityError("Draft capability assignment reference changed")
+
+        snapshots = connection.execute(
+            """
+            SELECT cs.*, rt.release_id, rt.rollback_source_target_id,
+                   rt.canonical_effective_config_json AS base_effective_json,
+                   rt.content_hash AS base_content_hash
+            FROM release_target_capability_snapshots cs
+            JOIN release_targets rt
+              ON rt.release_target_id = cs.release_target_id
+             AND rt.tenant_id = cs.tenant_id
+             AND rt.deployment_id = cs.deployment_id
+             AND rt.screen_id = cs.screen_id
+            ORDER BY cs.release_target_id
+            """
+        ).fetchall()
+        snapshot_by_target = {row["release_target_id"]: row for row in snapshots}
+        expected_snapshot_keys = {
+            "schema_version",
+            "screen_id",
+            "digital_human_instance_id",
+            "profile_id",
+            "profile_version_id",
+            "version_number",
+            "content_hash",
+            "provider_registry_version",
+            "provider_registry_hash",
+            "spec",
+            "state_summary",
+            "dependency_findings",
+            "activation_eligible",
+        }
+        for snapshot in snapshots:
+            version = version_by_id.get(snapshot["profile_version_id"])
+            try:
+                envelope = json.loads(snapshot["canonical_capability_snapshot_json"])
+                base_effective = json.loads(snapshot["base_effective_json"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise BackupIntegrityError("Release capability snapshot JSON is invalid") from exc
+            if not isinstance(envelope, dict) or not isinstance(
+                base_effective,
+                dict,
+            ):
+                raise BackupIntegrityError("Release capability snapshot JSON is invalid")
+            canonical_envelope = canonical_json(envelope)
+            if (
+                set(envelope) != expected_snapshot_keys
+                or version is None
+                or canonical_envelope != snapshot["canonical_capability_snapshot_json"]
+                or hashlib.sha256(canonical_envelope.encode("utf-8")).hexdigest()
+                != snapshot["capability_envelope_hash"]
+                or canonical_json(base_effective) != snapshot["base_effective_json"]
+                or hashlib.sha256(snapshot["base_effective_json"].encode("utf-8")).hexdigest()
+                != snapshot["base_content_hash"]
+                or snapshot["tenant_id"] != version["tenant_id"]
+                or snapshot["deployment_id"] != version["deployment_id"]
+                or snapshot["site_id"] != version["site_id"]
+                or snapshot["profile_id"] != version["profile_id"]
+                or snapshot["version_number"] != version["version_number"]
+                or snapshot["profile_content_hash"] != version["content_hash"]
+                or snapshot["provider_registry_version"] != version["provider_registry_version"]
+                or snapshot["provider_registry_hash"] != version["provider_registry_hash"]
+                or envelope["schema_version"] != version["schema_version"]
+                or envelope["screen_id"] != snapshot["screen_id"]
+                or envelope["digital_human_instance_id"] != snapshot["digital_human_instance_id"]
+                or base_effective.get("screen_id") != snapshot["screen_id"]
+                or base_effective.get("digital_human_instance_id") != snapshot["digital_human_instance_id"]
+                or envelope["profile_id"] != snapshot["profile_id"]
+                or envelope["profile_version_id"] != snapshot["profile_version_id"]
+                or envelope["version_number"] != snapshot["version_number"]
+                or envelope["content_hash"] != snapshot["profile_content_hash"]
+                or envelope["provider_registry_version"] != snapshot["provider_registry_version"]
+                or envelope["provider_registry_hash"] != snapshot["provider_registry_hash"]
+                or canonical_json(envelope["spec"]) != version["canonical_spec_json"]
+                or canonical_json(envelope["state_summary"]) != version["state_summary_json"]
+                or canonical_json(envelope["dependency_findings"]) != version["dependency_findings_json"]
+                or not isinstance(envelope["activation_eligible"], bool)
+                or bool(envelope["activation_eligible"]) != bool(version["activation_eligible"])
+            ):
+                raise BackupIntegrityError("Release capability snapshot hash or reference changed")
+
+        assigned_releases = connection.execute(
+            """
+            SELECT r.release_id, a.profile_id, a.profile_version_id,
+                   rt.release_target_id
+            FROM config_releases r
+            JOIN config_draft_capability_assignments a
+              ON a.draft_id = r.normal_draft_id
+             AND a.draft_revision = r.normal_draft_revision
+            JOIN release_targets rt ON rt.release_id = r.release_id
+            WHERE r.creation_kind = 'NORMAL'
+            """
+        ).fetchall()
+        for row in assigned_releases:
+            snapshot = snapshot_by_target.get(row["release_target_id"])
+            if (
+                snapshot is None
+                or snapshot["profile_id"] != row["profile_id"]
+                or snapshot["profile_version_id"] != row["profile_version_id"]
+            ):
+                raise BackupIntegrityError("Assigned release capability snapshot is unavailable")
+
+        rollback_targets = connection.execute(
+            """
+            SELECT release_target_id, rollback_source_target_id
+            FROM release_targets
+            WHERE rollback_source_target_id IS NOT NULL
+            """
+        ).fetchall()
+        for target in rollback_targets:
+            source = snapshot_by_target.get(target["rollback_source_target_id"])
+            copied = snapshot_by_target.get(target["release_target_id"])
+            if (source is None) != (copied is None) or (
+                source is not None
+                and (
+                    source["canonical_capability_snapshot_json"]
+                    != copied["canonical_capability_snapshot_json"]
+                    or source["capability_envelope_hash"] != copied["capability_envelope_hash"]
+                )
+            ):
+                raise BackupIntegrityError("Rollback capability snapshot copy changed")
 
     @staticmethod
     def _validate_audit_chain(connection: sqlite3.Connection) -> None:

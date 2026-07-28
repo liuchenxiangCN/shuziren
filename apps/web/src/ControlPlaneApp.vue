@@ -3,9 +3,12 @@ import { computed, onMounted, ref } from 'vue';
 import {
   activateCredential,
   approveAction,
+  assignCapabilityProfileToDraft,
   claimEnrollment,
   ControlPlaneApiError,
   createBackup,
+  createCapabilityProfile,
+  createCapabilityProfileVersion,
   createConfigDraft,
   createConfigRelease,
   createDigitalHumanInstance,
@@ -17,11 +20,16 @@ import {
   executeRestorePlan,
   getConfigDraft,
   getConfigRelease,
+  getCapabilityProfile,
   getCredentialMetadata,
   getRuntimeBinding,
+  getScreenEffectiveCapabilities,
   getStorageProfile,
   issueEnrollment,
   listAuditEvents,
+  listCapabilityProfilePresets,
+  listCapabilityProfiles,
+  listCapabilityProviders,
   listPendingActions,
   listRoleDefinitions,
   listScreenGroups,
@@ -43,6 +51,13 @@ import {
   signOut,
   type AuditEvent,
   type BackupRecord,
+  type CapabilityKey,
+  type CapabilityProfile,
+  type CapabilityProfilePreset,
+  type CapabilityProfileSpec,
+  type CapabilityProfileVersion,
+  type CapabilityProviderCatalog,
+  type CapabilityState,
   type ConfigDraft,
   type ConfigRelease,
   type ControlPlaneSession,
@@ -50,6 +65,7 @@ import {
   type HighRiskAction,
   type RestorePlan,
   type ScreenGroupInventory,
+  type ScreenEffectiveCapabilities,
   type ScreenInventory,
   type SiteInventory,
   transitionConfigDraft,
@@ -58,7 +74,14 @@ import {
   verifyBackup,
 } from './controlPlaneApi';
 
-type View = 'inventory' | 'releases' | 'users' | 'approvals' | 'devices' | 'audit';
+type View =
+  | 'inventory'
+  | 'capabilities'
+  | 'releases'
+  | 'users'
+  | 'approvals'
+  | 'devices'
+  | 'audit';
 
 const session = ref<ControlPlaneSession | null>(null);
 const activeView = ref<View>('inventory');
@@ -76,6 +99,63 @@ const sites = ref<SiteInventory[]>([]);
 const screenGroups = ref<ScreenGroupInventory[]>([]);
 const screens = ref<ScreenInventory[]>([]);
 const groupMemberDrafts = ref<Record<string, string[]>>({});
+const capabilityKeys: CapabilityKey[] = [
+  'dora',
+  'knowledge',
+  'direct_llm',
+  'asr',
+  'tts',
+  'querying',
+  'fvs_control',
+];
+const capabilityLabels: Record<CapabilityKey, string> = {
+  dora: '对话编排 / Dora',
+  knowledge: '知识库',
+  direct_llm: '直连 LLM',
+  asr: '语音识别 ASR',
+  tts: '语音合成 TTS',
+  querying: '问数',
+  fvs_control: 'FVS 控屏',
+};
+const capabilityClosedBehavior: Record<CapabilityKey, string> = {
+  dora: '仅保留固定本地规则',
+  knowledge: '不路由知识问答',
+  direct_llm: '仅使用固定模板或提取式回答',
+  asr: '保留文本输入',
+  tts: '保留文字与字幕',
+  querying: '返回“当前大屏未开通问数”',
+  fvs_control: '只回答，不执行控屏动作',
+};
+const stateDefinitions: Array<{
+  state: CapabilityState;
+  label: string;
+  description: string;
+}> = [
+  { state: 'disabled', label: '已关闭', description: '不选择、不调用任何 Provider' },
+  { state: 'mock', label: 'Mock', description: '仅用于开发预览与故障演练' },
+  { state: 'unverified', label: '未验证', description: '可检查，但阻断验证与发布' },
+  { state: 'available', label: '可用', description: '仅代表本地受限能力在预览边界内可用' },
+  { state: 'degraded', label: '已降级', description: '只保留明确说明的受限行为' },
+];
+const providerCatalog = ref<CapabilityProviderCatalog | null>(null);
+const capabilityPresets = ref<CapabilityProfilePreset[]>([]);
+const capabilityProfiles = ref<CapabilityProfile[]>([]);
+const selectedCapabilityProfile = ref<CapabilityProfile | null>(null);
+const observedProfileVersions = ref<CapabilityProfileVersion[]>([]);
+const screenCapabilities = ref<Record<string, ScreenEffectiveCapabilities>>({});
+const selectedPresetId = ref<CapabilityProfilePreset['preset_id']>('text_only');
+const newProfileSiteId = ref('');
+const newProfileName = ref('文本讲解能力套餐');
+const newProfileDescription = ref('从产品预设复制的站点能力套餐；不包含任何凭据或外部连接。');
+const selectedCapabilityProfileId = ref('');
+const profileEditorSpec = ref<CapabilityProfileSpec>(createDisabledCapabilitySpec());
+const fallbackProviderDrafts = ref<Record<CapabilityKey, string>>(
+  Object.fromEntries(capabilityKeys.map((capability) => [capability, ''])) as Record<
+    CapabilityKey,
+    string
+  >,
+);
+const draftCapabilityVersionId = ref('');
 const releaseDraft = ref<ConfigDraft | null>(null);
 const releaseCandidate = ref<ConfigRelease | null>(null);
 const releasePublication = ref<Record<string, any> | null>(null);
@@ -132,6 +212,8 @@ const canEnroll = computed(() => permissions.value.has('device.enroll'));
 const canRevoke = computed(() => permissions.value.has('device.revoke'));
 const canReadScreens = computed(() => permissions.value.has('screen.read'));
 const canManageScreens = computed(() => permissions.value.has('screen.manage'));
+const canReadConfig = computed(() => permissions.value.has('config.read'));
+const canEditTechnicalConfig = computed(() => permissions.value.has('config.edit_technical'));
 const canEditConfig = computed(
   () =>
     permissions.value.has('config.edit_business')
@@ -153,6 +235,154 @@ const draftTargetOptions = computed(() =>
       label: `${group.display_name} · ${group.member_screen_ids.length} 屏`,
     })),
 );
+const profileVersionOptions = computed(() => {
+  const options = capabilityProfiles.value
+    .filter((profile) => profile.head_version)
+    .map((profile) => ({
+      profile_id: profile.profile_id,
+      profile_version_id: profile.head_version.profile_version_id,
+      label: `${profile.name} · v${profile.head_version.version_number}`,
+      activation_eligible: profile.head_version.activation_eligible,
+      state_summary: profile.head_version.state_summary,
+    }));
+  const assigned = releaseDraft.value?.capability_profile;
+  if (assigned && !options.some((option) => option.profile_version_id === assigned.profile_version_id)) {
+    options.push({
+      profile_id: assigned.profile_id,
+      profile_version_id: assigned.profile_version_id,
+      label: `${assigned.profile_name || assigned.profile_id} · v${assigned.version_number}（当前草稿）`,
+      activation_eligible: assigned.activation_eligible,
+      state_summary: assigned.state_summary,
+    });
+  }
+  return options;
+});
+const selectedPreset = computed(() =>
+  capabilityPresets.value.find((preset) => preset.preset_id === selectedPresetId.value),
+);
+const selectedEditorStateSummary = computed<Record<CapabilityKey, CapabilityState>>(() =>
+  Object.fromEntries(
+    capabilityKeys.map((capability) => [
+      capability,
+      capabilityStateFor(
+        capability,
+        profileEditorSpec.value[capability].enabled,
+        profileEditorSpec.value[capability].primary_provider_id,
+      ),
+    ]),
+  ) as Record<CapabilityKey, CapabilityState>,
+);
+
+function createDisabledCapabilitySpec(): CapabilityProfileSpec {
+  return Object.fromEntries(
+    capabilityKeys.map((capability) => [
+      capability,
+      {
+        enabled: false,
+        primary_provider_id: null,
+        fallback_provider_ids: [],
+        timeout_ms: 5000,
+      },
+    ]),
+  ) as unknown as CapabilityProfileSpec;
+}
+
+function cloneCapabilitySpec(spec: CapabilityProfileSpec): CapabilityProfileSpec {
+  return structuredClone(spec);
+}
+
+function providersFor(capability: CapabilityKey) {
+  return (providerCatalog.value?.items || []).filter(
+    (provider) => provider.capability === capability,
+  );
+}
+
+function capabilityStateFor(
+  capability: CapabilityKey,
+  enabled: boolean,
+  providerId: string | null,
+): CapabilityState {
+  if (!enabled) return 'disabled';
+  const providers = providersFor(capability);
+  const selection = profileEditorSpec.value[capability];
+  const selectedProviders = [
+    providerId,
+    ...selection.fallback_provider_ids,
+  ].filter((item): item is string => Boolean(item));
+  if (
+    selectedProviders.some(
+      (selectedId) =>
+        providers.find((provider) => provider.provider_id === selectedId)?.state === 'unverified',
+    )
+  ) {
+    return 'unverified';
+  }
+  const provider = providers.find((item) => item.provider_id === providerId);
+  return provider?.state || 'unverified';
+}
+
+function providerState(capability: CapabilityKey, providerId: string): CapabilityState {
+  return providersFor(capability).find((item) => item.provider_id === providerId)?.state
+    || 'unverified';
+}
+
+function stateLabel(state?: CapabilityState | null): string {
+  return stateDefinitions.find((item) => item.state === state)?.label || state || '未配置';
+}
+
+function normalizeCapabilitySelection(capability: CapabilityKey) {
+  const selection = profileEditorSpec.value[capability];
+  if (!selection.enabled) {
+    selection.primary_provider_id = null;
+    selection.fallback_provider_ids = [];
+    return;
+  }
+  const providers = providersFor(capability);
+  if (!providers.some((provider) => provider.provider_id === selection.primary_provider_id)) {
+    selection.primary_provider_id = providers[0]?.provider_id || null;
+  }
+  selection.fallback_provider_ids = selection.fallback_provider_ids.filter(
+    (providerId) =>
+      providerId !== selection.primary_provider_id
+      && providers.some((provider) => provider.provider_id === providerId),
+  );
+}
+
+function fallbackCandidates(capability: CapabilityKey) {
+  const selection = profileEditorSpec.value[capability];
+  return providersFor(capability).filter(
+    (provider) =>
+      provider.provider_id !== selection.primary_provider_id
+      && !selection.fallback_provider_ids.includes(provider.provider_id),
+  );
+}
+
+function addFallbackProvider(capability: CapabilityKey) {
+  const providerId = fallbackProviderDrafts.value[capability];
+  if (!providerId || !fallbackCandidates(capability).some((item) => item.provider_id === providerId)) {
+    return;
+  }
+  profileEditorSpec.value[capability].fallback_provider_ids.push(providerId);
+  fallbackProviderDrafts.value[capability] = '';
+}
+
+function removeFallbackProvider(capability: CapabilityKey, index: number) {
+  profileEditorSpec.value[capability].fallback_provider_ids.splice(index, 1);
+}
+
+function moveFallbackProvider(capability: CapabilityKey, index: number, direction: -1 | 1) {
+  const nextIndex = index + direction;
+  const fallbacks = profileEditorSpec.value[capability].fallback_provider_ids;
+  if (nextIndex < 0 || nextIndex >= fallbacks.length) return;
+  [fallbacks[index], fallbacks[nextIndex]] = [fallbacks[nextIndex], fallbacks[index]];
+}
+
+function capabilitySummaryState(
+  snapshot: ScreenEffectiveCapabilities['effective'],
+  capability: CapabilityKey,
+): CapabilityState | undefined {
+  return snapshot?.state_summary?.[capability];
+}
 
 onMounted(async () => {
   try {
@@ -201,6 +431,12 @@ async function logout() {
     screenGroups.value = [];
     screens.value = [];
     groupMemberDrafts.value = {};
+    providerCatalog.value = null;
+    capabilityPresets.value = [];
+    capabilityProfiles.value = [];
+    selectedCapabilityProfile.value = null;
+    observedProfileVersions.value = [];
+    screenCapabilities.value = {};
     releaseDraft.value = null;
     releaseCandidate.value = null;
     releasePublication.value = null;
@@ -249,15 +485,42 @@ async function loadActiveView() {
     groupMemberDrafts.value = Object.fromEntries(
       groupResult.items.map((group) => [group.screen_group_id, [...group.member_screen_ids]]),
     );
+  } else if (activeView.value === 'capabilities' && canReadConfig.value) {
+    const [catalogResult, presetResult, profileResult] = await Promise.all([
+      listCapabilityProviders(),
+      listCapabilityProfilePresets(),
+      listCapabilityProfiles(),
+    ]);
+    providerCatalog.value = catalogResult;
+    capabilityPresets.value = presetResult.items;
+    capabilityProfiles.value = profileResult.items;
+    if (canReadScreens.value) {
+      const [siteResult, screenResult] = await Promise.all([listSites(), listScreenInstances()]);
+      sites.value = siteResult.items;
+      screens.value = screenResult.items;
+      if (!newProfileSiteId.value) newProfileSiteId.value = siteResult.items[0]?.site_id || '';
+      await loadScreenCapabilityStates();
+    }
+    if (
+      selectedCapabilityProfileId.value
+      && !profileResult.items.some(
+        (profile) => profile.profile_id === selectedCapabilityProfileId.value,
+      )
+    ) {
+      selectedCapabilityProfileId.value = '';
+      selectedCapabilityProfile.value = null;
+    }
   } else if (activeView.value === 'releases' && canReadScreens.value) {
-    const [groupResult, screenResult, profileResult] = await Promise.all([
+    const [groupResult, screenResult, storageResult, capabilityProfileResult] = await Promise.all([
       listScreenGroups(),
       listScreenInstances(),
       getStorageProfile(),
+      canReadConfig.value ? listCapabilityProfiles() : Promise.resolve({ items: [] }),
     ]);
     screenGroups.value = groupResult.items;
     screens.value = screenResult.items;
-    storageProfile.value = profileResult;
+    storageProfile.value = storageResult;
+    capabilityProfiles.value = capabilityProfileResult.items as CapabilityProfile[];
     if (!draftTargetId.value) {
       draftTargetId.value = screenResult.items[0]?.screen_id || '';
     }
@@ -270,6 +533,19 @@ async function loadActiveView() {
   } else if (activeView.value === 'audit' && canAudit.value) {
     auditEvents.value = (await listAuditEvents()).items;
   }
+}
+
+async function loadScreenCapabilityStates() {
+  if (!canReadScreens.value || !screens.value.length) {
+    screenCapabilities.value = {};
+    return;
+  }
+  const results = await Promise.all(
+    screens.value.map((screen) => getScreenEffectiveCapabilities(screen.screen_id)),
+  );
+  screenCapabilities.value = Object.fromEntries(
+    results.map((result) => [result.screen_id, result]),
+  );
 }
 
 async function submitGroup() {
@@ -453,6 +729,97 @@ async function submitRevoke() {
   });
 }
 
+function choosePreset(preset: CapabilityProfilePreset) {
+  selectedPresetId.value = preset.preset_id;
+  newProfileName.value = `${preset.name}（自定义）`;
+  newProfileDescription.value = preset.description;
+}
+
+async function copySelectedPreset() {
+  if (!selectedPreset.value) return;
+  await run(async () => {
+    const profile = await createCapabilityProfile({
+      site_id: newProfileSiteId.value,
+      name: newProfileName.value.trim(),
+      description: newProfileDescription.value.trim(),
+      source_preset_id: selectedPreset.value!.preset_id,
+    });
+    capabilityProfiles.value = [
+      profile,
+      ...capabilityProfiles.value.filter((item) => item.profile_id !== profile.profile_id),
+    ];
+    selectedCapabilityProfileId.value = profile.profile_id;
+    selectedCapabilityProfile.value = profile;
+    observedProfileVersions.value = [profile.head_version];
+    profileEditorSpec.value = cloneCapabilitySpec(profile.head_version.spec);
+    message.value =
+      `已从 ${selectedPreset.value!.preset_id} 复制站点能力套餐；`
+      + `v${profile.head_version.version_number} 已不可变。`;
+  });
+}
+
+async function openCapabilityProfile(profileId: string) {
+  if (!profileId) {
+    selectedCapabilityProfile.value = null;
+    observedProfileVersions.value = [];
+    profileEditorSpec.value = createDisabledCapabilitySpec();
+    return;
+  }
+  await run(async () => {
+    const profile = await getCapabilityProfile(profileId);
+    selectedCapabilityProfile.value = profile;
+    selectedCapabilityProfileId.value = profile.profile_id;
+    observedProfileVersions.value = [profile.head_version];
+    profileEditorSpec.value = cloneCapabilitySpec(profile.head_version.spec);
+    message.value =
+      `已读取 ${profile.name} v${profile.head_version.version_number}；`
+      + '编辑只会创建新的不可变版本。';
+  });
+}
+
+async function createNextCapabilityProfileVersion() {
+  if (!selectedCapabilityProfile.value) return;
+  await run(async () => {
+    const previousVersion = selectedCapabilityProfile.value!.head_version;
+    capabilityKeys.forEach(normalizeCapabilitySelection);
+    const profile = await createCapabilityProfileVersion(
+      selectedCapabilityProfile.value!,
+      cloneCapabilitySpec(profileEditorSpec.value),
+    );
+    selectedCapabilityProfile.value = profile;
+    capabilityProfiles.value = capabilityProfiles.value.map((item) =>
+      item.profile_id === profile.profile_id ? profile : item,
+    );
+    observedProfileVersions.value = [
+      profile.head_version,
+      previousVersion,
+      ...observedProfileVersions.value,
+    ].filter(
+      (version, index, versions) =>
+        versions.findIndex(
+          (candidate) => candidate.profile_version_id === version.profile_version_id,
+        ) === index,
+    );
+    message.value =
+      `已创建 ${profile.name} v${profile.head_version.version_number}；`
+      + '旧版本与已发布快照保持不变。';
+  });
+}
+
+async function assignDraftCapabilityProfile() {
+  if (!releaseDraft.value || !draftCapabilityVersionId.value) return;
+  await run(async () => {
+    const draft = await assignCapabilityProfileToDraft(
+      releaseDraft.value!,
+      draftCapabilityVersionId.value,
+    );
+    syncDraftForm(draft);
+    message.value =
+      `草稿已绑定不可变能力版本 ${draft.capability_profile?.profile_version_id || ''}；`
+      + 'revision 已推进，旧验证、预览和审批证据已失效。';
+  });
+}
+
 function resetDraftTarget() {
   draftTargetId.value = draftTargetOptions.value[0]?.id || '';
 }
@@ -464,6 +831,7 @@ function syncDraftForm(draft: ConfigDraft) {
   draftTargetId.value = draft.target.screen_id || draft.target.screen_group_id || '';
   draftWelcomeText.value = draft.spec.welcome_text || draftWelcomeText.value;
   draftFvsRef.value = draft.spec.fvs_binding_ref || draftFvsRef.value;
+  draftCapabilityVersionId.value = draft.capability_profile?.profile_version_id || '';
 }
 
 async function startReleaseDraft() {
@@ -692,9 +1060,9 @@ function formatTime(value?: number | null) {
     <section class="cp-frame">
       <header class="cp-header">
         <div>
-          <p class="cp-eyebrow">P1.3 · Publish / Rollback / Recovery</p>
-          <h1>多屏发布与恢复控制台</h1>
-          <p>开发预览；Mock 预览不连接真实 FVS，生产恢复拓扑与客户 RPO/RTO 仍未验证。</p>
+          <p class="cp-eyebrow">P2.1 · Per-screen capability profiles</p>
+          <h1>多屏能力与发布控制台</h1>
+          <p>开发预览；按屏能力只执行本地 / Mock 诊断，不连接真实 Provider、FVS 或官方插件。</p>
         </div>
         <div v-if="session" class="cp-session">
           <strong>{{ session.user.display_name }}</strong>
@@ -737,6 +1105,12 @@ function formatTime(value?: number | null) {
         <nav class="cp-nav" aria-label="控制面功能">
           <button :class="{ active: activeView === 'inventory' }" @click="switchView('inventory')">
             多屏清单
+          </button>
+          <button
+            :class="{ active: activeView === 'capabilities' }"
+            @click="switchView('capabilities')"
+          >
+            能力套餐
           </button>
           <button :class="{ active: activeView === 'releases' }" @click="switchView('releases')">
             发布中心
@@ -880,20 +1254,509 @@ function formatTime(value?: number | null) {
           </article>
         </section>
 
+        <section v-else-if="activeView === 'capabilities'" class="cp-grid">
+          <article v-if="!canReadConfig" class="cp-card wide">
+            <div class="cp-denied">
+              当前角色没有 `config.read`，Provider catalog、能力套餐和逐屏生效状态均不披露。
+            </div>
+          </article>
+
+          <template v-else>
+            <article class="cp-card wide cp-boundary">
+              <div>
+                <p class="cp-eyebrow">P2.1 development-preview boundary</p>
+                <h2>能力可按屏组合，真实 Provider 不外呼</h2>
+                <p>
+                  Profile 只保存闭合选择器、fallback 顺序和超时。连接地址、凭据、Prompt、
+                  SQL、健康结果与认证声明都不能写入套餐。
+                </p>
+              </div>
+              <div class="cp-stat-strip">
+                <span><strong>7</strong>固定能力</span>
+                <span><strong>3</strong>产品预设</span>
+                <span><strong>0</strong>真实外呼</span>
+              </div>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">Five states · no ambiguous green light</p>
+                  <h2>五种状态的含义</h2>
+                </div>
+                <span class="cp-pill">服务端派生</span>
+              </div>
+              <div class="cp-state-grid">
+                <div v-for="item in stateDefinitions" :key="item.state" class="cp-state-card">
+                  <span :class="['cp-state', `is-${item.state}`]">{{ item.state }}</span>
+                  <strong>{{ item.label }}</strong>
+                  <small>{{ item.description }}</small>
+                </div>
+              </div>
+              <div class="cp-evidence warning">
+                <strong>Fallback 只处理技术不可达</strong>
+                <span>
+                  timeout / unavailable / unsupported 且权限范围等价时才允许；
+                  permission_denied / invalid_request / unauthorized_template / cancelled 立即终止。
+                </span>
+              </div>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">p2_provider_registry_001</p>
+                  <h2>Provider catalog</h2>
+                </div>
+                <span v-if="providerCatalog" class="cp-pill">
+                  {{ providerCatalog.items.length }} providers
+                </span>
+              </div>
+              <div v-if="providerCatalog" class="cp-hash-line">
+                <span>{{ providerCatalog.registry_version }}</span>
+                <code>{{ providerCatalog.registry_hash }}</code>
+              </div>
+              <div v-if="providerCatalog" class="cp-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>能力</th>
+                      <th>Provider</th>
+                      <th>状态</th>
+                      <th>运行边界</th>
+                      <th>调用声明</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="provider in providerCatalog.items" :key="provider.provider_id">
+                      <td>{{ capabilityLabels[provider.capability] }}</td>
+                      <td>
+                        <strong>{{ provider.provider_id }}</strong>
+                        <small>{{ provider.adapter_kind }} · {{ provider.permission_scope }}</small>
+                      </td>
+                      <td>
+                        <span :class="['cp-state', `is-${provider.state}`]">
+                          {{ provider.state }}
+                        </span>
+                      </td>
+                      <td>{{ provider.boundary }}</td>
+                      <td>
+                        <strong>{{ provider.external_calls_enabled ? '外呼启用' : '本批不外呼' }}</strong>
+                        <small>
+                          {{ provider.streaming_mode }} · {{ provider.session_mode }} ·
+                          {{ provider.supports_cancellation ? '可取消' : '不可取消' }}
+                        </small>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">Immutable product presets</p>
+                  <h2>从预设复制站点能力套餐</h2>
+                </div>
+                <span class="cp-pill">预设本身不可修改</span>
+              </div>
+              <div class="cp-preset-grid">
+                <article
+                  v-for="preset in capabilityPresets"
+                  :key="preset.preset_id"
+                  :class="['cp-preset', { selected: selectedPresetId === preset.preset_id }]"
+                >
+                  <div class="cp-card-title">
+                    <div>
+                      <span class="cp-pill">{{ preset.preset_id }}</span>
+                      <h3>{{ preset.name }}</h3>
+                    </div>
+                    <span class="cp-health">
+                      {{ preset.activation_eligible ? '可激活' : '阻断' }}
+                    </span>
+                  </div>
+                  <p>{{ preset.description }}</p>
+                  <div class="cp-mini-state-list">
+                    <span v-for="capability in capabilityKeys" :key="capability">
+                      {{ capabilityLabels[capability] }}
+                      <b :class="['cp-state', `is-${preset.state_summary[capability]}`]">
+                        {{ preset.state_summary[capability] }}
+                      </b>
+                    </span>
+                  </div>
+                  <button class="secondary" @click="choosePreset(preset)">选择此预设</button>
+                </article>
+              </div>
+              <div v-if="canEditTechnicalConfig" class="cp-form-grid">
+                <label>
+                  所属站点
+                  <select v-model="newProfileSiteId">
+                    <option v-for="site in sites" :key="site.site_id" :value="site.site_id">
+                      {{ site.display_name }} · {{ site.slug }}
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  套餐名称
+                  <input v-model="newProfileName" maxlength="120" />
+                </label>
+                <label class="cp-grow">
+                  说明
+                  <textarea v-model="newProfileDescription" maxlength="500"></textarea>
+                </label>
+                <div class="cp-actions cp-align-end">
+                  <button
+                    :disabled="!newProfileSiteId || !newProfileName.trim() || !selectedPreset"
+                    @click="copySelectedPreset"
+                  >
+                    复制为自定义套餐
+                  </button>
+                </div>
+              </div>
+              <div v-else class="cp-readonly-note">
+                当前角色可核对预设，但没有 `config.edit_technical`，不能复制或创建版本。
+              </div>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">Exact seven-capability schema</p>
+                  <h2>自定义套餐与不可变版本</h2>
+                </div>
+                <span v-if="selectedCapabilityProfile" class="cp-pill">
+                  head v{{ selectedCapabilityProfile.head_version.version_number }}
+                </span>
+              </div>
+              <div class="cp-form-grid">
+                <label>
+                  能力套餐
+                  <select
+                    v-model="selectedCapabilityProfileId"
+                    @change="openCapabilityProfile(selectedCapabilityProfileId)"
+                  >
+                    <option value="">请选择</option>
+                    <option
+                      v-for="profile in capabilityProfiles"
+                      :key="profile.profile_id"
+                      :value="profile.profile_id"
+                    >
+                      {{ profile.name }} · v{{ profile.head_version_number }}
+                    </option>
+                  </select>
+                </label>
+                <div v-if="selectedCapabilityProfile" class="cp-hash-line">
+                  <span>
+                    {{ selectedCapabilityProfile.profile_id }} ·
+                    {{ selectedCapabilityProfile.head_version.profile_version_id }}
+                  </span>
+                  <code>{{ selectedCapabilityProfile.head_version.content_hash }}</code>
+                </div>
+              </div>
+              <div v-if="observedProfileVersions.length" class="cp-target-list">
+                <div
+                  v-for="version in observedProfileVersions"
+                  :key="version.profile_version_id"
+                >
+                  <strong>
+                    v{{ version.version_number }}
+                    {{ version.profile_version_id === selectedCapabilityProfile?.head_version_id ? '· HEAD' : '· immutable history' }}
+                  </strong>
+                  <span>{{ version.profile_version_id }}</span>
+                  <code>{{ version.content_hash }}</code>
+                </div>
+              </div>
+
+              <template v-if="selectedCapabilityProfile">
+                <div class="cp-capability-grid">
+                  <article
+                    v-for="capability in capabilityKeys"
+                    :key="capability"
+                    class="cp-capability"
+                  >
+                    <div class="cp-card-title">
+                      <div>
+                        <p class="cp-eyebrow">{{ capability }}</p>
+                        <h3>{{ capabilityLabels[capability] }}</h3>
+                      </div>
+                      <span
+                        :class="[
+                          'cp-state',
+                          `is-${selectedEditorStateSummary[capability]}`,
+                        ]"
+                      >
+                        {{ selectedEditorStateSummary[capability] }}
+                      </span>
+                    </div>
+                    <label class="cp-switch">
+                      <input
+                        v-model="profileEditorSpec[capability].enabled"
+                        type="checkbox"
+                        :disabled="!canEditTechnicalConfig"
+                        @change="normalizeCapabilitySelection(capability)"
+                      />
+                      <span>启用此能力</span>
+                    </label>
+                    <label>
+                      Primary Provider
+                      <select
+                        v-model="profileEditorSpec[capability].primary_provider_id"
+                        :disabled="
+                          !canEditTechnicalConfig || !profileEditorSpec[capability].enabled
+                        "
+                        @change="normalizeCapabilitySelection(capability)"
+                      >
+                        <option :value="null">请选择</option>
+                        <option
+                          v-for="provider in providersFor(capability)"
+                          :key="provider.provider_id"
+                          :value="provider.provider_id"
+                        >
+                          {{ provider.provider_id }} · {{ provider.state }}
+                        </option>
+                      </select>
+                    </label>
+                    <div class="cp-fallback-editor">
+                      <strong>Fallback 顺序</strong>
+                      <div class="cp-fallback-add">
+                        <select
+                          v-model="fallbackProviderDrafts[capability]"
+                          :disabled="
+                            !canEditTechnicalConfig || !profileEditorSpec[capability].enabled
+                          "
+                          :aria-label="`${capabilityLabels[capability]}待添加 fallback`"
+                        >
+                          <option value="">选择同能力 Provider</option>
+                          <option
+                            v-for="provider in fallbackCandidates(capability)"
+                            :key="provider.provider_id"
+                            :value="provider.provider_id"
+                          >
+                            {{ provider.provider_id }} · {{ provider.state }}
+                          </option>
+                        </select>
+                        <button
+                          type="button"
+                          class="secondary"
+                          :disabled="
+                            !canEditTechnicalConfig ||
+                            !profileEditorSpec[capability].enabled ||
+                            !fallbackProviderDrafts[capability]
+                          "
+                          @click="addFallbackProvider(capability)"
+                        >
+                          添加
+                        </button>
+                      </div>
+                      <ol
+                        v-if="profileEditorSpec[capability].fallback_provider_ids.length"
+                        class="cp-fallback-list"
+                      >
+                        <li
+                          v-for="(providerId, index) in profileEditorSpec[capability]
+                            .fallback_provider_ids"
+                          :key="providerId"
+                        >
+                          <span>
+                            {{ index + 1 }}. {{ providerId }}
+                            <b :class="['cp-state', `is-${providerState(capability, providerId)}`]">
+                              {{ providerState(capability, providerId) }}
+                            </b>
+                          </span>
+                          <div class="cp-actions">
+                            <button
+                              type="button"
+                              class="secondary"
+                              :disabled="!canEditTechnicalConfig || index === 0"
+                              :aria-label="`上移 ${providerId}`"
+                              @click="moveFallbackProvider(capability, index, -1)"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              class="secondary"
+                              :disabled="
+                                !canEditTechnicalConfig ||
+                                index ===
+                                  profileEditorSpec[capability].fallback_provider_ids.length - 1
+                              "
+                              :aria-label="`下移 ${providerId}`"
+                              @click="moveFallbackProvider(capability, index, 1)"
+                            >
+                              ↓
+                            </button>
+                            <button
+                              type="button"
+                              class="secondary"
+                              :disabled="!canEditTechnicalConfig"
+                              :aria-label="`移除 ${providerId}`"
+                              @click="removeFallbackProvider(capability, index)"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </li>
+                      </ol>
+                      <small v-else>无 fallback；技术故障将使用该能力的固定关闭行为。</small>
+                    </div>
+                    <label>
+                      Timeout (100–120000 ms)
+                      <input
+                        v-model.number="profileEditorSpec[capability].timeout_ms"
+                        type="number"
+                        min="100"
+                        max="120000"
+                        :readonly="!canEditTechnicalConfig"
+                      />
+                    </label>
+                    <small class="cp-closed-behavior">
+                      关闭后：{{ capabilityClosedBehavior[capability] }}
+                    </small>
+                  </article>
+                </div>
+                <div
+                  v-if="selectedCapabilityProfile.head_version.dependency_findings.length"
+                  class="cp-evidence warning"
+                >
+                  <strong>依赖检查</strong>
+                  <code
+                    v-for="(finding, index) in selectedCapabilityProfile.head_version
+                      .dependency_findings"
+                    :key="index"
+                  >
+                    {{ JSON.stringify(finding) }}
+                  </code>
+                </div>
+                <div class="cp-actions">
+                  <button
+                    v-if="canEditTechnicalConfig"
+                    :disabled="busy"
+                    @click="createNextCapabilityProfileVersion"
+                  >
+                    创建新的不可变版本
+                  </button>
+                  <span class="cp-readonly-note">
+                    只移动 mutable head；既有版本与已发布快照不会改变。
+                  </span>
+                </div>
+              </template>
+              <div v-else class="cp-empty">选择一个站点能力套餐后查看或创建下一版本。</div>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">Desired ≠ applied · applied only at runtime</p>
+                  <h2>三屏生效能力</h2>
+                </div>
+                <button class="secondary" :disabled="!canReadScreens" @click="run(loadScreenCapabilityStates)">
+                  刷新三屏
+                </button>
+              </div>
+              <div v-if="!canReadScreens" class="cp-denied">
+                当前角色没有 `screen.read`，不能枚举屏幕或读取其 desired / applied 状态。
+              </div>
+              <div v-else class="cp-screen-grid">
+                <article v-for="screen in screens" :key="screen.screen_id" class="cp-screen">
+                  <div class="cp-card-title">
+                    <div>
+                      <span class="cp-pill">{{ screen.slug }}</span>
+                      <h3>{{ screen.display_name }}</h3>
+                    </div>
+                    <span class="cp-health">
+                      {{ screenCapabilities[screen.screen_id]?.state || '读取中' }}
+                    </span>
+                  </div>
+                  <dl v-if="screenCapabilities[screen.screen_id]">
+                    <div>
+                      <dt>Binding generation</dt>
+                      <dd>{{ screenCapabilities[screen.screen_id].binding_generation }}</dd>
+                    </div>
+                    <div>
+                      <dt>Desired profile</dt>
+                      <dd>
+                        {{
+                          screenCapabilities[screen.screen_id].desired?.profile_snapshot
+                            ?.profile_version_id || 'NOT_CONFIGURED_P2_1'
+                        }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Applied profile</dt>
+                      <dd>
+                        {{
+                          screenCapabilities[screen.screen_id].applied?.profile_snapshot
+                            ?.profile_version_id || 'NOT_CONFIGURED_P2_1'
+                        }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>DigitalHumanInstance</dt>
+                      <dd>
+                        {{
+                          screenCapabilities[screen.screen_id].digital_human_instance_id ||
+                          '未绑定'
+                        }}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div
+                    v-if="screenCapabilities[screen.screen_id]?.effective"
+                    class="cp-mini-state-list"
+                  >
+                    <span v-for="capability in capabilityKeys" :key="capability">
+                      {{ capabilityLabels[capability] }}
+                      <b
+                        :class="[
+                          'cp-state',
+                          `is-${
+                            capabilitySummaryState(
+                              screenCapabilities[screen.screen_id]?.effective,
+                              capability,
+                            ) || 'disabled'
+                          }`,
+                        ]"
+                      >
+                        {{
+                          stateLabel(
+                            capabilitySummaryState(
+                              screenCapabilities[screen.screen_id]?.effective,
+                              capability,
+                            ),
+                          )
+                        }}
+                      </b>
+                    </span>
+                  </div>
+                  <div v-else class="cp-evidence warning">
+                    <strong>NOT_CONFIGURED_P2_1</strong>
+                    <small>当前 applied target 是 P1.3 legacy 内容；不会套用全局 Provider 或 Mock。</small>
+                  </div>
+                  <small class="cp-closed-behavior">
+                    Runtime 只解析 applied ReleaseTarget；legacy target 不会回退到全局 Mock。
+                  </small>
+                </article>
+              </div>
+            </article>
+          </template>
+        </section>
+
         <section v-else-if="activeView === 'releases'" class="cp-grid">
           <article class="cp-card wide cp-boundary">
             <div>
               <p class="cp-eyebrow">Development preview boundary</p>
-              <h2>Mock 可验收，真实 FVS 未验证</h2>
+              <h2>Mock / 本地能力可验收，真实 Provider 未验证</h2>
               <p>
-                配置预览固定标记为 <strong>MOCK_PASSED</strong>；FVS 引用只是非敏感标签，
-                不会发起 FineReport、FVS 或插件请求。
+                配置预览固定标记为 <strong>MOCK_PASSED</strong>；能力快照绑定 exact
+                immutable profile version，不会发起 FineReport、FVS、插件或其他外部 Provider 请求。
               </p>
             </div>
             <div class="cp-stat-strip">
               <span><strong>3 天</strong>运行明细</span>
+              <span><strong>7 项</strong>按屏能力</span>
               <span><strong>AES-256-GCM</strong>备份</span>
-              <span><strong>UNVERIFIED</strong>生产恢复</span>
             </div>
           </article>
 
@@ -949,6 +1812,66 @@ function formatTime(value?: number | null) {
                   非敏感 FVS 引用
                   <textarea v-model="draftFvsRef" :readonly="releaseDraft.state !== 'DRAFT'"></textarea>
                 </label>
+              </div>
+              <div class="cp-assignment-box">
+                <div>
+                  <p class="cp-eyebrow">Technical assignment · exact immutable version</p>
+                  <h3>能力套餐分配</h3>
+                  <p>
+                    分配会推进 draft revision，并使旧 validation、preview 与 approval 证据失效；
+                    不会向 `p1_screen_config_v1` 偷加第三个字段。
+                  </p>
+                </div>
+                <div class="cp-form-grid">
+                  <label>
+                    Profile version
+                    <select
+                      v-model="draftCapabilityVersionId"
+                      :disabled="releaseDraft.state !== 'DRAFT'"
+                    >
+                      <option value="">未分配</option>
+                      <option
+                        v-for="option in profileVersionOptions"
+                        :key="option.profile_version_id"
+                        :value="option.profile_version_id"
+                      >
+                        {{ option.label }} ·
+                        {{ option.activation_eligible ? '可激活' : '含未验证 Provider' }}
+                      </option>
+                    </select>
+                  </label>
+                  <div class="cp-actions cp-align-end">
+                    <button
+                      v-if="canEditTechnicalConfig && releaseDraft.state === 'DRAFT'"
+                      :disabled="
+                        !draftCapabilityVersionId ||
+                        !releaseDraft.spec.welcome_text ||
+                        !releaseDraft.spec.fvs_binding_ref
+                      "
+                      @click="assignDraftCapabilityProfile"
+                    >
+                      分配并推进 revision
+                    </button>
+                  </div>
+                </div>
+                <div v-if="releaseDraft.capability_profile" class="cp-evidence">
+                  <strong>
+                    {{ releaseDraft.capability_profile.profile_name || 'CapabilityProfile' }}
+                    · v{{ releaseDraft.capability_profile.version_number }}
+                  </strong>
+                  <span>{{ releaseDraft.capability_profile.profile_version_id }}</span>
+                  <code>{{ releaseDraft.capability_profile.content_hash }}</code>
+                  <small>
+                    {{
+                      releaseDraft.capability_profile.activation_eligible
+                        ? '依赖允许进入验证'
+                        : '存在未验证 Provider：草稿验证与 Release 创建将被阻断'
+                    }}
+                  </small>
+                </div>
+                <div v-else class="cp-readonly-note">
+                  尚未分配 P2.1 能力套餐；旧 P1.3 target 将明确返回 `NOT_CONFIGURED_P2_1`。
+                </div>
               </div>
               <div class="cp-actions cp-wrap">
                 <button
@@ -1033,6 +1956,13 @@ function formatTime(value?: number | null) {
                   <strong>{{ target.screen_id }}</strong>
                   <span>Target {{ target.release_target_id }}</span>
                   <code>{{ target.content_hash }}</code>
+                  <span>
+                    Capability
+                    {{
+                      target.capability_snapshot?.profile_version_id ||
+                      'NOT_CONFIGURED_P2_1'
+                    }}
+                  </span>
                 </div>
               </div>
               <div class="cp-form-grid">
@@ -1263,7 +2193,7 @@ function formatTime(value?: number | null) {
 .cp-session span { color: #60716a; font-size: 13px; }
 .cp-reauth { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 8px; margin-top: 6px; }
 .cp-reauth input { min-width: 0; }
-button { border: 0; border-radius: 10px; padding: 10px 15px; background: #176247; color: #fff; font-weight: 700; }
+button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 15px; background: #176247; color: #fff; font-weight: 700; }
 button.secondary { background: #e5ece8; color: #27483d; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 .cp-notice { margin: 14px 0; padding: 12px 16px; border-radius: 10px; font-weight: 650; }
@@ -1284,6 +2214,34 @@ textarea { min-height: 72px; resize: vertical; }
 .cp-stat-strip { display: flex; gap: 10px; }
 .cp-stat-strip span { min-width: 94px; padding: 12px; border-radius: 12px; background: #edf5f0; color: #456057; text-align: center; }
 .cp-stat-strip strong { display: block; color: #173d31; font-size: 24px; }
+.cp-state-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.cp-state-card { display: grid; align-content: start; gap: 7px; min-width: 0; padding: 13px; border: 1px solid #dce5df; border-radius: 11px; background: #fafcfb; }
+.cp-state-card small { color: #667970; line-height: 1.45; }
+.cp-state { display: inline-block; width: fit-content; max-width: 100%; padding: 3px 8px; border: 1px solid transparent; border-radius: 999px; font-size: 11px; font-weight: 850; letter-spacing: .02em; overflow-wrap: anywhere; }
+.cp-state.is-disabled { border-color: #c8d0cc; background: #edf0ee; color: #4e5d57; }
+.cp-state.is-mock { border-color: #a9c9ba; background: #e3f1ea; color: #176247; }
+.cp-state.is-unverified { border-color: #e2c279; background: #fff4d8; color: #805d0b; }
+.cp-state.is-available { border-color: #8dc7aa; background: #daf3e5; color: #0e6440; }
+.cp-state.is-degraded { border-color: #dcaa8a; background: #fff0e6; color: #8f4824; }
+.cp-preset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cp-preset { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 16px; border: 1px solid #dbe4df; border-radius: 12px; background: #fbfcfb; }
+.cp-preset.selected { border-color: #3e846b; box-shadow: 0 0 0 2px rgba(62, 132, 107, .13); }
+.cp-preset h3, .cp-capability h3, .cp-assignment-box h3 { margin: 6px 0 0; }
+.cp-capability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cp-capability { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 16px; border: 1px solid #dbe4df; border-radius: 12px; background: #fbfcfb; }
+.cp-switch { display: flex; grid-template-columns: none; align-items: center; gap: 9px; }
+.cp-switch input { width: auto; }
+.cp-fallback-editor { display: grid; gap: 7px; color: #354b43; font-size: 13px; }
+.cp-fallback-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+.cp-fallback-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.cp-fallback-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 7px 9px; border-radius: 8px; background: #eef3f0; }
+.cp-fallback-list li > span { display: flex; align-items: center; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.cp-fallback-list button { padding: 5px 8px; }
+.cp-closed-behavior { padding: 9px 10px; border-radius: 8px; background: #eef3f0; color: #5a6e66; line-height: 1.45; }
+.cp-mini-state-list { display: grid; gap: 6px; }
+.cp-mini-state-list > span { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #53675f; font-size: 12px; }
+.cp-mini-state-list b { flex: 0 0 auto; }
+.cp-assignment-box { display: grid; gap: 13px; padding: 16px; border: 1px solid #cbdad2; border-radius: 12px; background: #f8fbf9; }
 .cp-screen-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .cp-screen { display: grid; align-content: start; gap: 13px; min-width: 0; padding: 17px; border: 1px solid #dbe4df; border-radius: 13px; background: #fbfcfb; }
 .cp-screen h3 { margin: 9px 0 0; }
@@ -1334,7 +2292,8 @@ pre { overflow: auto; margin: 0; padding: 15px; border-radius: 10px; background:
   .cp-stat-strip { overflow-x: auto; }
   .cp-session { border-left: 0; padding-left: 0; }
   .cp-grid { grid-template-columns: 1fr; }
-  .cp-screen-grid, .cp-form-grid, .cp-target-list { grid-template-columns: 1fr; }
+  .cp-screen-grid, .cp-form-grid, .cp-target-list, .cp-state-grid, .cp-preset-grid, .cp-capability-grid { grid-template-columns: 1fr; }
+  .cp-fallback-add { grid-template-columns: 1fr; }
   .cp-nav { overflow-x: auto; }
 }
 </style>

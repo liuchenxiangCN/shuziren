@@ -14,6 +14,7 @@ LOGICAL_SCHEMA_VERSION = "p1_control_plane_001"
 MIGRATION_001_VERSION = "001_initial_identity_device_trust"
 MIGRATION_002_VERSION = "002_three_screen_inventory"
 MIGRATION_003_VERSION = "003_publish_rollback_recovery"
+MIGRATION_004_VERSION = "004_capability_profiles"
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -1066,6 +1067,243 @@ END;
 """
 
 MIGRATION_003_CHECKSUM_SHA256 = hashlib.sha256(PUBLISH_RECOVERY_SCHEMA_SQL.encode("utf-8")).hexdigest()
+
+CAPABILITY_PROFILE_SCHEMA_SQL = """
+CREATE UNIQUE INDEX idx_users_tenant_deployment_user
+    ON users(tenant_id, deployment_id, user_id);
+
+CREATE TABLE capability_profiles (
+    profile_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    source_preset_id TEXT NOT NULL CHECK (
+        source_preset_id IN ('text_only', 'mock_voice', 'mock_presenter')
+    ),
+    head_version_id TEXT NOT NULL,
+    head_version_number INTEGER NOT NULL CHECK (head_version_number >= 1),
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    UNIQUE (tenant_id, deployment_id, site_id, profile_id),
+    FOREIGN KEY (tenant_id, deployment_id, site_id)
+        REFERENCES sites(tenant_id, deployment_id, site_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, created_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (
+        tenant_id, deployment_id, site_id, profile_id,
+        head_version_id, head_version_number
+    ) REFERENCES capability_profile_versions(
+        tenant_id, deployment_id, site_id, profile_id,
+        profile_version_id, version_number
+    ) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX idx_capability_profiles_scope
+    ON capability_profiles(tenant_id, deployment_id, site_id, profile_id);
+
+CREATE TABLE capability_profile_versions (
+    profile_version_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL CHECK (version_number >= 1),
+    schema_version TEXT NOT NULL CHECK (
+        schema_version = 'p2_capability_profile_v1'
+    ),
+    canonical_spec_json TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    provider_registry_version TEXT NOT NULL CHECK (
+        provider_registry_version = 'p2_provider_registry_001'
+    ),
+    provider_registry_hash TEXT NOT NULL,
+    state_summary_json TEXT NOT NULL,
+    dependency_findings_json TEXT NOT NULL,
+    activation_eligible INTEGER NOT NULL CHECK (activation_eligible IN (0, 1)),
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    UNIQUE (profile_id, version_number),
+    UNIQUE (profile_id, profile_version_id),
+    UNIQUE (
+        tenant_id, deployment_id, site_id, profile_id,
+        profile_version_id, version_number
+    ),
+    FOREIGN KEY (tenant_id, deployment_id, site_id, profile_id)
+        REFERENCES capability_profiles(
+            tenant_id, deployment_id, site_id, profile_id
+        ) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (tenant_id, deployment_id, created_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_capability_profile_versions_profile
+    ON capability_profile_versions(profile_id, version_number DESC);
+
+CREATE TABLE config_draft_capability_assignments (
+    draft_id TEXT NOT NULL,
+    draft_revision INTEGER NOT NULL CHECK (draft_revision >= 1),
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    profile_version_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL CHECK (version_number >= 1),
+    profile_content_hash TEXT NOT NULL,
+    provider_registry_version TEXT NOT NULL CHECK (
+        provider_registry_version = 'p2_provider_registry_001'
+    ),
+    provider_registry_hash TEXT NOT NULL,
+    state_summary_json TEXT NOT NULL,
+    dependency_findings_json TEXT NOT NULL,
+    activation_eligible INTEGER NOT NULL CHECK (activation_eligible IN (0, 1)),
+    assigned_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    assigned_at REAL NOT NULL,
+    PRIMARY KEY (draft_id, draft_revision),
+    FOREIGN KEY (draft_id, draft_revision)
+        REFERENCES config_draft_revisions(draft_id, draft_revision)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (
+        tenant_id, deployment_id, site_id, profile_id,
+        profile_version_id, version_number
+    ) REFERENCES capability_profile_versions(
+        tenant_id, deployment_id, site_id, profile_id,
+        profile_version_id, version_number
+    ) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, assigned_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_draft_capability_assignments_profile
+    ON config_draft_capability_assignments(profile_id, profile_version_id);
+
+CREATE TABLE release_target_capability_snapshots (
+    release_target_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    screen_id TEXT NOT NULL,
+    digital_human_instance_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    profile_version_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL CHECK (version_number >= 1),
+    profile_content_hash TEXT NOT NULL,
+    provider_registry_version TEXT NOT NULL CHECK (
+        provider_registry_version = 'p2_provider_registry_001'
+    ),
+    provider_registry_hash TEXT NOT NULL,
+    canonical_capability_snapshot_json TEXT NOT NULL,
+    capability_envelope_hash TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    UNIQUE (
+        tenant_id, deployment_id, screen_id, release_target_id
+    ),
+    FOREIGN KEY (
+        tenant_id, deployment_id, screen_id, release_target_id
+    ) REFERENCES release_targets(
+        tenant_id, deployment_id, screen_id, release_target_id
+    ) ON DELETE RESTRICT,
+    FOREIGN KEY (
+        tenant_id, deployment_id, site_id, screen_id,
+        digital_human_instance_id
+    ) REFERENCES digital_human_instances(
+        tenant_id, deployment_id, site_id, screen_id,
+        digital_human_instance_id
+    ) ON DELETE RESTRICT,
+    FOREIGN KEY (
+        tenant_id, deployment_id, site_id, profile_id,
+        profile_version_id, version_number
+    ) REFERENCES capability_profile_versions(
+        tenant_id, deployment_id, site_id, profile_id,
+        profile_version_id, version_number
+    ) ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_release_capability_snapshots_profile
+    ON release_target_capability_snapshots(profile_id, profile_version_id);
+
+CREATE TRIGGER capability_profile_versions_no_update
+BEFORE UPDATE ON capability_profile_versions
+BEGIN
+    SELECT RAISE(ABORT, 'capability profile versions are immutable');
+END;
+
+CREATE TRIGGER capability_profile_versions_no_delete
+BEFORE DELETE ON capability_profile_versions
+BEGIN
+    SELECT RAISE(ABORT, 'capability profile versions are immutable');
+END;
+
+CREATE TRIGGER capability_profiles_head_monotonic
+BEFORE UPDATE OF head_version_id, head_version_number ON capability_profiles
+WHEN NEW.head_version_id != OLD.head_version_id
+  OR NEW.head_version_number != OLD.head_version_number
+BEGIN
+    SELECT CASE WHEN NEW.head_version_number <= OLD.head_version_number
+        THEN RAISE(ABORT, 'capability profile head must advance') END;
+END;
+
+CREATE TRIGGER draft_capability_assignment_scope_insert
+BEFORE INSERT ON config_draft_capability_assignments
+BEGIN
+    SELECT CASE WHEN NOT EXISTS (
+        SELECT 1
+        FROM config_drafts d
+        LEFT JOIN screen_instances s
+          ON d.target_type = 'SCREEN'
+         AND s.screen_id = d.screen_id
+         AND s.tenant_id = d.tenant_id
+         AND s.deployment_id = d.deployment_id
+        LEFT JOIN screen_groups g
+          ON d.target_type = 'SCREEN_GROUP'
+         AND g.screen_group_id = d.screen_group_id
+         AND g.tenant_id = d.tenant_id
+         AND g.deployment_id = d.deployment_id
+        WHERE d.draft_id = NEW.draft_id
+          AND d.tenant_id = NEW.tenant_id
+          AND d.deployment_id = NEW.deployment_id
+          AND (
+              (d.target_type = 'SCREEN' AND s.site_id = NEW.site_id)
+              OR
+              (d.target_type = 'SCREEN_GROUP' AND g.site_id = NEW.site_id)
+          )
+    ) THEN RAISE(ABORT, 'draft capability assignment scope mismatch') END;
+END;
+
+CREATE TRIGGER config_draft_capability_assignments_no_update
+BEFORE UPDATE ON config_draft_capability_assignments
+BEGIN
+    SELECT RAISE(ABORT, 'draft capability assignments are immutable');
+END;
+
+CREATE TRIGGER config_draft_capability_assignments_no_delete
+BEFORE DELETE ON config_draft_capability_assignments
+BEGIN
+    SELECT RAISE(ABORT, 'draft capability assignments are immutable');
+END;
+
+CREATE TRIGGER release_target_capability_snapshots_no_update
+BEFORE UPDATE ON release_target_capability_snapshots
+BEGIN
+    SELECT RAISE(ABORT, 'release target capability snapshots are immutable');
+END;
+
+CREATE TRIGGER release_target_capability_snapshots_no_delete
+BEFORE DELETE ON release_target_capability_snapshots
+BEGIN
+    SELECT RAISE(ABORT, 'release target capability snapshots are immutable');
+END;
+"""
+
+MIGRATION_004_CHECKSUM_SHA256 = hashlib.sha256(CAPABILITY_PROFILE_SCHEMA_SQL.encode("utf-8")).hexdigest()
+
 MIGRATIONS = (
     (MIGRATION_001_VERSION, MIGRATION_001_CHECKSUM_SHA256, SCHEMA_SQL),
     (MIGRATION_002_VERSION, MIGRATION_002_CHECKSUM_SHA256, INVENTORY_SCHEMA_SQL),
@@ -1074,9 +1312,14 @@ MIGRATIONS = (
         MIGRATION_003_CHECKSUM_SHA256,
         PUBLISH_RECOVERY_SCHEMA_SQL,
     ),
+    (
+        MIGRATION_004_VERSION,
+        MIGRATION_004_CHECKSUM_SHA256,
+        CAPABILITY_PROFILE_SCHEMA_SQL,
+    ),
 )
-MIGRATION_VERSION = MIGRATION_003_VERSION
-MIGRATION_CHECKSUM_SHA256 = MIGRATION_003_CHECKSUM_SHA256
+MIGRATION_VERSION = MIGRATION_004_VERSION
+MIGRATION_CHECKSUM_SHA256 = MIGRATION_004_CHECKSUM_SHA256
 
 
 class ControlPlaneStore:
@@ -1144,6 +1387,8 @@ class ControlPlaneStore:
                         self._backfill_preview_inventory(connection, now)
                     if version == MIGRATION_003_VERSION:
                         self._append_p13_migration_audit(connection, now)
+                    if version == MIGRATION_004_VERSION:
+                        self._append_p21_migration_audit(connection, now)
                     connection.execute(
                         """
                         INSERT INTO schema_migrations(version, checksum_sha256, applied_at)
@@ -1468,6 +1713,72 @@ class ControlPlaneStore:
             ),
         )
 
+    @staticmethod
+    def _append_p21_migration_audit(
+        connection: sqlite3.Connection,
+        now: float,
+    ) -> None:
+        metadata = connection.execute("SELECT * FROM control_plane_metadata WHERE singleton = 1").fetchone()
+        if metadata is None:
+            return
+        previous = connection.execute(
+            "SELECT event_hash FROM security_audit_events ORDER BY sequence DESC LIMIT 1"
+        ).fetchone()
+        previous_hash = previous["event_hash"] if previous else None
+        event_id = uuid7()
+        details = {
+            "migration_version": MIGRATION_004_VERSION,
+            "provider_registry_version": "p2_provider_registry_001",
+            "profile_schema_version": "p2_capability_profile_v1",
+            "preserved_release_target_count": connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM release_targets
+                WHERE tenant_id = ? AND deployment_id = ?
+                """,
+                (metadata["tenant_id"], metadata["deployment_id"]),
+            ).fetchone()["count"],
+        }
+        payload = canonical_json(
+            {
+                "event_id": event_id,
+                "event_type": "CAPABILITY_PROFILE_SCHEMA_MIGRATED",
+                "actor_type": "LOCAL_MIGRATION",
+                "actor_id": None,
+                "target_type": "DEPLOYMENT",
+                "target_id": metadata["deployment_id"],
+                "outcome": "SUCCESS",
+                "reason": "named forward migration",
+                "details": details,
+                "previous_event_hash": previous_hash,
+                "created_at": now,
+            }
+        )
+        event_hash = hashlib.sha256(
+            b"shuziren:p1:security-audit-event:v1\0" + payload.encode("utf-8")
+        ).hexdigest()
+        connection.execute(
+            """
+            INSERT INTO security_audit_events(
+                event_id, event_type, actor_type, actor_id, target_type, target_id,
+                outcome, reason, details_json, previous_event_hash, event_hash,
+                event_hash_schema_version, created_at
+            ) VALUES (
+                ?, 'CAPABILITY_PROFILE_SCHEMA_MIGRATED',
+                'LOCAL_MIGRATION', NULL, 'DEPLOYMENT', ?, 'SUCCESS',
+                'named forward migration', ?, ?, ?,
+                'p1_security_audit_event_hash_v1', ?
+            )
+            """,
+            (
+                event_id,
+                metadata["deployment_id"],
+                canonical_json(details),
+                previous_hash,
+                event_hash,
+                now,
+            ),
+        )
+
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
         with self.mutation_lock:
@@ -1486,6 +1797,7 @@ class ControlPlaneStore:
         connection = sqlite3.connect(self.path, timeout=30.0, factory=ClosingConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA recursive_triggers=ON")
         connection.execute("PRAGMA synchronous=FULL")
         connection.execute("PRAGMA busy_timeout=30000")
         return connection

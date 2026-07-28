@@ -2031,7 +2031,7 @@ def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
         screens = connection.execute("SELECT screen_id, slug FROM screen_instances ORDER BY slug").fetchall()
         assert tuple(screens[0]) == ("screen-trust-fixture", "screen-1")
         assert len(screens) == 3
-        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 3
+        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 4
         assert [
             row[0]
             for row in connection.execute(
@@ -2039,7 +2039,8 @@ def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
                 SELECT event_type FROM security_audit_events
                 WHERE event_type IN (
                     'THREE_SCREEN_INVENTORY_MIGRATED',
-                    'PUBLISH_ROLLBACK_RECOVERY_SCHEMA_MIGRATED'
+                    'PUBLISH_ROLLBACK_RECOVERY_SCHEMA_MIGRATED',
+                    'CAPABILITY_PROFILE_SCHEMA_MIGRATED'
                 )
                 ORDER BY sequence
                 """
@@ -2047,10 +2048,11 @@ def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
         ] == [
             "THREE_SCREEN_INVENTORY_MIGRATED",
             "PUBLISH_ROLLBACK_RECOVERY_SCHEMA_MIGRATED",
+            "CAPABILITY_PROFILE_SCHEMA_MIGRATED",
         ]
     ControlPlaneService(str(legacy_path), root_key, preview_mode=True)
     with service.store.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 3
+        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 4
 
     with sqlite3.connect(pre_migration_copy) as connection:
         assert connection.execute("SELECT version, checksum_sha256 FROM schema_migrations").fetchone() == (
@@ -2266,7 +2268,8 @@ def test_accepted_p1_2_copy_upgrades_to_p1_3_and_source_is_recoverable(
         )
         source_hash = hashlib.sha256(accepted_path.read_bytes()).hexdigest()
     copy_sqlite_database(str(accepted_path), str(upgraded_path))
-    monkeypatch.setattr(store_module, "MIGRATIONS", full_migrations)
+    p1_3_migrations = full_migrations[:3]
+    monkeypatch.setattr(store_module, "MIGRATIONS", p1_3_migrations)
     upgraded = ControlPlaneService(
         str(upgraded_path),
         root_key,
@@ -2280,7 +2283,7 @@ def test_accepted_p1_2_copy_upgrades_to_p1_3_and_source_is_recoverable(
             for row in connection.execute(
                 "SELECT version, checksum_sha256 FROM schema_migrations ORDER BY rowid"
             ).fetchall()
-        ] == [(version, checksum) for version, checksum, _ in full_migrations]
+        ] == [(version, checksum) for version, checksum, _ in p1_3_migrations]
         bindings = connection.execute(
             """
             SELECT desired_release_target_id, applied_release_target_id,
