@@ -3,8 +3,8 @@
 ## Document Status
 
 - Lifecycle: `TARGET_NOT_IMPLEMENTED`
-- Scope: Productization P1 target domain, data, identity, state, storage and API contracts
-- Contract version: `p1.0-target-v1`
+- Scope: Productization P1 foundation and incremental P2.1 capability-profile target contracts
+- Contract version: `p1.0-target-v1` plus `p2.1-capability-profile-v1`
 - Last reviewed: 2026-07-27
 
 These contracts define the reviewed target for later P1 implementation. They do not describe implemented runtime behavior.
@@ -18,6 +18,8 @@ These contracts define the reviewed target for later P1 implementation. They do 
 5. [STORAGE_AND_RECOVERY.md](STORAGE_AND_RECOVERY.md) — embedded / external stores, migration, backup, restore, RPO and RTO.
 6. [CONTROL_PLANE_API.md](CONTROL_PLANE_API.md) — versioned control-plane and device API operations and examples.
 7. [p1-target-contract.json](p1-target-contract.json) — machine-readable invariants, states, permissions and operation registry.
+8. [CAPABILITY_PROFILES.md](CAPABILITY_PROFILES.md) — incremental P2.1 profile, provider-state, release-sidecar and runtime-resolution contract.
+9. [p2-1-capability-profile-contract.json](p2-1-capability-profile-contract.json) — machine-readable P2.1 closed capability/provider registry.
 
 The architectural and security choices are recorded in accepted [ADR-0028](../../decisions/ADR-0028-p1-control-plane-foundation.md). The user accepted P1.0 on 2026-07-27; runtime behavior remains unimplemented unless a later acceptance package proves it.
 

@@ -16,8 +16,8 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 ## Execution Snapshot
 
 Current phase:
-`Productization P1.3 Accepted; P2.1 Awaiting Explicit Activation`. G0 and P1.0
-through P1.3 are explicitly accepted.
+`Productization P2.1 Capability Profiles Active`. G0 and P1.0 through P1.3 are
+explicitly accepted.
 
 P1.0 froze the target control-plane contract. P1.1 proved local identity,
 RBAC, audit and screen-device trust. P1.2 proved three-screen inventory and
@@ -26,7 +26,9 @@ was the three-screen inventory baseline. P1.3 candidate
 draft/release, publication/acknowledgement, forward rollback, encrypted
 online-source backup/restore and three-day retention slice. Its gates and final
 independent review passed with zero findings, and the user accepted it without
-conditions on 2026-07-28. P2.1 is queued and not active.
+conditions on 2026-07-28. The user explicitly activated P2.1 on 2026-07-28.
+Its complete capability-profile result card and non-scope are frozen; runtime
+implementation and verification are in progress and are not yet accepted.
 
 ## Frozen Product Boundaries
 
@@ -58,9 +60,11 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 Accepted behavior is recorded under
 [acceptance/productization/P1.1](acceptance/productization/P1.1),
 [acceptance/productization/P1.2](acceptance/productization/P1.2) and
-[acceptance/productization/P1.3](acceptance/productization/P1.3). P2.1 and later
-target behavior under [product/contracts](product/contracts) remains
-unimplemented until separately activated, proved and accepted.
+[acceptance/productization/P1.3](acceptance/productization/P1.3). The active
+P2.1 target is frozen in
+[acceptance/productization/P2.1/ACCEPTANCE_CARD.md](acceptance/productization/P2.1/ACCEPTANCE_CARD.md)
+and [product/contracts/CAPABILITY_PROFILES.md](product/contracts/CAPABILITY_PROFILES.md).
+It remains unimplemented/unaccepted until candidate evidence proves otherwise.
 
 ## Non-Negotiable Rules
 

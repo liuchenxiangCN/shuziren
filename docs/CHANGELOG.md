@@ -48,7 +48,8 @@
 - G0 and P1.0 through P1.3 are explicitly accepted. P1.3 candidate
   `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
   `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, is the accepted runtime rollback
-  baseline; P2.1 remains queued pending a separate explicit start instruction.
+  baseline. The user explicitly activated P2.1; its capability-profile result
+  card and non-scope are frozen while implementation remains in progress.
 - P1.2 local implementation is accepted at candidate `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`; its automated and independent-review evidence passes with zero final findings.
 - P1.1 local implementation is accepted at candidate `8c18e5d6b10081eaaf608436440046894d235d46`; two earlier candidates failed independent review, both finding sets were remediated, and the third independent review passed with zero findings.
 - The P1.0 target chooses SQLite for the embedded control plane, PostgreSQL 16 for the external target and an hourly separate-mount backup design with one-hour RPO / two-hour RTO targets; implementation evidence remains pending.

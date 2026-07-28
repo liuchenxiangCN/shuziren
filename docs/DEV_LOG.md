@@ -9,6 +9,29 @@
 
 ## 2026-07-28
 
+### P2.1 Activation And Result Freeze
+
+#### Completed Facts
+
+- The user explicitly instructed Codex to complete P2.1, activating it as the
+  sole current result batch.
+- Froze the complete P2.1 result card, incremental target contract, machine
+  provider registry and non-scope before runtime implementation.
+- The result covers Site-owned versioned CapabilityProfiles, immutable
+  ProfileVersions, additive draft/release capability sidecars, five distinct
+  states, dependency/fallback validation, `/manage` configuration and
+  credential-scoped three-screen resolution.
+- Preserved accepted P1.3 runtime commit
+  `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
+  `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, plus a required WAL-safe
+  pre-`004` database backup as the rollback target.
+- Kept P2.2 QuerySources, P2.3 integrated resilience certification, P2.4
+  FineReport official-plugin adaptation, all real Provider connections,
+  production activation, PostgreSQL, full-loss recovery and customer RPO/RTO
+  outside the frozen batch.
+- No P2.1 runtime implementation, automated result, external Provider result or
+  user acceptance is claimed by this activation and freeze.
+
 ### P1.3 User Acceptance
 
 #### Completed Facts
@@ -23,7 +46,8 @@
 - The acceptance package retains the final automated, browser, migration,
   Docker, Secret-scan, recovery, retention, P1.2 rollback, hash-binding and
   zero-finding independent-review evidence.
-- P2.1 remains queued and was not activated by this acceptance decision.
+- That P1.3 acceptance decision did not activate P2.1; the user activated P2.1
+  separately in the later instruction recorded above.
 
 ### P1.3 Publish, Rollback And Recovery Candidate
 

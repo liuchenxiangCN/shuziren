@@ -26,12 +26,13 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product State And Blockers
 
-### P1.3 Accepted; P2.1 Queued
+### P1.3 Accepted; P2.1 Active
 
 The user explicitly accepted P1.3 without conditions on 2026-07-28. Candidate
 `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`, tree
 `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, is the accepted runtime rollback
-baseline. P2.1 is queued and requires a separate explicit start instruction.
+baseline. The user explicitly activated P2.1 on 2026-07-28. Its result card is
+frozen; implementation and verification are in progress.
 
 - P1.3 accepted migration, publication, acknowledgement, rollback,
   backup/restore, retention, browser, Secret-scan, Docker and accepted-P1.2
@@ -41,6 +42,9 @@ baseline. P2.1 is queued and requires a separate explicit start instruction.
 - Real FVS/plugin behavior, production activation, external anti-rollback
   anchors, full-loss recovery, PostgreSQL and customer RPO/RTO certification
   remain blocked or outside the accepted P1.3 result.
+- P2.1 must keep external Providers `unverified`, block their activation and
+  resolve legacy P1.3 releases as `NOT_CONFIGURED_P2_1` rather than using a
+  global Mock fallback.
 
 ### P2 External Gate
 

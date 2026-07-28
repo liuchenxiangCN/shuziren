@@ -1,0 +1,172 @@
+{
+  "contract_version": "p2.1-capability-profile-v1",
+  "lifecycle": "TARGET_NOT_IMPLEMENTED",
+  "profile_schema_version": "p2_capability_profile_v1",
+  "provider_registry_version": "p2_provider_registry_001",
+  "capabilities": [
+    "dora",
+    "knowledge",
+    "direct_llm",
+    "asr",
+    "tts",
+    "querying",
+    "fvs_control"
+  ],
+  "states": [
+    "disabled",
+    "mock",
+    "unverified",
+    "available",
+    "degraded"
+  ],
+  "timeout_ms": {
+    "minimum": 100,
+    "maximum": 120000
+  },
+  "fallback": {
+    "allowed_reasons": [
+      "timeout",
+      "unavailable",
+      "unsupported"
+    ],
+    "terminal_reasons": [
+      "permission_denied",
+      "invalid_request",
+      "unauthorized_template",
+      "cancelled"
+    ],
+    "permission_scope": "screen_bound",
+    "require_permission_equivalence": true
+  },
+  "providers": [
+    {
+      "provider_id": "local_rules",
+      "capability": "dora",
+      "state": "available"
+    },
+    {
+      "provider_id": "mock_dora",
+      "capability": "dora",
+      "state": "mock"
+    },
+    {
+      "provider_id": "dora_gateway",
+      "capability": "dora",
+      "state": "unverified"
+    },
+    {
+      "provider_id": "local_extractive",
+      "capability": "knowledge",
+      "state": "available"
+    },
+    {
+      "provider_id": "mock_knowledge",
+      "capability": "knowledge",
+      "state": "mock"
+    },
+    {
+      "provider_id": "dora_ragflow",
+      "capability": "knowledge",
+      "state": "unverified"
+    },
+    {
+      "provider_id": "ragflow_gateway",
+      "capability": "knowledge",
+      "state": "unverified"
+    },
+    {
+      "provider_id": "fixed_template",
+      "capability": "direct_llm",
+      "state": "available"
+    },
+    {
+      "provider_id": "mock_llm",
+      "capability": "direct_llm",
+      "state": "mock"
+    },
+    {
+      "provider_id": "direct_llm_gateway",
+      "capability": "direct_llm",
+      "state": "unverified"
+    },
+    {
+      "provider_id": "mock_asr",
+      "capability": "asr",
+      "state": "mock"
+    },
+    {
+      "provider_id": "vendor_asr",
+      "capability": "asr",
+      "state": "unverified"
+    },
+    {
+      "provider_id": "mock_tts",
+      "capability": "tts",
+      "state": "mock"
+    },
+    {
+      "provider_id": "browser_text_fallback",
+      "capability": "tts",
+      "state": "degraded"
+    },
+    {
+      "provider_id": "vendor_tts",
+      "capability": "tts",
+      "state": "unverified"
+    },
+    {
+      "provider_id": "mock_query",
+      "capability": "querying",
+      "state": "mock"
+    },
+    {
+      "provider_id": "finereport_ai_plugin",
+      "capability": "querying",
+      "state": "unverified"
+    },
+    {
+      "provider_id": "controlled_query",
+      "capability": "querying",
+      "state": "unverified"
+    },
+    {
+      "provider_id": "mock_fvs",
+      "capability": "fvs_control",
+      "state": "mock"
+    },
+    {
+      "provider_id": "fvs_page_number",
+      "capability": "fvs_control",
+      "state": "unverified"
+    },
+    {
+      "provider_id": "fvs_post_message",
+      "capability": "fvs_control",
+      "state": "unverified"
+    }
+  ],
+  "presets": [
+    "text_only",
+    "mock_voice",
+    "mock_presenter"
+  ],
+  "storage": {
+    "migration": "004_capability_profiles",
+    "tables": [
+      "capability_profiles",
+      "capability_profile_versions",
+      "config_draft_capability_assignments",
+      "release_target_capability_snapshots"
+    ],
+    "profile_versions_immutable": true,
+    "draft_assignments_immutable": true,
+    "release_snapshots_immutable": true
+  },
+  "legacy_release_behavior": "NOT_CONFIGURED_P2_1",
+  "deferred": [
+    "P2.2_QUERY_SOURCES",
+    "P2.3_INTEGRATED_RESILIENCE_CERTIFICATION",
+    "P2.4_FINEREPORT_PLUGIN",
+    "P3_RENDERER_AVATAR_PACKAGE"
+  ]
+}

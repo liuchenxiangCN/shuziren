@@ -33,6 +33,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [acceptance/productization/P1.1](acceptance/productization/P1.1) | Acceptance evidence | Accepted P1.1 identity and device-trust result |
 | [acceptance/productization/P1.2](acceptance/productization/P1.2) | Acceptance evidence | Accepted P1.2 three-screen inventory result and decision |
 | [acceptance/productization/P1.3](acceptance/productization/P1.3) | Acceptance evidence | Accepted P1.3 publish, rollback and recovery result and decision |
+| [acceptance/productization/P2.1](acceptance/productization/P2.1) | Acceptance evidence | Active P2.1 capability-profile result card and pending decision |
 
 ## Product Target
 
@@ -42,6 +43,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [02_PRODUCT_BLUEPRINT.md](02_PRODUCT_BLUEPRINT.md) | Target not implemented | User value and product workflows |
 | [17_STANDARD_PRODUCT_DESIGN.md](17_STANDARD_PRODUCT_DESIGN.md) | Target not implemented | Standard product design |
 | [product/contracts/README.md](product/contracts/README.md) | Target not implemented | P1 domain, identity, state, data, storage and API target contracts |
+| [product/contracts/CAPABILITY_PROFILES.md](product/contracts/CAPABILITY_PROFILES.md) | Target not implemented | P2.1 capability-profile and provider-resolution target contract |
 | [integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md](integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md) | Target not implemented / external gate | Official plugin evidence and connector boundary |
 | [decisions/ADR-0026-finereport-fvs-productization.md](decisions/ADR-0026-finereport-fvs-productization.md) | Accepted ADR | Productization decision |
 | [decisions/ADR-0027-result-driven-development-and-document-lifecycle.md](decisions/ADR-0027-result-driven-development-and-document-lifecycle.md) | Accepted ADR | Result-driven development and document lifecycle |
