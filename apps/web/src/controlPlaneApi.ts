@@ -293,6 +293,136 @@ export interface ScreenEffectiveCapabilities {
   effective?: CapabilityResolutionSnapshot | null;
 }
 
+export type QueryEngine = 'EXCEL' | 'MYSQL' | 'ORACLE' | 'POSTGRESQL';
+
+export interface QueryParameterDefinition {
+  name: string;
+  type: 'string' | 'integer' | 'number' | 'boolean' | 'date';
+  required: boolean;
+}
+
+export interface QuerySource {
+  api_version: 'v1';
+  source_id: string;
+  source_version_id: string;
+  site_id: string;
+  display_name: string;
+  engine: QueryEngine;
+  state: 'ACTIVE' | 'DISABLED';
+  qualification: {
+    state: 'UNVERIFIED' | 'AVAILABLE' | 'FAILED';
+    code?: string | null;
+    last_tested_at?: number | null;
+    deployment_local_evidence: boolean;
+    product_certification: 'UNVERIFIED';
+  };
+  read_only_account_confirmed: boolean;
+  credential: {
+    configured: boolean;
+    fingerprint_suffix?: string | null;
+    sensitive: true;
+    readable: false;
+  };
+  workbook: { configured: boolean; content_readable: false };
+  config_hash: string;
+  resource_revision: number;
+  etag: string;
+  immutable_definition: true;
+}
+
+export interface QueryDataset {
+  api_version: 'v1';
+  dataset_id: string;
+  dataset_version_id: string;
+  site_id: string;
+  display_name: string;
+  state: 'ACTIVE' | 'DISABLED';
+  source: {
+    source_id: string;
+    source_version_id: string;
+    display_name: string;
+    engine: QueryEngine;
+    state: 'ACTIVE' | 'DISABLED';
+    qualification_state: 'UNVERIFIED' | 'AVAILABLE' | 'FAILED';
+  };
+  schema_version: 'p2_controlled_dataset_v1';
+  metric_definition: string;
+  time_scope_description: string;
+  freshness_label: string;
+  parameter_schema: QueryParameterDefinition[];
+  output_fields: string[];
+  definition: {
+    kind: 'EXCEL_FILTER' | 'DATABASE_SELECT';
+    worksheet_configured: boolean;
+    query_template_configured: boolean;
+    query_template_readable: false;
+    relation_count: number;
+  };
+  definition_hash: string;
+  row_limit: number;
+  timeout_ms: number;
+  resource_revision: number;
+  etag: string;
+  immutable_definition: true;
+}
+
+export interface QueryDatasetRef {
+  dataset_id: string;
+  dataset_version_id: string;
+  dataset_label: string;
+  definition_hash: string;
+  metric_definition: string;
+  time_scope_description: string;
+  freshness_label: string;
+  parameter_schema: QueryParameterDefinition[];
+  output_fields: string[];
+  row_limit: number;
+  timeout_ms: number;
+  source_id: string;
+  source_version_id: string;
+  source_label: string;
+  source_config_hash: string;
+  engine: QueryEngine;
+}
+
+export interface RuntimeQueryDataset {
+  dataset_id: string;
+  dataset_version_id: string;
+  label: string;
+  metric_definition: string;
+  time_scope_description: string;
+  freshness_label: string;
+  parameter_schema: QueryParameterDefinition[];
+  output_fields: string[];
+  row_limit: number;
+  timeout_ms: number;
+  source: {
+    source_id: string;
+    engine: QueryEngine;
+    label: string;
+    qualification: 'DEPLOYMENT_LOCAL_AVAILABLE';
+    product_certification: 'UNVERIFIED';
+  };
+}
+
+export interface QueryExecution {
+  api_version: 'v1';
+  execution_id: string;
+  request_id: string;
+  state: string;
+  screen_id?: string;
+  dataset_id?: string;
+  source?: Record<string, unknown>;
+  dataset?: Record<string, unknown>;
+  requested_time_scope?: Record<string, unknown>;
+  permission_subject?: Record<string, unknown>;
+  latency_ms?: number;
+  fields?: string[];
+  row_count?: number;
+  rows?: Array<Record<string, unknown>>;
+  error?: { code: string; message: string; retryable: boolean };
+}
+
 export interface ConfigDraft {
   draft_id: string;
   target: {
@@ -323,6 +453,12 @@ export interface ConfigDraft {
     reason: string;
   } | null;
   capability_profile?: CapabilityProfileAssignment | null;
+  query_datasets?: {
+    schema_version: 'p2_query_snapshot_v1';
+    dataset_refs: QueryDatasetRef[];
+    assignment_hash: string;
+    immutable: true;
+  } | null;
   etag: string;
 }
 
@@ -333,6 +469,14 @@ export interface ConfigReleaseTarget {
   effective_config: Record<string, string>;
   content_hash: string;
   capability_snapshot?: CapabilityResolutionSnapshot | null;
+  query_snapshot?: {
+    schema_version: 'p2_query_snapshot_v1';
+    querying_enabled: boolean;
+    assignment_hash: string;
+    dataset_refs: QueryDatasetRef[];
+    query_snapshot_hash: string;
+    immutable: true;
+  } | null;
   rollback_source_release_id?: string | null;
   rollback_source_target_id?: string | null;
   immutable: true;
@@ -568,6 +712,187 @@ export function getScreenEffectiveCapabilities(
 ): Promise<ScreenEffectiveCapabilities> {
   return controlPlaneRequest(
     `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/effective-capabilities`,
+  );
+}
+
+export function listQuerySources(): Promise<InventoryPage<QuerySource>> {
+  return controlPlaneRequest('/api/v1/control-plane/query-sources');
+}
+
+export function createQuerySource(payload: {
+  site_id: string;
+  display_name: string;
+  engine: QueryEngine;
+  read_only_account_confirmed: boolean;
+  connection?: {
+    host: string;
+    port: number;
+    database: string;
+    username: string;
+    password: string;
+  };
+  excel_file_name?: string;
+  excel_workbook_base64?: string;
+}): Promise<QuerySource> {
+  return controlPlaneRequest(
+    '/api/v1/control-plane/query-sources',
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('query-source-create') },
+      body: JSON.stringify(payload),
+    },
+    { csrf: true },
+  );
+}
+
+export function testQuerySource(source: QuerySource): Promise<{
+  source_id: string;
+  qualification_state: 'AVAILABLE' | 'FAILED';
+  code: string;
+  message: string;
+  latency_ms: number;
+}> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/query-sources/${encodeURIComponent(source.source_id)}:test`,
+    {
+      method: 'POST',
+      headers: {
+        'If-Match': source.etag,
+        'Idempotency-Key': randomIdempotencyKey('query-source-test'),
+      },
+    },
+    { csrf: true },
+  );
+}
+
+export function disableQuerySource(source: QuerySource): Promise<QuerySource> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/query-sources/${encodeURIComponent(source.source_id)}:disable`,
+    {
+      method: 'POST',
+      headers: {
+        'If-Match': source.etag,
+        'Idempotency-Key': randomIdempotencyKey('query-source-disable'),
+      },
+    },
+    { csrf: true },
+  );
+}
+
+export function listQueryDatasets(): Promise<InventoryPage<QueryDataset>> {
+  return controlPlaneRequest('/api/v1/control-plane/query-datasets');
+}
+
+export function createQueryDataset(payload: {
+  source_id: string;
+  display_name: string;
+  metric_definition: string;
+  time_scope_description: string;
+  freshness_label: string;
+  parameters: QueryParameterDefinition[];
+  output_fields: string[];
+  definition: {
+    worksheet?: string;
+    parameter_columns?: Record<string, string>;
+    query_template?: string;
+    allowed_relations?: string[];
+  };
+  row_limit: number;
+  timeout_ms: number;
+}): Promise<QueryDataset> {
+  return controlPlaneRequest(
+    '/api/v1/control-plane/query-datasets',
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('query-dataset-create') },
+      body: JSON.stringify(payload),
+    },
+    { csrf: true },
+  );
+}
+
+export function disableQueryDataset(dataset: QueryDataset): Promise<QueryDataset> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/query-datasets/${encodeURIComponent(dataset.dataset_id)}:disable`,
+    {
+      method: 'POST',
+      headers: {
+        'If-Match': dataset.etag,
+        'Idempotency-Key': randomIdempotencyKey('query-dataset-disable'),
+      },
+    },
+    { csrf: true },
+  );
+}
+
+export function assignQueryDatasetsToDraft(
+  draft: ConfigDraft,
+  datasetVersionIds: string[],
+): Promise<ConfigDraft> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/config-drafts/${encodeURIComponent(draft.draft_id)}/query-datasets`,
+    {
+      method: 'PUT',
+      headers: {
+        'If-Match': draft.etag,
+        'Idempotency-Key': randomIdempotencyKey('draft-query-datasets-assign'),
+      },
+      body: JSON.stringify({ dataset_version_ids: datasetVersionIds }),
+    },
+    { csrf: true },
+  );
+}
+
+export function listScreenQueryDatasets(screenId: string): Promise<{
+  api_version: 'v1';
+  screen_id: string;
+  release_target_id: string;
+  query_snapshot_hash: string;
+  provider: 'controlled_query';
+  state: 'available';
+  items: RuntimeQueryDataset[];
+}> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/query-datasets`,
+  );
+}
+
+export function startScreenQuery(
+  screenId: string,
+  datasetId: string,
+  parameters: Record<string, unknown>,
+): Promise<QueryExecution> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/query-datasets/${encodeURIComponent(datasetId)}:execute`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('controlled-query-start') },
+      body: JSON.stringify({ parameters }),
+    },
+    { csrf: true },
+  );
+}
+
+export function getScreenQueryExecution(
+  screenId: string,
+  executionId: string,
+): Promise<QueryExecution> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/query-executions/${encodeURIComponent(executionId)}`,
+  );
+}
+
+export function cancelScreenQueryExecution(
+  screenId: string,
+  executionId: string,
+): Promise<QueryExecution> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/query-executions/${encodeURIComponent(executionId)}:cancel`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('controlled-query-cancel') },
+    },
+    { csrf: true },
   );
 }
 

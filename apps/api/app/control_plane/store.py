@@ -15,6 +15,7 @@ MIGRATION_001_VERSION = "001_initial_identity_device_trust"
 MIGRATION_002_VERSION = "002_three_screen_inventory"
 MIGRATION_003_VERSION = "003_publish_rollback_recovery"
 MIGRATION_004_VERSION = "004_capability_profiles"
+MIGRATION_005_VERSION = "005_controlled_querying"
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -1304,6 +1305,406 @@ END;
 
 MIGRATION_004_CHECKSUM_SHA256 = hashlib.sha256(CAPABILITY_PROFILE_SCHEMA_SQL.encode("utf-8")).hexdigest()
 
+CONTROLLED_QUERYING_SCHEMA_SQL = """
+CREATE TABLE query_secret_records (
+    secret_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    secret_type TEXT NOT NULL CHECK (secret_type = 'DATABASE_CONNECTION'),
+    current_version_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'DISABLED')),
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    UNIQUE (tenant_id, deployment_id, site_id, secret_id),
+    FOREIGN KEY (tenant_id, deployment_id, site_id)
+        REFERENCES sites(tenant_id, deployment_id, site_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, created_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (current_version_id)
+        REFERENCES query_secret_versions(secret_version_id)
+        ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE query_secret_versions (
+    secret_version_id TEXT PRIMARY KEY,
+    secret_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL CHECK (version_number = 1),
+    envelope_key_id TEXT NOT NULL,
+    envelope_nonce BLOB NOT NULL,
+    envelope_ciphertext BLOB NOT NULL,
+    envelope_aad_json TEXT NOT NULL,
+    envelope_aad_hash TEXT NOT NULL,
+    fingerprint_suffix TEXT NOT NULL,
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    UNIQUE (secret_id, version_number),
+    UNIQUE (secret_id, secret_version_id),
+    FOREIGN KEY (secret_id)
+        REFERENCES query_secret_records(secret_id)
+        ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE TABLE query_sources (
+    source_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    engine TEXT NOT NULL CHECK (
+        engine IN ('EXCEL', 'MYSQL', 'ORACLE', 'POSTGRESQL')
+    ),
+    head_version_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'DISABLED')),
+    qualification_state TEXT NOT NULL CHECK (
+        qualification_state IN ('UNVERIFIED', 'AVAILABLE', 'FAILED')
+    ),
+    qualification_code TEXT,
+    last_tested_at REAL,
+    read_only_account_confirmed INTEGER NOT NULL CHECK (
+        read_only_account_confirmed IN (0, 1)
+    ),
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    UNIQUE (tenant_id, deployment_id, site_id, source_id),
+    FOREIGN KEY (tenant_id, deployment_id, site_id)
+        REFERENCES sites(tenant_id, deployment_id, site_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, created_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (head_version_id)
+        REFERENCES query_source_versions(source_version_id)
+        ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX idx_query_sources_scope
+    ON query_sources(tenant_id, deployment_id, site_id, source_id);
+
+CREATE TABLE query_source_versions (
+    source_version_id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL CHECK (version_number = 1),
+    engine TEXT NOT NULL CHECK (
+        engine IN ('EXCEL', 'MYSQL', 'ORACLE', 'POSTGRESQL')
+    ),
+    canonical_config_json TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    secret_id TEXT,
+    secret_version_id TEXT,
+    workbook_sha256 TEXT,
+    workbook_content BLOB,
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    UNIQUE (source_id, version_number),
+    UNIQUE (source_id, source_version_id),
+    UNIQUE (
+        tenant_id, deployment_id, site_id, source_id,
+        source_version_id, version_number
+    ),
+    CHECK (
+        (engine = 'EXCEL' AND secret_id IS NULL
+            AND secret_version_id IS NULL AND workbook_sha256 IS NOT NULL
+            AND workbook_content IS NOT NULL)
+        OR
+        (engine != 'EXCEL' AND secret_id IS NOT NULL
+            AND secret_version_id IS NOT NULL AND workbook_sha256 IS NULL
+            AND workbook_content IS NULL)
+    ),
+    FOREIGN KEY (tenant_id, deployment_id, site_id, source_id)
+        REFERENCES query_sources(tenant_id, deployment_id, site_id, source_id)
+        ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (secret_id, secret_version_id)
+        REFERENCES query_secret_versions(secret_id, secret_version_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, created_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE query_datasets (
+    dataset_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    head_version_id TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'DISABLED')),
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    UNIQUE (tenant_id, deployment_id, site_id, dataset_id),
+    FOREIGN KEY (tenant_id, deployment_id, site_id)
+        REFERENCES sites(tenant_id, deployment_id, site_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, site_id, source_id)
+        REFERENCES query_sources(tenant_id, deployment_id, site_id, source_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, created_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (head_version_id)
+        REFERENCES query_dataset_versions(dataset_version_id)
+        ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED
+);
+
+CREATE INDEX idx_query_datasets_scope
+    ON query_datasets(tenant_id, deployment_id, site_id, source_id, dataset_id);
+
+CREATE TABLE query_dataset_versions (
+    dataset_version_id TEXT PRIMARY KEY,
+    dataset_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    source_version_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL CHECK (version_number = 1),
+    schema_version TEXT NOT NULL CHECK (
+        schema_version = 'p2_controlled_dataset_v1'
+    ),
+    metric_definition TEXT NOT NULL,
+    time_scope_description TEXT NOT NULL,
+    freshness_label TEXT NOT NULL,
+    canonical_parameter_schema_json TEXT NOT NULL,
+    canonical_output_fields_json TEXT NOT NULL,
+    canonical_definition_json TEXT NOT NULL,
+    definition_hash TEXT NOT NULL,
+    row_limit INTEGER NOT NULL CHECK (row_limit BETWEEN 1 AND 500),
+    timeout_ms INTEGER NOT NULL CHECK (timeout_ms BETWEEN 100 AND 120000),
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    UNIQUE (dataset_id, version_number),
+    UNIQUE (dataset_id, dataset_version_id),
+    UNIQUE (
+        tenant_id, deployment_id, site_id, dataset_id,
+        dataset_version_id, version_number
+    ),
+    FOREIGN KEY (tenant_id, deployment_id, site_id, dataset_id)
+        REFERENCES query_datasets(tenant_id, deployment_id, site_id, dataset_id)
+        ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (
+        tenant_id, deployment_id, site_id, source_id,
+        source_version_id, version_number
+    ) REFERENCES query_source_versions(
+        tenant_id, deployment_id, site_id, source_id,
+        source_version_id, version_number
+    ) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, created_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE config_draft_query_assignments (
+    draft_id TEXT NOT NULL,
+    draft_revision INTEGER NOT NULL CHECK (draft_revision >= 1),
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    canonical_dataset_refs_json TEXT NOT NULL,
+    assignment_hash TEXT NOT NULL,
+    assigned_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    assigned_at REAL NOT NULL,
+    PRIMARY KEY (draft_id, draft_revision),
+    FOREIGN KEY (draft_id, draft_revision)
+        REFERENCES config_draft_revisions(draft_id, draft_revision)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, site_id)
+        REFERENCES sites(tenant_id, deployment_id, site_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, assigned_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE query_validation_records (
+    query_validation_record_id TEXT PRIMARY KEY,
+    draft_id TEXT NOT NULL,
+    draft_revision INTEGER NOT NULL CHECK (draft_revision >= 1),
+    base_validation_record_id TEXT NOT NULL,
+    assignment_hash TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('PASS', 'FAIL')),
+    findings_json TEXT NOT NULL,
+    findings_hash TEXT NOT NULL,
+    validator_version TEXT NOT NULL CHECK (
+        validator_version = 'p2_2_controlled_query_validator_v1'
+    ),
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    UNIQUE (draft_id, draft_revision, base_validation_record_id),
+    FOREIGN KEY (draft_id, draft_revision)
+        REFERENCES config_draft_revisions(draft_id, draft_revision)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (base_validation_record_id)
+        REFERENCES validation_records(validation_record_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (created_by_user_id)
+        REFERENCES users(user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE release_target_query_snapshots (
+    release_target_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    screen_id TEXT NOT NULL,
+    canonical_query_snapshot_json TEXT NOT NULL,
+    query_snapshot_hash TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    UNIQUE (tenant_id, deployment_id, screen_id, release_target_id),
+    FOREIGN KEY (
+        tenant_id, deployment_id, screen_id, release_target_id
+    ) REFERENCES release_targets(
+        tenant_id, deployment_id, screen_id, release_target_id
+    ) ON DELETE RESTRICT
+);
+
+CREATE TABLE query_executions (
+    execution_id TEXT PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    screen_id TEXT NOT NULL,
+    release_target_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    source_version_id TEXT NOT NULL,
+    dataset_id TEXT NOT NULL,
+    dataset_version_id TEXT NOT NULL,
+    actor_type TEXT NOT NULL CHECK (actor_type IN ('USER', 'DEVICE')),
+    actor_id TEXT NOT NULL,
+    parameter_names_json TEXT NOT NULL,
+    parameter_digest TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (
+        state IN (
+            'QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED',
+            'TIMED_OUT', 'CANCELLED', 'REJECTED_BACKPRESSURE'
+        )
+    ),
+    error_code TEXT,
+    row_count INTEGER,
+    latency_ms INTEGER,
+    created_at REAL NOT NULL,
+    started_at REAL,
+    completed_at REAL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+    FOREIGN KEY (
+        tenant_id, deployment_id, screen_id, release_target_id
+    ) REFERENCES release_targets(
+        tenant_id, deployment_id, screen_id, release_target_id
+    ) ON DELETE RESTRICT,
+    FOREIGN KEY (dataset_id, dataset_version_id)
+        REFERENCES query_dataset_versions(dataset_id, dataset_version_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (source_id, source_version_id)
+        REFERENCES query_source_versions(source_id, source_version_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_query_executions_screen
+    ON query_executions(tenant_id, deployment_id, screen_id, created_at DESC);
+
+CREATE TRIGGER query_secret_versions_no_update
+BEFORE UPDATE ON query_secret_versions
+BEGIN
+    SELECT RAISE(ABORT, 'query Secret versions are immutable');
+END;
+
+CREATE TRIGGER query_secret_versions_no_delete
+BEFORE DELETE ON query_secret_versions
+BEGIN
+    SELECT RAISE(ABORT, 'query Secret versions are immutable');
+END;
+
+CREATE TRIGGER query_source_versions_no_update
+BEFORE UPDATE ON query_source_versions
+BEGIN
+    SELECT RAISE(ABORT, 'query source versions are immutable');
+END;
+
+CREATE TRIGGER query_source_versions_no_delete
+BEFORE DELETE ON query_source_versions
+BEGIN
+    SELECT RAISE(ABORT, 'query source versions are immutable');
+END;
+
+CREATE TRIGGER query_sources_definition_no_update
+BEFORE UPDATE OF tenant_id, deployment_id, site_id, display_name, engine,
+    head_version_id, read_only_account_confirmed ON query_sources
+BEGIN
+    SELECT RAISE(ABORT, 'query source definitions are immutable');
+END;
+
+CREATE TRIGGER query_dataset_versions_no_update
+BEFORE UPDATE ON query_dataset_versions
+BEGIN
+    SELECT RAISE(ABORT, 'query dataset versions are immutable');
+END;
+
+CREATE TRIGGER query_dataset_versions_no_delete
+BEFORE DELETE ON query_dataset_versions
+BEGIN
+    SELECT RAISE(ABORT, 'query dataset versions are immutable');
+END;
+
+CREATE TRIGGER query_datasets_definition_no_update
+BEFORE UPDATE OF tenant_id, deployment_id, site_id, source_id, display_name,
+    head_version_id ON query_datasets
+BEGIN
+    SELECT RAISE(ABORT, 'query dataset definitions are immutable');
+END;
+
+CREATE TRIGGER config_draft_query_assignments_no_update
+BEFORE UPDATE ON config_draft_query_assignments
+BEGIN
+    SELECT RAISE(ABORT, 'draft query assignments are immutable');
+END;
+
+CREATE TRIGGER config_draft_query_assignments_no_delete
+BEFORE DELETE ON config_draft_query_assignments
+BEGIN
+    SELECT RAISE(ABORT, 'draft query assignments are immutable');
+END;
+
+CREATE TRIGGER query_validation_records_no_update
+BEFORE UPDATE ON query_validation_records
+BEGIN
+    SELECT RAISE(ABORT, 'query validation records are immutable');
+END;
+
+CREATE TRIGGER query_validation_records_no_delete
+BEFORE DELETE ON query_validation_records
+BEGIN
+    SELECT RAISE(ABORT, 'query validation records are immutable');
+END;
+
+CREATE TRIGGER release_target_query_snapshots_no_update
+BEFORE UPDATE ON release_target_query_snapshots
+BEGIN
+    SELECT RAISE(ABORT, 'release target query snapshots are immutable');
+END;
+
+CREATE TRIGGER release_target_query_snapshots_no_delete
+BEFORE DELETE ON release_target_query_snapshots
+BEGIN
+    SELECT RAISE(ABORT, 'release target query snapshots are immutable');
+END;
+"""
+
+MIGRATION_005_CHECKSUM_SHA256 = hashlib.sha256(CONTROLLED_QUERYING_SCHEMA_SQL.encode("utf-8")).hexdigest()
+
 MIGRATIONS = (
     (MIGRATION_001_VERSION, MIGRATION_001_CHECKSUM_SHA256, SCHEMA_SQL),
     (MIGRATION_002_VERSION, MIGRATION_002_CHECKSUM_SHA256, INVENTORY_SCHEMA_SQL),
@@ -1317,9 +1718,14 @@ MIGRATIONS = (
         MIGRATION_004_CHECKSUM_SHA256,
         CAPABILITY_PROFILE_SCHEMA_SQL,
     ),
+    (
+        MIGRATION_005_VERSION,
+        MIGRATION_005_CHECKSUM_SHA256,
+        CONTROLLED_QUERYING_SCHEMA_SQL,
+    ),
 )
-MIGRATION_VERSION = MIGRATION_004_VERSION
-MIGRATION_CHECKSUM_SHA256 = MIGRATION_004_CHECKSUM_SHA256
+MIGRATION_VERSION = MIGRATION_005_VERSION
+MIGRATION_CHECKSUM_SHA256 = MIGRATION_005_CHECKSUM_SHA256
 
 
 class ControlPlaneStore:
@@ -1393,6 +1799,8 @@ class ControlPlaneStore:
                         self._append_p13_migration_audit(connection, now)
                     if version == MIGRATION_004_VERSION:
                         self._append_p21_migration_audit(connection, now)
+                    if version == MIGRATION_005_VERSION:
+                        self._append_p22_migration_audit(connection, now)
                     connection.execute(
                         """
                         INSERT INTO schema_migrations(version, checksum_sha256, applied_at)
@@ -1402,6 +1810,7 @@ class ControlPlaneStore:
                     )
                 self.validate_schema_object_integrity(connection, MIGRATIONS)
                 self.validate_p21_schema_integrity(connection)
+                self.validate_p22_schema_integrity(connection)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -1439,6 +1848,22 @@ class ControlPlaneStore:
         if registered is None:
             return
         if registered["checksum_sha256"] != MIGRATION_004_CHECKSUM_SHA256:
+            raise RuntimeError("Control-plane migration checksum mismatch")
+
+        ControlPlaneStore.validate_schema_object_integrity(connection, MIGRATIONS)
+
+    @staticmethod
+    def validate_p22_schema_integrity(connection: sqlite3.Connection) -> None:
+        registered = connection.execute(
+            """
+            SELECT checksum_sha256 FROM schema_migrations
+            WHERE version = ?
+            """,
+            (MIGRATION_005_VERSION,),
+        ).fetchone()
+        if registered is None:
+            return
+        if registered["checksum_sha256"] != MIGRATION_005_CHECKSUM_SHA256:
             raise RuntimeError("Control-plane migration checksum mismatch")
 
         ControlPlaneStore.validate_schema_object_integrity(connection, MIGRATIONS)
@@ -1834,6 +2259,72 @@ class ControlPlaneStore:
                 event_hash_schema_version, created_at
             ) VALUES (
                 ?, 'CAPABILITY_PROFILE_SCHEMA_MIGRATED',
+                'LOCAL_MIGRATION', NULL, 'DEPLOYMENT', ?, 'SUCCESS',
+                'named forward migration', ?, ?, ?,
+                'p1_security_audit_event_hash_v1', ?
+            )
+            """,
+            (
+                event_id,
+                metadata["deployment_id"],
+                canonical_json(details),
+                previous_hash,
+                event_hash,
+                now,
+            ),
+        )
+
+    @staticmethod
+    def _append_p22_migration_audit(
+        connection: sqlite3.Connection,
+        now: float,
+    ) -> None:
+        metadata = connection.execute("SELECT * FROM control_plane_metadata WHERE singleton = 1").fetchone()
+        if metadata is None:
+            return
+        previous = connection.execute(
+            "SELECT event_hash FROM security_audit_events ORDER BY sequence DESC LIMIT 1"
+        ).fetchone()
+        previous_hash = previous["event_hash"] if previous else None
+        event_id = uuid7()
+        details = {
+            "migration_version": MIGRATION_005_VERSION,
+            "dataset_schema_version": "p2_controlled_dataset_v1",
+            "preserved_capability_profile_count": connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM capability_profiles
+                WHERE tenant_id = ? AND deployment_id = ?
+                """,
+                (metadata["tenant_id"], metadata["deployment_id"]),
+            ).fetchone()["count"],
+            "free_sql_enabled": False,
+        }
+        payload = canonical_json(
+            {
+                "event_id": event_id,
+                "event_type": "CONTROLLED_QUERY_SCHEMA_MIGRATED",
+                "actor_type": "LOCAL_MIGRATION",
+                "actor_id": None,
+                "target_type": "DEPLOYMENT",
+                "target_id": metadata["deployment_id"],
+                "outcome": "SUCCESS",
+                "reason": "named forward migration",
+                "details": details,
+                "previous_event_hash": previous_hash,
+                "created_at": now,
+            }
+        )
+        event_hash = hashlib.sha256(
+            b"shuziren:p1:security-audit-event:v1\0" + payload.encode("utf-8")
+        ).hexdigest()
+        connection.execute(
+            """
+            INSERT INTO security_audit_events(
+                event_id, event_type, actor_type, actor_id, target_type, target_id,
+                outcome, reason, details_json, previous_event_hash, event_hash,
+                event_hash_schema_version, created_at
+            ) VALUES (
+                ?, 'CONTROLLED_QUERY_SCHEMA_MIGRATED',
                 'LOCAL_MIGRATION', NULL, 'DEPLOYMENT', ?, 'SUCCESS',
                 'named forward migration', ?, ?, ?,
                 'p1_security_audit_event_hash_v1', ?

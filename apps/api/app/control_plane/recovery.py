@@ -27,6 +27,11 @@ from app.control_plane.p2_1 import (
     PROVIDER_REGISTRY_VERSION,
     P21ControlPlane,
 )
+from app.control_plane.p2_2 import (
+    DATASET_SCHEMA_VERSION,
+    QUERY_SNAPSHOT_SCHEMA_VERSION,
+    QUERY_VALIDATOR_VERSION,
+)
 from app.control_plane.security import Ciphertext, PurposeKeyring, canonical_json
 from app.control_plane.store import LOGICAL_SCHEMA_VERSION, MIGRATIONS, ControlPlaneStore
 
@@ -445,6 +450,7 @@ class BackupManager:
                     if actual != row["content_hash"]:
                         raise BackupIntegrityError("Backup release hash verification failed")
                 BackupManager._validate_p21_capability_data(connection)
+                BackupManager._validate_p22_query_data(connection)
                 BackupManager._validate_audit_chain(connection)
                 tables = [
                     row["name"]
@@ -1297,6 +1303,409 @@ class BackupManager:
                 or target["release_target_id"] not in snapshot_by_target
             ):
                 raise BackupIntegrityError("Capability snapshot has no assigned release lineage")
+
+    @staticmethod
+    def _validate_p22_query_data(connection: sqlite3.Connection) -> None:
+        required_tables = {
+            "query_secret_records",
+            "query_secret_versions",
+            "query_sources",
+            "query_source_versions",
+            "query_datasets",
+            "query_dataset_versions",
+            "config_draft_query_assignments",
+            "query_validation_records",
+            "release_target_query_snapshots",
+            "query_executions",
+        }
+        present = {
+            row["name"]
+            for row in connection.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name LIKE 'query_%'
+                   OR type = 'table' AND name IN (
+                       'config_draft_query_assignments',
+                       'release_target_query_snapshots'
+                   )
+                """
+            ).fetchall()
+        }
+        if not present:
+            return
+        if present != required_tables:
+            raise BackupIntegrityError("Controlled-query table set is incomplete")
+        try:
+            ControlPlaneStore.validate_p22_schema_integrity(connection)
+        except RuntimeError as exc:
+            raise BackupIntegrityError("Controlled-query schema object verification failed") from exc
+
+        secret_records = {
+            row["secret_id"]: row
+            for row in connection.execute("SELECT * FROM query_secret_records ORDER BY secret_id").fetchall()
+        }
+        secret_versions = {
+            row["secret_version_id"]: row
+            for row in connection.execute(
+                "SELECT * FROM query_secret_versions ORDER BY secret_version_id"
+            ).fetchall()
+        }
+        source_rows = connection.execute(
+            """
+            SELECT s.*, v.source_version_id, v.version_number,
+                   v.tenant_id AS version_tenant_id,
+                   v.deployment_id AS version_deployment_id,
+                   v.site_id AS version_site_id,
+                   v.engine AS version_engine,
+                   v.canonical_config_json, v.config_hash,
+                   v.secret_id, v.secret_version_id,
+                   v.workbook_sha256, v.workbook_content
+            FROM query_sources s
+            JOIN query_source_versions v
+              ON v.source_id = s.source_id
+             AND v.source_version_id = s.head_version_id
+            ORDER BY s.source_id
+            """
+        ).fetchall()
+        if len(source_rows) != connection.execute("SELECT COUNT(*) FROM query_source_versions").fetchone()[0]:
+            raise BackupIntegrityError("Controlled-query source lineage is incomplete")
+        source_by_version: dict[str, sqlite3.Row] = {}
+        used_secret_ids: set[str] = set()
+        used_secret_version_ids: set[str] = set()
+        for source in source_rows:
+            try:
+                config = json.loads(source["canonical_config_json"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise BackupIntegrityError("Controlled-query source configuration is invalid") from exc
+            if (
+                source["tenant_id"] != source["version_tenant_id"]
+                or source["deployment_id"] != source["version_deployment_id"]
+                or source["site_id"] != source["version_site_id"]
+                or source["engine"] != source["version_engine"]
+                or source["version_number"] != 1
+                or canonical_json(config) != source["canonical_config_json"]
+                or hashlib.sha256(source["canonical_config_json"].encode("utf-8")).hexdigest()
+                != source["config_hash"]
+            ):
+                raise BackupIntegrityError("Controlled-query source hash or scope changed")
+            if source["engine"] == "EXCEL":
+                payload = bytes(source["workbook_content"] or b"")
+                storage_key = config.get("storage_key") if isinstance(config, dict) else None
+                if (
+                    set(config)
+                    != {
+                        "storage_key",
+                        "workbook_sha256",
+                        "worksheet_names",
+                    }
+                    or not isinstance(storage_key, str)
+                    or Path(storage_key).name != storage_key
+                    or not storage_key.endswith(".xlsx")
+                    or source["secret_id"] is not None
+                    or source["secret_version_id"] is not None
+                    or not payload
+                    or hashlib.sha256(payload).hexdigest() != source["workbook_sha256"]
+                    or config["workbook_sha256"] != source["workbook_sha256"]
+                    or not isinstance(config["worksheet_names"], list)
+                    or not config["worksheet_names"]
+                    or any(not isinstance(name, str) or not name for name in config["worksheet_names"])
+                ):
+                    raise BackupIntegrityError("Controlled-query workbook integrity changed")
+            else:
+                secret = secret_records.get(source["secret_id"])
+                version = secret_versions.get(source["secret_version_id"])
+                try:
+                    aad = json.loads(version["envelope_aad_json"]) if version else None
+                except (json.JSONDecodeError, TypeError) as exc:
+                    raise BackupIntegrityError("Controlled-query Secret AAD is invalid") from exc
+                expected_aad = {
+                    "schema_version": "p2_query_secret_aad_v1",
+                    "tenant_id": source["tenant_id"],
+                    "deployment_id": source["deployment_id"],
+                    "site_id": source["site_id"],
+                    "source_id": source["source_id"],
+                    "source_version_id": source["source_version_id"],
+                    "secret_id": source["secret_id"],
+                    "secret_version_id": source["secret_version_id"],
+                    "engine": source["engine"],
+                    "envelope_key_id": (version["envelope_key_id"] if version is not None else None),
+                }
+                if (
+                    set(config) != {"connection_material", "connection_fields"}
+                    or config["connection_material"] != "ENCRYPTED_SECRET_VERSION"
+                    or config["connection_fields"] != ["database", "host", "password", "port", "username"]
+                    or source["workbook_sha256"] is not None
+                    or source["workbook_content"] is not None
+                    or secret is None
+                    or version is None
+                    or secret["current_version_id"] != version["secret_version_id"]
+                    or secret["tenant_id"] != source["tenant_id"]
+                    or secret["deployment_id"] != source["deployment_id"]
+                    or secret["site_id"] != source["site_id"]
+                    or version["secret_id"] != secret["secret_id"]
+                    or version["version_number"] != 1
+                    or aad != expected_aad
+                    or canonical_json(aad) != version["envelope_aad_json"]
+                    or hashlib.sha256(version["envelope_aad_json"].encode("utf-8")).hexdigest()
+                    != version["envelope_aad_hash"]
+                    or not version["envelope_nonce"]
+                    or not version["envelope_ciphertext"]
+                ):
+                    raise BackupIntegrityError("Controlled-query Secret reference or integrity changed")
+                used_secret_ids.add(secret["secret_id"])
+                used_secret_version_ids.add(version["secret_version_id"])
+            source_by_version[source["source_version_id"]] = source
+        if used_secret_ids != set(secret_records) or used_secret_version_ids != set(secret_versions):
+            raise BackupIntegrityError("Controlled-query Secret lineage is incomplete")
+
+        dataset_rows = connection.execute(
+            """
+            SELECT d.*, v.dataset_version_id, v.version_number,
+                   v.tenant_id AS version_tenant_id,
+                   v.deployment_id AS version_deployment_id,
+                   v.site_id AS version_site_id,
+                   v.source_version_id, v.schema_version,
+                   v.metric_definition, v.time_scope_description,
+                   v.freshness_label, v.canonical_parameter_schema_json,
+                   v.canonical_output_fields_json,
+                   v.canonical_definition_json, v.definition_hash,
+                   v.row_limit, v.timeout_ms,
+                   s.display_name AS source_display_name,
+                   s.engine, sv.config_hash
+            FROM query_datasets d
+            JOIN query_dataset_versions v
+              ON v.dataset_id = d.dataset_id
+             AND v.dataset_version_id = d.head_version_id
+            JOIN query_sources s ON s.source_id = d.source_id
+            JOIN query_source_versions sv
+              ON sv.source_id = v.source_id
+             AND sv.source_version_id = v.source_version_id
+            ORDER BY d.dataset_id
+            """
+        ).fetchall()
+        if (
+            len(dataset_rows)
+            != connection.execute("SELECT COUNT(*) FROM query_dataset_versions").fetchone()[0]
+        ):
+            raise BackupIntegrityError("Controlled-query dataset lineage is incomplete")
+        dataset_refs: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        for dataset in dataset_rows:
+            try:
+                parameters = json.loads(dataset["canonical_parameter_schema_json"])
+                output_fields = json.loads(dataset["canonical_output_fields_json"])
+                definition = json.loads(dataset["canonical_definition_json"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise BackupIntegrityError("Controlled-query dataset definition is invalid") from exc
+            definition_payload = {
+                "schema_version": DATASET_SCHEMA_VERSION,
+                "source_id": dataset["source_id"],
+                "source_version_id": dataset["source_version_id"],
+                "metric_definition": dataset["metric_definition"],
+                "time_scope_description": dataset["time_scope_description"],
+                "freshness_label": dataset["freshness_label"],
+                "parameters": parameters,
+                "output_fields": output_fields,
+                "definition": definition,
+                "row_limit": dataset["row_limit"],
+                "timeout_ms": dataset["timeout_ms"],
+            }
+            source = source_by_version.get(dataset["source_version_id"])
+            if (
+                source is None
+                or dataset["tenant_id"] != dataset["version_tenant_id"]
+                or dataset["deployment_id"] != dataset["version_deployment_id"]
+                or dataset["site_id"] != dataset["version_site_id"]
+                or dataset["tenant_id"] != source["tenant_id"]
+                or dataset["deployment_id"] != source["deployment_id"]
+                or dataset["site_id"] != source["site_id"]
+                or dataset["source_id"] != source["source_id"]
+                or dataset["version_number"] != 1
+                or dataset["schema_version"] != DATASET_SCHEMA_VERSION
+                or canonical_json(parameters) != dataset["canonical_parameter_schema_json"]
+                or canonical_json(output_fields) != dataset["canonical_output_fields_json"]
+                or canonical_json(definition) != dataset["canonical_definition_json"]
+                or hashlib.sha256(canonical_json(definition_payload).encode("utf-8")).hexdigest()
+                != dataset["definition_hash"]
+            ):
+                raise BackupIntegrityError("Controlled-query dataset hash or scope changed")
+            ref = {
+                "dataset_id": dataset["dataset_id"],
+                "dataset_version_id": dataset["dataset_version_id"],
+                "dataset_label": dataset["display_name"],
+                "definition_hash": dataset["definition_hash"],
+                "metric_definition": dataset["metric_definition"],
+                "time_scope_description": dataset["time_scope_description"],
+                "freshness_label": dataset["freshness_label"],
+                "parameter_schema": parameters,
+                "output_fields": output_fields,
+                "row_limit": dataset["row_limit"],
+                "timeout_ms": dataset["timeout_ms"],
+                "source_id": dataset["source_id"],
+                "source_version_id": dataset["source_version_id"],
+                "source_label": dataset["source_display_name"],
+                "source_config_hash": dataset["config_hash"],
+                "engine": dataset["engine"],
+            }
+            dataset_refs[
+                (
+                    dataset["dataset_id"],
+                    dataset["dataset_version_id"],
+                    dataset["source_id"],
+                    dataset["source_version_id"],
+                )
+            ] = ref
+
+        assignments: dict[tuple[str, int], sqlite3.Row] = {}
+        for assignment in connection.execute(
+            """
+            SELECT a.*, d.tenant_id AS draft_tenant_id,
+                   d.deployment_id AS draft_deployment_id,
+                   d.target_type, d.screen_id, d.screen_group_id,
+                   s.site_id AS screen_site_id, g.site_id AS group_site_id
+            FROM config_draft_query_assignments a
+            JOIN config_drafts d ON d.draft_id = a.draft_id
+            LEFT JOIN screen_instances s ON s.screen_id = d.screen_id
+            LEFT JOIN screen_groups g ON g.screen_group_id = d.screen_group_id
+            ORDER BY a.draft_id, a.draft_revision
+            """
+        ).fetchall():
+            try:
+                refs = json.loads(assignment["canonical_dataset_refs_json"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise BackupIntegrityError("Controlled-query draft assignment is invalid") from exc
+            target_site_id = (
+                assignment["screen_site_id"]
+                if assignment["target_type"] == "SCREEN"
+                else assignment["group_site_id"]
+            )
+            if (
+                not isinstance(refs, list)
+                or refs != sorted(refs, key=lambda item: item.get("dataset_id", ""))
+                or canonical_json(refs) != assignment["canonical_dataset_refs_json"]
+                or hashlib.sha256(assignment["canonical_dataset_refs_json"].encode("utf-8")).hexdigest()
+                != assignment["assignment_hash"]
+                or assignment["tenant_id"] != assignment["draft_tenant_id"]
+                or assignment["deployment_id"] != assignment["draft_deployment_id"]
+                or assignment["site_id"] != target_site_id
+            ):
+                raise BackupIntegrityError("Controlled-query draft assignment hash or scope changed")
+            for ref in refs:
+                key = (
+                    ref.get("dataset_id"),
+                    ref.get("dataset_version_id"),
+                    ref.get("source_id"),
+                    ref.get("source_version_id"),
+                )
+                if dataset_refs.get(key) != ref:
+                    raise BackupIntegrityError("Controlled-query draft dataset reference changed")
+            assignments[(assignment["draft_id"], assignment["draft_revision"])] = assignment
+
+        for record in connection.execute("SELECT * FROM query_validation_records").fetchall():
+            try:
+                findings = json.loads(record["findings_json"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise BackupIntegrityError("Controlled-query validation evidence is invalid") from exc
+            assignment = assignments.get((record["draft_id"], record["draft_revision"]))
+            if (
+                assignment is None
+                or record["assignment_hash"] != assignment["assignment_hash"]
+                or record["validator_version"] != QUERY_VALIDATOR_VERSION
+                or canonical_json(findings) != record["findings_json"]
+                or hashlib.sha256(record["findings_json"].encode("utf-8")).hexdigest()
+                != record["findings_hash"]
+                or (record["outcome"] == "PASS" and findings)
+                or (
+                    record["outcome"] == "FAIL"
+                    and (
+                        not isinstance(findings, list)
+                        or not any(
+                            isinstance(finding, dict) and finding.get("severity") == "ERROR"
+                            for finding in findings
+                        )
+                    )
+                )
+            ):
+                raise BackupIntegrityError("Controlled-query validation evidence changed")
+
+        for row in connection.execute(
+            """
+            SELECT q.*, rt.tenant_id AS target_tenant_id,
+                   rt.deployment_id AS target_deployment_id,
+                   rt.screen_id AS target_screen_id,
+                   rt.canonical_effective_config_json,
+                   s.site_id AS target_site_id
+            FROM release_target_query_snapshots q
+            JOIN release_targets rt
+              ON rt.release_target_id = q.release_target_id
+            JOIN screen_instances s ON s.screen_id = rt.screen_id
+            ORDER BY q.release_target_id
+            """
+        ).fetchall():
+            try:
+                snapshot = json.loads(row["canonical_query_snapshot_json"])
+                effective_config = json.loads(row["canonical_effective_config_json"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise BackupIntegrityError("Controlled-query release snapshot is invalid") from exc
+            refs = snapshot.get("dataset_refs") if isinstance(snapshot, dict) else None
+            if (
+                set(snapshot)
+                != {
+                    "schema_version",
+                    "screen_id",
+                    "digital_human_instance_id",
+                    "querying_enabled",
+                    "provider_id",
+                    "assignment_hash",
+                    "dataset_refs",
+                    "permission_scope",
+                    "fallback_provider_ids",
+                }
+                or snapshot["schema_version"] != QUERY_SNAPSHOT_SCHEMA_VERSION
+                or not isinstance(effective_config, dict)
+                or canonical_json(snapshot) != row["canonical_query_snapshot_json"]
+                or hashlib.sha256(row["canonical_query_snapshot_json"].encode("utf-8")).hexdigest()
+                != row["query_snapshot_hash"]
+                or row["tenant_id"] != row["target_tenant_id"]
+                or row["deployment_id"] != row["target_deployment_id"]
+                or row["site_id"] != row["target_site_id"]
+                or row["screen_id"] != row["target_screen_id"]
+                or snapshot["screen_id"] != row["screen_id"]
+                or snapshot["digital_human_instance_id"] != effective_config.get("digital_human_instance_id")
+                or snapshot["permission_scope"] != "screen_bound"
+                or snapshot["fallback_provider_ids"] != []
+                or not isinstance(refs, list)
+                or hashlib.sha256(canonical_json(refs).encode("utf-8")).hexdigest()
+                != snapshot["assignment_hash"]
+                or (snapshot["querying_enabled"] and snapshot["provider_id"] != "controlled_query")
+                or (not snapshot["querying_enabled"] and snapshot["provider_id"] is not None)
+            ):
+                raise BackupIntegrityError("Controlled-query release snapshot hash or scope changed")
+            for ref in refs:
+                key = (
+                    ref.get("dataset_id"),
+                    ref.get("dataset_version_id"),
+                    ref.get("source_id"),
+                    ref.get("source_version_id"),
+                )
+                if dataset_refs.get(key) != ref:
+                    raise BackupIntegrityError("Controlled-query release dataset reference changed")
+
+        for execution in connection.execute("SELECT * FROM query_executions").fetchall():
+            try:
+                parameter_names = json.loads(execution["parameter_names_json"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise BackupIntegrityError("Controlled-query execution metadata is invalid") from exc
+            if (
+                not isinstance(parameter_names, list)
+                or parameter_names != sorted(set(parameter_names))
+                or any(
+                    not isinstance(parameter_name, str) or not parameter_name
+                    for parameter_name in parameter_names
+                )
+                or canonical_json(parameter_names) != execution["parameter_names_json"]
+                or not BackupManager._is_sha256(execution["parameter_digest"])
+            ):
+                raise BackupIntegrityError("Controlled-query execution metadata changed")
 
     @staticmethod
     def _is_sha256(value: Any) -> bool:

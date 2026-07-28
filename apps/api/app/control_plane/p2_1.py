@@ -874,6 +874,12 @@ class P21ControlPlane:
                         now,
                     ),
                 )
+                self.owner.p2_2.copy_draft_assignment_forward(
+                    connection,
+                    draft_id=draft_id,
+                    source_revision=draft["current_revision"],
+                    target_revision=next_revision,
+                )
                 self._insert_draft_assignment(
                     connection,
                     draft_id=draft_id,

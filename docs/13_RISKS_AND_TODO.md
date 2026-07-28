@@ -26,13 +26,14 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product State And Blockers
 
-### P2.1 Accepted; P2.2 Queued
+### P2.1 Accepted; P2.2 Candidate Preparation
 
 The user explicitly accepted P2.1 without conditions on 2026-07-28. Candidate
 `8f364b93b574c058cd8cd617f925107985318098`, tree
 `7c277e32b6419bd3720591c454e8282d94f081ec`, is the accepted runtime baseline.
 Accepted P1.3 remains the verified product-code and pre-`004` data rollback
-target. P2.2 is queued and requires a separate explicit start instruction.
+target. P2.2 implementation and automated/browser/ephemeral-database gates
+pass; exact candidate review and explicit user acceptance remain.
 
 - P2.1 accepted capability-profile, three-screen resolution, migration,
   recovery, Docker, Secret-scan and accepted-P1.3 rollback evidence; final
@@ -46,8 +47,11 @@ target. P2.2 is queued and requires a separate explicit start instruction.
 - Accepted P2.1 keeps external Providers `unverified`, blocks their activation
   and resolves legacy P1.3 releases as `NOT_CONFIGURED_P2_1` rather than using
   a global Mock fallback.
-- P2.2 has not started. No QuerySource, Excel/database execution or free-SQL
-  path was activated by the P2.1 acceptance decision.
+- P2.2 must preserve the accepted P2.1 capability, ownership, release,
+  recovery and isolation boundaries. No free-SQL path is authorized.
+- PostgreSQL 17, MySQL 8.4 and Oracle Free 23 passed isolated exact read-only
+  adapter tests. This closes only the candidate's deployment-local reference
+  evidence; customer/version product certification remains unverified.
 
 ### P2 External Gate
 

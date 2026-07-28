@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string]$EvidenceRoot,
-    [string]$BaseCommit = "c24f041a0414ea5361a6fcb7216d7be99ea0bb56"
+    [string]$BaseCommit = "c24f041a0414ea5361a6fcb7216d7be99ea0bb56",
+    [ValidateSet("p2_1_secret_surfaces", "p2_2_secret_surfaces")]
+    [string]$Gate = "p2_1_secret_surfaces"
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,7 +17,7 @@ if (-not $resolvedEvidenceRoot.StartsWith($repoPrefix, [System.StringComparison]
 }
 
 $exactSecrets = [System.Collections.Generic.List[string]]::new()
-foreach ($envName in @(".env.p2-1-preview", ".env.p1-3-preview")) {
+foreach ($envName in @(".env.p2-2-preview", ".env.p2-1-preview", ".env.p1-3-preview")) {
     $envPath = Join-Path $repoRoot $envName
     if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
         continue
@@ -147,7 +149,7 @@ else {
 }
 $result = [ordered]@{
     schema_version = 1
-    gate = "p2_1_secret_surfaces"
+    gate = $Gate
     status = $status
     scanned_file_count = $scanFiles.Count
     exact_secret_value_count = $exactSecrets.Count
@@ -156,7 +158,7 @@ $result = [ordered]@{
     notes = @(
         "Exact local root-key values were scanned without recording their values.",
         "Synthetic rejection fixtures are outside generic-pattern classification.",
-        "Profile/API/audit/SQLite/backup surfaces are also asserted in backend tests.",
+        "Profile/QuerySource/API/audit/SQLite/backup surfaces are also asserted in backend tests.",
         "Screenshots are visually reviewed; exact values are scanned as binary data."
     )
 }

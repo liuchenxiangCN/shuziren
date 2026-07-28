@@ -1,0 +1,100 @@
+from __future__ import annotations
+
+import argparse
+import getpass
+import os
+from pathlib import Path
+
+from app.control_plane.preview import IDENTITIES
+from app.control_plane.security import PurposeKeyring
+from app.control_plane.service import ControlPlaneService
+from app.control_plane.store import MIGRATION_005_VERSION
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Initialize the P2.2 controlled-query development preview. Never use for production."
+    )
+    parser.add_argument("--database", required=True)
+    parser.add_argument("--env-file", required=True)
+    parser.add_argument("--backup-root", required=True)
+    parser.add_argument("--tenant-id", default="tenant-preview")
+    parser.add_argument("--deployment-id", default="deployment-preview")
+    parser.add_argument("--screen-id", default="screen-trust-fixture")
+    parser.add_argument("--container-database", default="/app/data/control-plane-p2-2.db")
+    parser.add_argument(
+        "--container-backup-root",
+        default="/app/data/control-plane-p2-2-backups",
+    )
+    args = parser.parse_args()
+
+    env_path = Path(args.env_file).resolve()
+    database_path = Path(args.database).resolve()
+    backup_root = Path(args.backup_root).resolve()
+    if env_path.exists() or database_path.exists() or backup_root.exists():
+        raise SystemExit("Refusing to overwrite an existing P2.2 env, database or backup root")
+
+    root_key_b64 = PurposeKeyring.generate_root_base64()
+    identities = []
+    for username, display_name, role_id in IDENTITIES:
+        password = getpass.getpass(f"Password for {username} ({display_name}, 15-128 Unicode code points): ")
+        confirmation = getpass.getpass(f"Confirm password for {username}: ")
+        if password != confirmation:
+            raise SystemExit(f"Password confirmation did not match for {username}")
+        identities.append(
+            {
+                "username": username,
+                "display_name": display_name,
+                "role_id": role_id,
+                "password": password,
+            }
+        )
+
+    service = ControlPlaneService(
+        str(database_path),
+        root_key_b64,
+        preview_mode=True,
+        backup_root=backup_root,
+    )
+    result = service.initialize_preview(
+        tenant_id=args.tenant_id,
+        deployment_id=args.deployment_id,
+        screen_id=args.screen_id,
+        identities=identities,
+    )
+    status = service.status()
+    if status["migration_version"] != MIGRATION_005_VERSION:
+        raise SystemExit("P2.2 preview did not reach migration 005")
+    env_path.write_text(
+        "\n".join(
+            (
+                "# Generated P2.2 development preview settings. Never commit this file.",
+                "CONTROL_PLANE_PREVIEW_MODE=true",
+                f"CONTROL_PLANE_ROOT_KEY_B64={root_key_b64}",
+                f"CONTROL_PLANE_DB_PATH={args.container_database}",
+                f"CONTROL_PLANE_BACKUP_ROOT={args.container_backup_root}",
+                "SESSION_LOG_RETENTION_DAYS=3",
+                'CONTROL_PLANE_ALLOWED_ORIGINS=["http://localhost:18000","http://127.0.0.1:18000"]',
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    try:
+        os.chmod(env_path, 0o600)
+    except OSError:
+        pass
+    print("P2.2 controlled-query development preview initialized.")
+    print(f"Database: {database_path}")
+    print(f"Backup root: {backup_root}")
+    print(f"Environment file: {env_path}")
+    print(f"Preserved Screen 1 ID: {result['fixture_screen_id']}")
+    print(f"Inventory screen count: {len(result['inventory']['screen_ids'])}")
+    print("Passwords and root key were not written to stdout.")
+    print("Local API: scripts\\start-p2-2-local-api.ps1")
+    print("Local web: cd apps\\web; pnpm dev")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

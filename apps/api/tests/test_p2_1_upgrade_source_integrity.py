@@ -68,26 +68,28 @@ def test_exact_p1_3_upgrade_and_repeated_004_initialization_pass(
     _create_exact_p1_3_source(source_path, root_key, monkeypatch)
 
     _verify_accepted_p1_3_source(source_path)
-    upgraded = ControlPlaneService(
-        str(source_path),
-        root_key,
-        preview_mode=True,
-    )
-    assert upgraded.status()["migration_version"] == MIGRATION_004_VERSION
+    with monkeypatch.context() as patch:
+        patch.setattr(store_module, "MIGRATIONS", store_module.MIGRATIONS[:4])
+        upgraded = ControlPlaneService(
+            str(source_path),
+            root_key,
+            preview_mode=True,
+        )
+        assert upgraded.status()["migration_version"] == MIGRATION_004_VERSION
 
-    repeated = ControlPlaneService(
-        str(source_path),
-        root_key,
-        preview_mode=True,
-    )
-    assert repeated.status()["migration_version"] == MIGRATION_004_VERSION
+        repeated = ControlPlaneService(
+            str(source_path),
+            root_key,
+            preview_mode=True,
+        )
+        assert repeated.status()["migration_version"] == MIGRATION_004_VERSION
 
-    fresh = ControlPlaneService(
-        str(tmp_path / "fresh-p2-1.db"),
-        root_key,
-        preview_mode=True,
-    )
-    assert fresh.status()["migration_version"] == MIGRATION_004_VERSION
+        fresh = ControlPlaneService(
+            str(tmp_path / "fresh-p2-1.db"),
+            root_key,
+            preview_mode=True,
+        )
+        assert fresh.status()["migration_version"] == MIGRATION_004_VERSION
 
 
 @pytest.mark.parametrize(

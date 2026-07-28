@@ -11,6 +11,13 @@
 
 ### Added
 
+- P2.2 candidate QuerySources for bounded `.xlsx`, PostgreSQL, MySQL and
+  Oracle; write-only encrypted database credentials; immutable approved
+  datasets; exact draft/release query sidecars; and screen/device-bound
+  asynchronous execution with timeout, cancellation and backpressure.
+- Additive `005_controlled_querying`, P2.2 preview/browser launchers,
+  machine-readable query contract, management/runtime workflow and
+  backup/restore validation that preserves current source/dataset authority.
 - Accepted P2.1 Site-owned capability profiles, immutable profile
   versions, exact draft assignments, immutable ReleaseTarget capability
   snapshots and credential-scoped applied-profile resolution across three
@@ -59,7 +66,8 @@
   `8f364b93b574c058cd8cd617f925107985318098`, tree
   `7c277e32b6419bd3720591c454e8282d94f081ec`, is the accepted runtime baseline.
   P1.3 remains the verified product-code and pre-`004` data rollback target;
-  P2.2 has not started.
+  P2.2 is a completed implementation candidate pending immutable review and
+  explicit user acceptance.
 - ADR-0029 is accepted with P2.1; its additive immutable capability-profile
   sidecar decision does not activate P2.2 or certify a real Provider.
 - P1.2 local implementation is accepted at candidate `2ddd2116aad19babc9acbfde1110802eb3187c2b`, tree `565dbb3567e2a4ae5b872177d97449120477fe8c`; its automated and independent-review evidence passes with zero final findings.

@@ -12,7 +12,8 @@ def main() -> int:
     args = parser.parse_args()
     root_key = os.environ.get("CONTROL_PLANE_ROOT_KEY_B64", "")
     password = (
-        os.environ.get("P2_1_BROWSER_GATE_PASSWORD", "")
+        os.environ.get("P2_2_BROWSER_GATE_PASSWORD", "")
+        or os.environ.get("P2_1_BROWSER_GATE_PASSWORD", "")
         or os.environ.get("P1_3_BROWSER_GATE_PASSWORD", "")
         or os.environ.get("P1_2_BROWSER_GATE_PASSWORD", "")
     )

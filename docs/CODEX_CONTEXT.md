@@ -15,22 +15,15 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P2.1 Accepted; P2.2 Awaiting Explicit
-Activation`. G0 and P1.0 through P2.1 are explicitly accepted.
-
-P1.0 froze the target control-plane contract. P1.1 proved local identity,
-RBAC, audit and screen-device trust. P1.2 proved three-screen inventory and
-was the three-screen inventory baseline. P1.3 candidate
-`0f210cffa5a9b49fd93d36dbb42bd36bb2899f54` proves the frozen local
-draft/release, publication/acknowledgement, forward rollback, encrypted
-online-source backup/restore and three-day retention slice. Its gates and final
-independent review passed with zero findings, and the user accepted it without
-conditions on 2026-07-28. P2.1 candidate
+Current phase: `Productization P2.2 Candidate Preparation`. G0 and P1.0
+through P2.1 are explicitly accepted. P1.1 proves local identity/device trust,
+P1.2 three-screen inventory and P1.3 draft/release/recovery. Accepted P2.1
+candidate
 `8f364b93b574c058cd8cd617f925107985318098`, tree
-`7c277e32b6419bd3720591c454e8282d94f081ec`, implements the frozen local
-capability-profile result. Its automated gates and independent review passed
-with zero findings, and the user accepted it without conditions on 2026-07-28.
-P2.2 is queued and not active.
+`7c277e32b6419bd3720591c454e8282d94f081ec`, is the rollback baseline. P2.2
+implementation, automated gates and fresh browser workflow pass; immutable
+candidate binding and independent review remain before presentation. P2.2 is
+not accepted and P2.3 has not started.
 
 ## Frozen Product Boundaries
 
@@ -62,9 +55,10 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 - [07_DATA_CONTRACT.md](07_DATA_CONTRACT.md)
 
 Accepted behavior is recorded under [acceptance/productization](acceptance/productization).
-The P2.1 frozen target boundary remains in
-[product/contracts/CAPABILITY_PROFILES.md](product/contracts/CAPABILITY_PROFILES.md);
-P2.2 remains queued and has not started.
+P2.1/P2.2 target boundaries remain under [product/contracts](product/contracts);
+the P2.2 candidate facts and limitations are under
+[acceptance/productization/P2.2](acceptance/productization/P2.2). They do not
+become accepted behavior until an explicit user decision.
 
 ## Non-Negotiable Rules
 

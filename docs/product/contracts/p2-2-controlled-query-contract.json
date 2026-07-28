@@ -1,0 +1,97 @@
+{
+  "contract_version": "p2.2-controlled-querying-v1",
+  "lifecycle": "TARGET_NOT_IMPLEMENTED",
+  "engines": [
+    "EXCEL",
+    "MYSQL",
+    "ORACLE",
+    "POSTGRESQL"
+  ],
+  "source": {
+    "site_owned": true,
+    "version_immutable": true,
+    "secret_write_only": true,
+    "secret_encryption_purpose": "SECRET_ENVELOPE_ENCRYPTION",
+    "qualification_states": [
+      "UNVERIFIED",
+      "AVAILABLE",
+      "FAILED"
+    ],
+    "product_certification": "UNVERIFIED"
+  },
+  "dataset": {
+    "version_immutable": true,
+    "parameter_types": [
+      "string",
+      "integer",
+      "number",
+      "boolean",
+      "date"
+    ],
+    "row_limit": {
+      "minimum": 1,
+      "maximum": 500
+    },
+    "timeout_ms": {
+      "minimum": 100,
+      "maximum": 120000
+    },
+    "runtime_sql_allowed": false,
+    "relation_allowlist_required": true,
+    "output_allowlist_required": true
+  },
+  "execution": {
+    "permission_scope": "screen_bound",
+    "states": [
+      "QUEUED",
+      "RUNNING",
+      "SUCCEEDED",
+      "FAILED",
+      "TIMED_OUT",
+      "CANCELLED",
+      "REJECTED_BACKPRESSURE"
+    ],
+    "worker_slots_minimum": 3,
+    "per_screen_inflight_maximum": 2,
+    "fallback_provider_ids": [],
+    "idempotency_required_for_start_and_cancel": true
+  },
+  "excel": {
+    "extension": ".xlsx",
+    "formula_allowed": false,
+    "macro_allowed": false,
+    "external_link_allowed": false,
+    "arbitrary_path_allowed": false
+  },
+  "database": {
+    "single_read_only_statement": true,
+    "named_bind_parameters_only": true,
+    "comments_allowed": false,
+    "statement_chaining_allowed": false,
+    "writes_allowed": false,
+    "dynamic_execution_allowed": false
+  },
+  "storage": {
+    "logical_schema": "p1_control_plane_001",
+    "migration": "005_controlled_querying",
+    "tables": [
+      "query_secret_records",
+      "query_secret_versions",
+      "query_sources",
+      "query_source_versions",
+      "query_datasets",
+      "query_dataset_versions",
+      "config_draft_query_assignments",
+      "query_validation_records",
+      "release_target_query_snapshots",
+      "query_executions"
+    ],
+    "release_snapshots_immutable": true,
+    "restore_preserves_current_authority": true
+  },
+  "deferred": [
+    "P2.3_INTEGRATED_RESILIENCE_CERTIFICATION",
+    "P2.4_FINEREPORT_PLUGIN",
+    "P3_RENDERER_AVATAR_PACKAGE"
+  ]
+}

@@ -17,6 +17,7 @@ from cryptography.exceptions import InvalidTag
 from app.control_plane.errors import ControlPlaneError
 from app.control_plane.p1_3 import P13ControlPlane
 from app.control_plane.p2_1 import P21ControlPlane
+from app.control_plane.p2_2 import P22ControlPlane
 from app.control_plane.security import (
     Ciphertext,
     PasswordPolicy,
@@ -164,6 +165,46 @@ IDEMPOTENCY_OPERATION_ROUTES = {
     "assignDraftCapabilityProfile": (
         "assignDraftCapabilityProfile",
         "/api/v1/control-plane/config-drafts/{draft_id}/capability-profile",
+    ),
+    "createQuerySource": (
+        "createQuerySource",
+        "/api/v1/control-plane/query-sources",
+    ),
+    "testQuerySource": (
+        "testQuerySource",
+        "/api/v1/control-plane/query-sources/{source_id}:test",
+    ),
+    "disableQuerySource": (
+        "disableQuerySource",
+        "/api/v1/control-plane/query-sources/{source_id}:disable",
+    ),
+    "createQueryDataset": (
+        "createQueryDataset",
+        "/api/v1/control-plane/query-datasets",
+    ),
+    "disableQueryDataset": (
+        "disableQueryDataset",
+        "/api/v1/control-plane/query-datasets/{dataset_id}:disable",
+    ),
+    "assignDraftQueryDatasets": (
+        "assignDraftQueryDatasets",
+        "/api/v1/control-plane/config-drafts/{draft_id}/query-datasets",
+    ),
+    "startControlledQuery": (
+        "startControlledQuery",
+        "/api/v1/control-plane/screen-instances/{screen_id}/query-datasets/{dataset_id}:execute",
+    ),
+    "startControlledQueryDevice": (
+        "startControlledQueryDevice",
+        "/api/v1/device/query-datasets/{dataset_id}:execute",
+    ),
+    "cancelControlledQuery": (
+        "cancelControlledQuery",
+        "/api/v1/control-plane/screen-instances/{screen_id}/query-executions/{execution_id}:cancel",
+    ),
+    "cancelControlledQueryDevice": (
+        "cancelControlledQueryDevice",
+        "/api/v1/device/query-executions/{execution_id}:cancel",
     ),
     "reviseConfigDraft": (
         "reviseConfigDraft",
@@ -324,6 +365,7 @@ class ControlPlaneService:
         *,
         preview_mode: bool,
         backup_root: str | Path | None = None,
+        query_source_root: str | Path | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.store = ControlPlaneStore(database_path)
@@ -340,6 +382,12 @@ class ControlPlaneService:
             else Path(database_path).resolve().parent / "control-plane-backups",
         )
         self.p2_1 = P21ControlPlane(self)
+        self.p2_2 = P22ControlPlane(
+            self,
+            query_source_root
+            if query_source_root is not None
+            else Path(database_path).resolve().parent / "query-sources",
+        )
 
     def status(self) -> dict[str, Any]:
         with self.store.connect() as connection:

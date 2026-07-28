@@ -9,7 +9,7 @@
 
 ## Current Phase
 
-`Productization P2.1 Accepted; P2.2 Awaiting Explicit Activation`.
+`Productization P2.2 Candidate Preparation`.
 
 G0 and P1.0 through P2.1 are explicitly accepted. P2.1 candidate
 `8f364b93b574c058cd8cd617f925107985318098`, tree
@@ -22,15 +22,24 @@ blocking and zero non-blocking findings.
 
 Accepted P1.3 candidate `0f210cffa5a9b49fd93d36dbb42bd36bb2899f54`,
 tree `04bcbb940fbedb5fbb8957e538f46a4422e15db2`, remains the verified
-product-code and pre-`004` data rollback target. P2.2 is not active.
+pre-`004` data rollback target.
+
+The user explicitly activated P2.2 with `完成P2.2` on 2026-07-28. Its result
+card and non-scope are frozen against accepted P2.1 in
+[acceptance/productization/P2.2/ACCEPTANCE_CARD.md](acceptance/productization/P2.2/ACCEPTANCE_CARD.md).
+Implementation, proportional automated gates, three exact ephemeral database
+adapters and a fresh 1280 by 720 browser workflow pass. Immutable candidate
+binding and independent review remain before presentation; P2.2 is not
+accepted.
 
 ## Next Task
 
-Await an explicit user instruction to begin P2.2. On that instruction, freeze
-the complete P2.2 result card and non-scope against accepted P2.1 before
-implementing any QuerySource, dataset or Excel/database execution behavior.
+Freeze the exact P2.2 candidate, obtain the required independent review,
+complete its evidence hashes/rollback record and present it for an explicit
+user decision.
 
-Acceptance and publication of P2.1 do not activate P2.2.
+Do not start P2.3 or P2.4 and do not interpret implementation completion,
+automated success or user silence as acceptance.
 
 ### Accepted P2.1 Baseline
 
@@ -54,9 +63,13 @@ Acceptance and publication of P2.1 do not activate P2.2.
   executable action, production activation or customer certification is part
   of P2.1.
 
-## Queued
+## Active Acceptance Package
 
-`Productization P2.2 Controlled Excel And Database Querying`.
+- [acceptance/productization/P2.2/ACCEPTANCE_CARD.md](acceptance/productization/P2.2/ACCEPTANCE_CARD.md)
+- [acceptance/productization/P2.2/AUTOMATED_SUMMARY.md](acceptance/productization/P2.2/AUTOMATED_SUMMARY.md)
+- [acceptance/productization/P2.2/KNOWN_LIMITATIONS.md](acceptance/productization/P2.2/KNOWN_LIMITATIONS.md)
+- [acceptance/productization/P2.2/RUNBOOK.md](acceptance/productization/P2.2/RUNBOOK.md)
+- [acceptance/productization/P2.2/USER_DECISION.md](acceptance/productization/P2.2/USER_DECISION.md)
+- [product/contracts/CONTROLLED_QUERYING.md](product/contracts/CONTROLLED_QUERYING.md)
 
-P2.2 has not started. Only a separate explicit start instruction can activate
-it.
+P2.3 and P2.4 remain queued/inactive.

@@ -4,6 +4,8 @@ import {
   activateCredential,
   approveAction,
   assignCapabilityProfileToDraft,
+  assignQueryDatasetsToDraft,
+  cancelScreenQueryExecution,
   claimEnrollment,
   ControlPlaneApiError,
   createBackup,
@@ -12,6 +14,8 @@ import {
   createConfigDraft,
   createConfigRelease,
   createDigitalHumanInstance,
+  createQueryDataset,
+  createQuerySource,
   createRestorePlan,
   createScreenGroup,
   createScreenInstance,
@@ -23,6 +27,7 @@ import {
   getCapabilityProfile,
   getCredentialMetadata,
   getRuntimeBinding,
+  getScreenQueryExecution,
   getScreenEffectiveCapabilities,
   getStorageProfile,
   issueEnrollment,
@@ -31,9 +36,12 @@ import {
   listCapabilityProfiles,
   listCapabilityProviders,
   listPendingActions,
+  listQueryDatasets,
+  listQuerySources,
   listRoleDefinitions,
   listScreenGroups,
   listScreenInstances,
+  listScreenQueryDatasets,
   listSites,
   listUsers,
   loadSession,
@@ -49,6 +57,8 @@ import {
   rotateCredential,
   signIn,
   signOut,
+  startScreenQuery,
+  testQuerySource,
   type AuditEvent,
   type BackupRecord,
   type CapabilityKey,
@@ -63,6 +73,11 @@ import {
   type ControlPlaneSession,
   type ControlPlaneUser,
   type HighRiskAction,
+  type QueryDataset,
+  type QueryEngine,
+  type QueryExecution,
+  type QueryParameterDefinition,
+  type QuerySource,
   type RestorePlan,
   type ScreenGroupInventory,
   type ScreenEffectiveCapabilities,
@@ -72,11 +87,14 @@ import {
   updateScreenGroup,
   updateScreenInstance,
   verifyBackup,
+  disableQueryDataset,
+  disableQuerySource,
 } from './controlPlaneApi';
 
 type View =
   | 'inventory'
   | 'capabilities'
+  | 'queries'
   | 'releases'
   | 'users'
   | 'approvals'
@@ -156,6 +174,46 @@ const fallbackProviderDrafts = ref<Record<CapabilityKey, string>>(
   >,
 );
 const draftCapabilityVersionId = ref('');
+const querySources = ref<QuerySource[]>([]);
+const queryDatasets = ref<QueryDataset[]>([]);
+const querySourceSiteId = ref('');
+const querySourceName = ref('受控数据源');
+const querySourceEngine = ref<QueryEngine>('EXCEL');
+const queryReadOnlyConfirmed = ref(false);
+const queryWorkbookFileName = ref('');
+const queryWorkbookBase64 = ref('');
+const queryConnectionHost = ref('');
+const queryConnectionPort = ref(5432);
+const queryConnectionDatabase = ref('');
+const queryConnectionUsername = ref('');
+const queryConnectionPassword = ref('');
+const queryDatasetSourceId = ref('');
+const queryDatasetName = ref('产量指标');
+const queryMetricDefinition = ref('按批准口径返回产量指标');
+const queryTimeScopeDescription = ref('调用者通过类型化参数选择时间范围');
+const queryFreshnessLabel = ref('以数据源最近测试时间为准');
+const queryParametersJson = ref(
+  '[{"name":"shift","type":"string","required":true}]',
+);
+const queryOutputFields = ref('business_date, shift, output');
+const queryWorksheetName = ref('Metrics');
+const queryParameterColumnsJson = ref('{"shift":"shift"}');
+const queryTemplate = ref('');
+const queryAllowedRelations = ref('');
+const queryRowLimit = ref(100);
+const queryTimeoutMs = ref(5000);
+const draftQueryVersionIds = ref<string[]>([]);
+const runtimeQueryScreenId = ref('');
+const runtimeQueryDatasets = ref<Array<{
+  dataset_id: string;
+  dataset_version_id: string;
+  label: string;
+  parameter_schema: QueryParameterDefinition[];
+  source: { engine: QueryEngine; label: string };
+}>>([]);
+const runtimeQueryDatasetId = ref('');
+const runtimeQueryParametersJson = ref('{}');
+const runtimeQueryExecution = ref<QueryExecution | null>(null);
 const releaseDraft = ref<ConfigDraft | null>(null);
 const releaseCandidate = ref<ConfigRelease | null>(null);
 const releasePublication = ref<Record<string, any> | null>(null);
@@ -214,6 +272,7 @@ const canReadScreens = computed(() => permissions.value.has('screen.read'));
 const canManageScreens = computed(() => permissions.value.has('screen.manage'));
 const canReadConfig = computed(() => permissions.value.has('config.read'));
 const canEditTechnicalConfig = computed(() => permissions.value.has('config.edit_technical'));
+const canWriteSecrets = computed(() => permissions.value.has('secret.write'));
 const canEditConfig = computed(
   () =>
     permissions.value.has('config.edit_business')
@@ -259,6 +318,11 @@ const profileVersionOptions = computed(() => {
 });
 const selectedPreset = computed(() =>
   capabilityPresets.value.find((preset) => preset.preset_id === selectedPresetId.value),
+);
+const selectedQuerySource = computed(() =>
+  querySources.value.find(
+    (source) => source.source_id === queryDatasetSourceId.value,
+  ),
 );
 const selectedEditorStateSummary = computed<Record<CapabilityKey, CapabilityState>>(() =>
   Object.fromEntries(
@@ -437,6 +501,10 @@ async function logout() {
     selectedCapabilityProfile.value = null;
     observedProfileVersions.value = [];
     screenCapabilities.value = {};
+    querySources.value = [];
+    queryDatasets.value = [];
+    runtimeQueryDatasets.value = [];
+    runtimeQueryExecution.value = null;
     releaseDraft.value = null;
     releaseCandidate.value = null;
     releasePublication.value = null;
@@ -464,6 +532,11 @@ function clearSensitiveState() {
   reauthenticationPassword.value = '';
   enrollmentToken.value = '';
   deviceCredential.value = '';
+  queryConnectionPassword.value = '';
+  queryWorkbookBase64.value = '';
+  queryWorkbookFileName.value = '';
+  queryTemplate.value = '';
+  runtimeQueryParametersJson.value = '{}';
 }
 
 async function switchView(view: View) {
@@ -510,17 +583,55 @@ async function loadActiveView() {
       selectedCapabilityProfileId.value = '';
       selectedCapabilityProfile.value = null;
     }
+  } else if (activeView.value === 'queries' && canReadConfig.value) {
+    const [sourceResult, datasetResult, siteResult, screenResult] =
+      await Promise.all([
+        listQuerySources(),
+        listQueryDatasets(),
+        listSites(),
+        listScreenInstances(),
+      ]);
+    querySources.value = sourceResult.items;
+    queryDatasets.value = datasetResult.items;
+    sites.value = siteResult.items;
+    screens.value = screenResult.items;
+    if (!querySourceSiteId.value) {
+      querySourceSiteId.value = siteResult.items[0]?.site_id || '';
+    }
+    if (
+      !queryDatasetSourceId.value
+      || !sourceResult.items.some(
+        (source) => source.source_id === queryDatasetSourceId.value,
+      )
+    ) {
+      queryDatasetSourceId.value = sourceResult.items[0]?.source_id || '';
+    }
+    if (!runtimeQueryScreenId.value) {
+      runtimeQueryScreenId.value = screenResult.items[0]?.screen_id || '';
+    }
   } else if (activeView.value === 'releases' && canReadScreens.value) {
-    const [groupResult, screenResult, storageResult, capabilityProfileResult] = await Promise.all([
+    const [
+      groupResult,
+      screenResult,
+      storageResult,
+      capabilityProfileResult,
+      queryDatasetResult,
+    ] = await Promise.all([
       listScreenGroups(),
       listScreenInstances(),
       getStorageProfile(),
-      canReadConfig.value ? listCapabilityProfiles() : Promise.resolve({ items: [] }),
+      canReadConfig.value
+        ? listCapabilityProfiles()
+        : Promise.resolve({ items: [] }),
+      canReadConfig.value
+        ? listQueryDatasets()
+        : Promise.resolve({ items: [] }),
     ]);
     screenGroups.value = groupResult.items;
     screens.value = screenResult.items;
     storageProfile.value = storageResult;
     capabilityProfiles.value = capabilityProfileResult.items as CapabilityProfile[];
+    queryDatasets.value = queryDatasetResult.items as QueryDataset[];
     if (!draftTargetId.value) {
       draftTargetId.value = screenResult.items[0]?.screen_id || '';
     }
@@ -806,6 +917,243 @@ async function createNextCapabilityProfileVersion() {
   });
 }
 
+async function selectQueryWorkbook(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  queryWorkbookFileName.value = '';
+  queryWorkbookBase64.value = '';
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) {
+    error.value = 'WORKBOOK_SIZE_EXCEEDED：工作簿不能超过 10 MiB。';
+    input.value = '';
+    return;
+  }
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('无法读取本地工作簿'));
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.readAsDataURL(file);
+  });
+  const separator = dataUrl.indexOf(',');
+  if (separator < 0) throw new Error('工作簿编码失败');
+  queryWorkbookFileName.value = file.name;
+  queryWorkbookBase64.value = dataUrl.slice(separator + 1);
+}
+
+function parseQueryParameters(): QueryParameterDefinition[] {
+  const value = JSON.parse(queryParametersJson.value);
+  if (!Array.isArray(value)) throw new Error('参数 Schema 必须是 JSON 数组');
+  return value as QueryParameterDefinition[];
+}
+
+function parseParameterColumns(): Record<string, string> {
+  const value = JSON.parse(queryParameterColumnsJson.value);
+  if (!value || Array.isArray(value) || typeof value !== 'object') {
+    throw new Error('Excel 参数列映射必须是 JSON 对象');
+  }
+  return value as Record<string, string>;
+}
+
+async function submitQuerySource() {
+  await run(async () => {
+    try {
+      const common = {
+        site_id: querySourceSiteId.value,
+        display_name: querySourceName.value.trim(),
+        engine: querySourceEngine.value,
+        read_only_account_confirmed:
+          querySourceEngine.value === 'EXCEL'
+          || queryReadOnlyConfirmed.value,
+      };
+      const source = await createQuerySource(
+        querySourceEngine.value === 'EXCEL'
+          ? {
+            ...common,
+            excel_file_name: queryWorkbookFileName.value,
+            excel_workbook_base64: queryWorkbookBase64.value,
+          }
+          : {
+            ...common,
+            connection: {
+              host: queryConnectionHost.value,
+              port: queryConnectionPort.value,
+              database: queryConnectionDatabase.value,
+              username: queryConnectionUsername.value,
+              password: queryConnectionPassword.value,
+            },
+          },
+      );
+      querySources.value = [
+        source,
+        ...querySources.value.filter(
+          (item) => item.source_id !== source.source_id,
+        ),
+      ];
+      queryDatasetSourceId.value = source.source_id;
+      message.value =
+        `QuerySource ${source.source_id} 已登记；`
+        + '连接材料与工作簿正文不会通过普通读取返回。';
+    } finally {
+      queryConnectionPassword.value = '';
+      queryWorkbookBase64.value = '';
+      queryWorkbookFileName.value = '';
+    }
+  });
+}
+
+async function qualifyQuerySource(source: QuerySource) {
+  await run(async () => {
+    const result = await testQuerySource(source);
+    const refreshed = await listQuerySources();
+    querySources.value = refreshed.items;
+    message.value =
+      `${source.display_name}：${result.qualification_state} · `
+      + `${result.code} · ${result.latency_ms} ms；仅代表当前部署实测。`;
+  });
+}
+
+async function retireQuerySource(source: QuerySource) {
+  await run(async () => {
+    const updated = await disableQuerySource(source);
+    querySources.value = querySources.value.map((item) =>
+      item.source_id === updated.source_id ? updated : item
+    );
+    message.value = `${updated.display_name} 已禁用；历史 Release 也不能继续执行。`;
+  });
+}
+
+async function submitQueryDataset() {
+  if (!selectedQuerySource.value) return;
+  await run(async () => {
+    try {
+      const parameters = parseQueryParameters();
+      const outputFields = queryOutputFields.value
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const source = selectedQuerySource.value!;
+      const dataset = await createQueryDataset({
+        source_id: source.source_id,
+        display_name: queryDatasetName.value.trim(),
+        metric_definition: queryMetricDefinition.value.trim(),
+        time_scope_description: queryTimeScopeDescription.value.trim(),
+        freshness_label: queryFreshnessLabel.value.trim(),
+        parameters,
+        output_fields: outputFields,
+        definition:
+          source.engine === 'EXCEL'
+            ? {
+              worksheet: queryWorksheetName.value.trim(),
+              parameter_columns: parseParameterColumns(),
+            }
+            : {
+              query_template: queryTemplate.value,
+              allowed_relations: queryAllowedRelations.value
+                .split(',')
+                .map((value) => value.trim())
+                .filter(Boolean),
+            },
+        row_limit: queryRowLimit.value,
+        timeout_ms: queryTimeoutMs.value,
+      });
+      queryDatasets.value = [
+        dataset,
+        ...queryDatasets.value.filter(
+          (item) => item.dataset_id !== dataset.dataset_id,
+        ),
+      ];
+      message.value =
+        `QueryDataset ${dataset.dataset_version_id} 已冻结；`
+        + '业务调用只能提交类型化参数，不能提交 SQL。';
+    } finally {
+      queryTemplate.value = '';
+    }
+  });
+}
+
+async function retireQueryDataset(dataset: QueryDataset) {
+  await run(async () => {
+    const updated = await disableQueryDataset(dataset);
+    queryDatasets.value = queryDatasets.value.map((item) =>
+      item.dataset_id === updated.dataset_id ? updated : item
+    );
+    message.value = `${updated.display_name} 已禁用。`;
+  });
+}
+
+async function loadRuntimeQueryDatasets() {
+  if (!runtimeQueryScreenId.value) return;
+  await run(async () => {
+    const result = await listScreenQueryDatasets(runtimeQueryScreenId.value);
+    runtimeQueryDatasets.value = result.items;
+    if (
+      !runtimeQueryDatasetId.value
+      || !result.items.some(
+        (dataset) => dataset.dataset_id === runtimeQueryDatasetId.value,
+      )
+    ) {
+      runtimeQueryDatasetId.value = result.items[0]?.dataset_id || '';
+    }
+    runtimeQueryExecution.value = null;
+    message.value =
+      `已从 applied ReleaseTarget 读取 ${result.items.length} 个按屏数据集；`
+      + '未使用 desired 或全局回退。';
+  });
+}
+
+async function executeRuntimeQuery() {
+  if (!runtimeQueryScreenId.value || !runtimeQueryDatasetId.value) return;
+  await run(async () => {
+    const parameters = JSON.parse(runtimeQueryParametersJson.value);
+    if (!parameters || Array.isArray(parameters) || typeof parameters !== 'object') {
+      throw new Error('运行参数必须是 JSON 对象');
+    }
+    let execution = await startScreenQuery(
+      runtimeQueryScreenId.value,
+      runtimeQueryDatasetId.value,
+      parameters,
+    );
+    runtimeQueryExecution.value = execution;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (!['QUEUED', 'RUNNING'].includes(execution.state)) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+      execution = await getScreenQueryExecution(
+        runtimeQueryScreenId.value,
+        execution.execution_id,
+      );
+      runtimeQueryExecution.value = execution;
+    }
+    message.value =
+      `受控查询 ${execution.request_id}：${execution.state}`
+      + (execution.latency_ms === undefined ? '' : ` · ${execution.latency_ms} ms`);
+  });
+}
+
+async function cancelRuntimeQuery() {
+  if (!runtimeQueryExecution.value?.execution_id) return;
+  await run(async () => {
+    runtimeQueryExecution.value = await cancelScreenQueryExecution(
+      runtimeQueryScreenId.value,
+      runtimeQueryExecution.value!.execution_id,
+    );
+    message.value = `查询 ${runtimeQueryExecution.value.execution_id} 已进入终态。`;
+  });
+}
+
+async function assignDraftQueryDatasets() {
+  if (!releaseDraft.value) return;
+  await run(async () => {
+    const draft = await assignQueryDatasetsToDraft(
+      releaseDraft.value!,
+      draftQueryVersionIds.value,
+    );
+    syncDraftForm(draft);
+    message.value =
+      `草稿已绑定 ${draft.query_datasets?.dataset_refs.length || 0} 个不可变数据集；`
+      + 'revision 已推进，旧验证、预览和审批证据已失效。';
+  });
+}
+
 async function assignDraftCapabilityProfile() {
   if (!releaseDraft.value || !draftCapabilityVersionId.value) return;
   await run(async () => {
@@ -832,6 +1180,10 @@ function syncDraftForm(draft: ConfigDraft) {
   draftWelcomeText.value = draft.spec.welcome_text || draftWelcomeText.value;
   draftFvsRef.value = draft.spec.fvs_binding_ref || draftFvsRef.value;
   draftCapabilityVersionId.value = draft.capability_profile?.profile_version_id || '';
+  draftQueryVersionIds.value =
+    draft.query_datasets?.dataset_refs.map(
+      (dataset) => dataset.dataset_version_id,
+    ) || [];
 }
 
 async function startReleaseDraft() {
@@ -1060,9 +1412,9 @@ function formatTime(value?: number | null) {
     <section class="cp-frame">
       <header class="cp-header">
         <div>
-          <p class="cp-eyebrow">P2.1 · Per-screen capability profiles</p>
-          <h1>多屏能力与发布控制台</h1>
-          <p>开发预览；按屏能力只执行本地 / Mock 诊断，不连接真实 Provider、FVS 或官方插件。</p>
+          <p class="cp-eyebrow">P2.2 · Controlled querying</p>
+          <h1>多屏能力、受控问数与发布控制台</h1>
+          <p>开发预览；问数只执行已发布的数据集，业务端与设备端都不能提交 SQL。</p>
         </div>
         <div v-if="session" class="cp-session">
           <strong>{{ session.user.display_name }}</strong>
@@ -1111,6 +1463,12 @@ function formatTime(value?: number | null) {
             @click="switchView('capabilities')"
           >
             能力套餐
+          </button>
+          <button
+            :class="{ active: activeView === 'queries' }"
+            @click="switchView('queries')"
+          >
+            受控问数
           </button>
           <button :class="{ active: activeView === 'releases' }" @click="switchView('releases')">
             发布中心
@@ -1743,6 +2101,369 @@ function formatTime(value?: number | null) {
           </template>
         </section>
 
+        <section v-else-if="activeView === 'queries'" class="cp-grid">
+          <article v-if="!canReadConfig" class="cp-card wide">
+            <div class="cp-denied">
+              当前角色没有 `config.read`，API 已拒绝读取 QuerySource 与 QueryDataset。
+            </div>
+          </article>
+
+          <template v-else>
+            <article class="cp-card wide cp-boundary">
+              <div>
+                <p class="cp-eyebrow">No free SQL · exact release binding</p>
+                <h2>Excel / MySQL / Oracle / PostgreSQL 受控问数</h2>
+                <p>
+                  管理员登记写后不可读的连接材料或受限 `.xlsx`，再冻结类型化参数、
+                  输出字段、行数与超时。业务端只看 applied ReleaseTarget 内的数据集。
+                </p>
+              </div>
+              <div class="cp-stat-strip">
+                <span><strong>{{ querySources.length }}</strong>数据源</span>
+                <span><strong>{{ queryDatasets.length }}</strong>数据集</span>
+                <span><strong>0</strong>业务 SQL</span>
+              </div>
+            </article>
+
+            <article class="cp-card">
+              <div>
+                <p class="cp-eyebrow">Write-only connection material</p>
+                <h2>登记 QuerySource</h2>
+                <p>数据库密码与 Excel 正文仅用于本次提交，完成或失败后立即从页面状态清除。</p>
+              </div>
+              <label>
+                Site
+                <select v-model="querySourceSiteId">
+                  <option v-for="site in sites" :key="site.site_id" :value="site.site_id">
+                    {{ site.display_name }}
+                  </option>
+                </select>
+              </label>
+              <label>显示名<input v-model="querySourceName" /></label>
+              <label>
+                引擎
+                <select v-model="querySourceEngine">
+                  <option value="EXCEL">Excel `.xlsx`</option>
+                  <option value="POSTGRESQL">PostgreSQL</option>
+                  <option value="MYSQL">MySQL</option>
+                  <option value="ORACLE">Oracle</option>
+                </select>
+              </label>
+              <template v-if="querySourceEngine === 'EXCEL'">
+                <label>
+                  受限工作簿
+                  <input type="file" accept=".xlsx" @change="selectQueryWorkbook" />
+                </label>
+                <small class="cp-readonly-note">
+                  只接受无宏、无公式、无外链且不超过 10 MiB 的 `.xlsx`；不接受服务器路径。
+                </small>
+              </template>
+              <template v-else-if="canWriteSecrets">
+                <div class="cp-form-grid">
+                  <label>Host<input v-model="queryConnectionHost" autocomplete="off" /></label>
+                  <label>
+                    Port
+                    <input v-model.number="queryConnectionPort" type="number" min="1" max="65535" />
+                  </label>
+                  <label>Database / service<input v-model="queryConnectionDatabase" autocomplete="off" /></label>
+                  <label>只读账号<input v-model="queryConnectionUsername" autocomplete="off" /></label>
+                </div>
+                <label>
+                  密码
+                  <input
+                    v-model="queryConnectionPassword"
+                    type="password"
+                    autocomplete="new-password"
+                  />
+                </label>
+                <label class="cp-check">
+                  <input v-model="queryReadOnlyConfirmed" type="checkbox" />
+                  <span>已确认这是专用只读账号，且数据库侧拒绝写入。</span>
+                </label>
+              </template>
+              <div v-else class="cp-denied">
+                数据库连接材料需要 `secret.write`；当前角色只能登记 Excel 或查看非敏感状态。
+              </div>
+              <button
+                v-if="canEditTechnicalConfig"
+                :disabled="
+                  busy
+                  || !querySourceSiteId
+                  || !querySourceName.trim()
+                  || (
+                    querySourceEngine === 'EXCEL'
+                      ? !queryWorkbookBase64
+                      : (
+                        !canWriteSecrets
+                        || !queryReadOnlyConfirmed
+                        || !queryConnectionPassword
+                      )
+                  )
+                "
+                @click="submitQuerySource"
+              >
+                加密登记，不回显材料
+              </button>
+            </article>
+
+            <article class="cp-card">
+              <div>
+                <p class="cp-eyebrow">Immutable approved definition</p>
+                <h2>冻结 QueryDataset</h2>
+              </div>
+              <label>
+                QuerySource
+                <select v-model="queryDatasetSourceId">
+                  <option
+                    v-for="source in querySources.filter((item) => item.state === 'ACTIVE')"
+                    :key="source.source_id"
+                    :value="source.source_id"
+                  >
+                    {{ source.display_name }} · {{ source.engine }} ·
+                    {{ source.qualification.state }}
+                  </option>
+                </select>
+              </label>
+              <label>数据集名称<input v-model="queryDatasetName" /></label>
+              <label>指标口径<textarea v-model="queryMetricDefinition"></textarea></label>
+              <label>时间范围说明<textarea v-model="queryTimeScopeDescription"></textarea></label>
+              <label>数据新鲜度说明<input v-model="queryFreshnessLabel" /></label>
+              <label>
+                参数 Schema（闭合 JSON 数组）
+                <textarea v-model="queryParametersJson"></textarea>
+              </label>
+              <label>
+                输出字段（逗号分隔、顺序固定）
+                <input v-model="queryOutputFields" />
+              </label>
+              <template v-if="selectedQuerySource?.engine === 'EXCEL'">
+                <label>工作表<input v-model="queryWorksheetName" /></label>
+                <label>
+                  参数到列的映射
+                  <textarea v-model="queryParameterColumnsJson"></textarea>
+                </label>
+              </template>
+              <template v-else>
+                <label>
+                  管理员批准的单条 SELECT 模板
+                  <textarea
+                    v-model="queryTemplate"
+                    autocomplete="off"
+                    placeholder="SELECT business_date, shift, output FROM approved_metrics WHERE shift = :shift"
+                  ></textarea>
+                </label>
+                <label>
+                  精确关系白名单（逗号分隔）
+                  <input v-model="queryAllowedRelations" placeholder="approved_metrics" />
+                </label>
+              </template>
+              <div class="cp-form-grid">
+                <label>
+                  行数上限
+                  <input v-model.number="queryRowLimit" type="number" min="1" max="500" />
+                </label>
+                <label>
+                  超时 ms
+                  <input v-model.number="queryTimeoutMs" type="number" min="100" max="120000" />
+                </label>
+              </div>
+              <button
+                v-if="canEditTechnicalConfig"
+                :disabled="busy || !selectedQuerySource || !queryDatasetName.trim()"
+                @click="submitQueryDataset"
+              >
+                创建不可变数据集
+              </button>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">Deployment-local evidence only</p>
+                  <h2>数据源与数据集状态</h2>
+                </div>
+                <button class="secondary" @click="run(loadActiveView)">刷新</button>
+              </div>
+              <div class="cp-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>资源</th>
+                      <th>引擎 / 来源</th>
+                      <th>状态</th>
+                      <th>边界</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="source in querySources" :key="source.source_id">
+                      <td>
+                        <strong>{{ source.display_name }}</strong>
+                        <small>{{ source.source_id }} · {{ source.config_hash.slice(0, 12) }}…</small>
+                      </td>
+                      <td>{{ source.engine }}</td>
+                      <td>
+                        <span class="cp-pill">{{ source.state }}</span>
+                        <small>{{ source.qualification.state }} · 产品认证 UNVERIFIED</small>
+                      </td>
+                      <td>
+                        <small>
+                          {{
+                            source.engine === 'EXCEL'
+                              ? '正文不可读回'
+                              : `凭据已配置 ${source.credential.fingerprint_suffix || ''}`
+                          }}
+                        </small>
+                      </td>
+                      <td>
+                        <div class="cp-actions">
+                          <button
+                            class="secondary"
+                            :disabled="source.state !== 'ACTIVE'"
+                            @click="qualifyQuerySource(source)"
+                          >
+                            连接测试
+                          </button>
+                          <button
+                            :disabled="source.state !== 'ACTIVE'"
+                            @click="retireQuerySource(source)"
+                          >
+                            禁用
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr v-for="dataset in queryDatasets" :key="dataset.dataset_id">
+                      <td>
+                        <strong>{{ dataset.display_name }}</strong>
+                        <small>{{ dataset.dataset_version_id }} · {{ dataset.definition_hash.slice(0, 12) }}…</small>
+                      </td>
+                      <td>{{ dataset.source.engine }} · {{ dataset.source.display_name }}</td>
+                      <td>
+                        <span class="cp-pill">{{ dataset.state }}</span>
+                        <small>{{ dataset.source.qualification_state }}</small>
+                      </td>
+                      <td>
+                        <small>{{ dataset.row_limit }} 行 · {{ dataset.timeout_ms }} ms</small>
+                        <small>SQL 模板不可读回</small>
+                      </td>
+                      <td>
+                        <button
+                          :disabled="dataset.state !== 'ACTIVE'"
+                          @click="retireQueryDataset(dataset)"
+                        >
+                          禁用
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="cp-card wide">
+              <div>
+                <p class="cp-eyebrow">Applied screen scope · typed parameters only</p>
+                <h2>业务端按屏执行</h2>
+                <p>这里只枚举当前屏幕已确认 applied ReleaseTarget 的数据集；desired 不生效。</p>
+              </div>
+              <div class="cp-form-grid">
+                <label>
+                  屏幕
+                  <select v-model="runtimeQueryScreenId">
+                    <option
+                      v-for="screen in screens"
+                      :key="screen.screen_id"
+                      :value="screen.screen_id"
+                    >
+                      {{ screen.display_name }} · {{ screen.slug }}
+                    </option>
+                  </select>
+                </label>
+                <div class="cp-actions cp-align-end">
+                  <button class="secondary" @click="loadRuntimeQueryDatasets">
+                    读取 applied 数据集
+                  </button>
+                </div>
+                <label>
+                  数据集
+                  <select v-model="runtimeQueryDatasetId">
+                    <option
+                      v-for="dataset in runtimeQueryDatasets"
+                      :key="dataset.dataset_id"
+                      :value="dataset.dataset_id"
+                    >
+                      {{ dataset.label }} · {{ dataset.source.label }}
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  类型化参数 JSON
+                  <textarea v-model="runtimeQueryParametersJson"></textarea>
+                </label>
+              </div>
+              <div class="cp-actions">
+                <button
+                  :disabled="busy || !runtimeQueryDatasetId"
+                  @click="executeRuntimeQuery"
+                >
+                  执行已发布数据集
+                </button>
+                <button
+                  v-if="runtimeQueryExecution && ['QUEUED','RUNNING'].includes(runtimeQueryExecution.state)"
+                  class="secondary"
+                  @click="cancelRuntimeQuery"
+                >
+                  取消
+                </button>
+              </div>
+              <div v-if="runtimeQueryExecution" class="cp-evidence">
+                <strong>
+                  {{ runtimeQueryExecution.state }} · {{ runtimeQueryExecution.request_id }}
+                </strong>
+                <span v-if="runtimeQueryExecution.latency_ms !== undefined">
+                  {{ runtimeQueryExecution.latency_ms }} ms ·
+                  {{ runtimeQueryExecution.row_count || 0 }} 行
+                </span>
+                <span v-if="runtimeQueryExecution.error">
+                  {{ runtimeQueryExecution.error.code }} ·
+                  {{ runtimeQueryExecution.error.message }}
+                </span>
+                <div
+                  v-if="runtimeQueryExecution.rows?.length"
+                  class="cp-table-wrap"
+                >
+                  <table>
+                    <thead>
+                      <tr>
+                        <th
+                          v-for="field in runtimeQueryExecution.fields"
+                          :key="field"
+                        >
+                          {{ field }}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="(row, rowIndex) in runtimeQueryExecution.rows"
+                        :key="rowIndex"
+                      >
+                        <td
+                          v-for="field in runtimeQueryExecution.fields"
+                          :key="field"
+                        >
+                          {{ row[field] }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </article>
+          </template>
+        </section>
+
         <section v-else-if="activeView === 'releases'" class="cp-grid">
           <article class="cp-card wide cp-boundary">
             <div>
@@ -1873,6 +2594,57 @@ function formatTime(value?: number | null) {
                   尚未分配 P2.1 能力套餐；旧 P1.3 target 将明确返回 `NOT_CONFIGURED_P2_1`。
                 </div>
               </div>
+              <div class="cp-assignment-box">
+                <div>
+                  <p class="cp-eyebrow">P2.2 sidecar · exact immutable datasets</p>
+                  <h3>受控数据集分配</h3>
+                  <p>
+                    仅当能力套餐把 querying 唯一指向 `controlled_query`，且这里的精确版本均已通过
+                    deployment-local 测试时，P2.2 才会限定性消解该 Provider 的 unverified 阻断。
+                  </p>
+                </div>
+                <div class="cp-check-grid">
+                  <label
+                    v-for="dataset in queryDatasets"
+                    :key="dataset.dataset_version_id"
+                    class="cp-check"
+                  >
+                    <input
+                      v-model="draftQueryVersionIds"
+                      type="checkbox"
+                      :value="dataset.dataset_version_id"
+                      :disabled="releaseDraft.state !== 'DRAFT'"
+                    />
+                    <span>
+                      {{ dataset.display_name }} · {{ dataset.source.engine }}
+                      <small>
+                        {{ dataset.state }} / {{ dataset.source.qualification_state }} ·
+                        {{ dataset.dataset_version_id }}
+                      </small>
+                    </span>
+                  </label>
+                </div>
+                <div class="cp-actions">
+                  <button
+                    v-if="canEditTechnicalConfig && releaseDraft.state === 'DRAFT'"
+                    @click="assignDraftQueryDatasets"
+                  >
+                    分配并推进 revision
+                  </button>
+                  <span v-if="releaseDraft.query_datasets" class="cp-pill">
+                    {{ releaseDraft.query_datasets.dataset_refs.length }} 个版本
+                  </span>
+                </div>
+                <div v-if="releaseDraft.query_datasets" class="cp-evidence">
+                  <strong>Assignment {{ releaseDraft.query_datasets.assignment_hash }}</strong>
+                  <span
+                    v-for="dataset in releaseDraft.query_datasets.dataset_refs"
+                    :key="dataset.dataset_version_id"
+                  >
+                    {{ dataset.dataset_label }} · {{ dataset.dataset_version_id }}
+                  </span>
+                </div>
+              </div>
               <div class="cp-actions cp-wrap">
                 <button
                   v-if="canEditConfig && releaseDraft.state === 'DRAFT'"
@@ -1963,6 +2735,17 @@ function formatTime(value?: number | null) {
                       'NOT_CONFIGURED_P2_1'
                     }}
                   </span>
+                  <span>
+                    Query
+                    {{
+                      target.query_snapshot
+                        ? `${target.query_snapshot.dataset_refs.length} datasets`
+                        : 'NOT_CONFIGURED_P2_2'
+                    }}
+                  </span>
+                  <code v-if="target.query_snapshot">
+                    {{ target.query_snapshot.query_snapshot_hash }}
+                  </code>
                 </div>
               </div>
               <div class="cp-form-grid">
@@ -2255,6 +3038,7 @@ legend { padding: 0 6px; color: #53675f; font-size: 12px; font-weight: 800; }
 .cp-check { display: flex; grid-template-columns: none; align-items: flex-start; gap: 9px; font-weight: 650; }
 .cp-check input { width: auto; margin-top: 3px; }
 .cp-check small { display: block; color: #72827b; font-weight: 500; }
+.cp-check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .cp-readonly-note { padding: 12px; border-radius: 9px; background: #f3f6f4; color: #60716a; }
 .cp-card-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .cp-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
@@ -2292,7 +3076,7 @@ pre { overflow: auto; margin: 0; padding: 15px; border-radius: 10px; background:
   .cp-stat-strip { overflow-x: auto; }
   .cp-session { border-left: 0; padding-left: 0; }
   .cp-grid { grid-template-columns: 1fr; }
-  .cp-screen-grid, .cp-form-grid, .cp-target-list, .cp-state-grid, .cp-preset-grid, .cp-capability-grid { grid-template-columns: 1fr; }
+  .cp-screen-grid, .cp-form-grid, .cp-target-list, .cp-state-grid, .cp-preset-grid, .cp-capability-grid, .cp-check-grid { grid-template-columns: 1fr; }
   .cp-fallback-add { grid-template-columns: 1fr; }
   .cp-nav { overflow-x: auto; }
 }

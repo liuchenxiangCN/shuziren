@@ -127,6 +127,62 @@ class DraftCapabilityProfileAssignmentRequest(StrictModel):
     profile_version_id: str = Field(min_length=1, max_length=200)
 
 
+class DatabaseConnectionRequest(StrictModel):
+    host: str = Field(min_length=1, max_length=253)
+    port: int = Field(ge=1, le=65535)
+    database: str = Field(min_length=1, max_length=128)
+    username: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class QuerySourceCreateRequest(StrictModel):
+    site_id: str = Field(min_length=1, max_length=200)
+    display_name: str = Field(min_length=1, max_length=128)
+    engine: str = Field(min_length=1, max_length=32)
+    read_only_account_confirmed: bool = False
+    connection: DatabaseConnectionRequest | None = None
+    excel_file_name: str | None = Field(default=None, min_length=1, max_length=255)
+    excel_workbook_base64: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=14_000_000,
+    )
+
+
+class QueryDatasetParameterRequest(StrictModel):
+    name: str = Field(min_length=1, max_length=64)
+    type: str = Field(min_length=1, max_length=16)
+    required: bool
+
+
+class QueryDatasetDefinitionRequest(StrictModel):
+    worksheet: str | None = Field(default=None, min_length=1, max_length=128)
+    parameter_columns: dict[str, str] | None = None
+    query_template: str | None = Field(default=None, min_length=1, max_length=20_000)
+    allowed_relations: list[str] | None = Field(default=None, max_length=32)
+
+
+class QueryDatasetCreateRequest(StrictModel):
+    source_id: str = Field(min_length=1, max_length=200)
+    display_name: str = Field(min_length=1, max_length=128)
+    metric_definition: str = Field(min_length=1, max_length=500)
+    time_scope_description: str = Field(min_length=1, max_length=300)
+    freshness_label: str = Field(min_length=1, max_length=128)
+    parameters: list[QueryDatasetParameterRequest] = Field(max_length=32)
+    output_fields: list[str] = Field(min_length=1, max_length=64)
+    definition: QueryDatasetDefinitionRequest
+    row_limit: int = Field(ge=1, le=500)
+    timeout_ms: int = Field(ge=100, le=120000)
+
+
+class DraftQueryDatasetAssignmentRequest(StrictModel):
+    dataset_version_ids: list[str] = Field(max_length=50)
+
+
+class QueryExecutionRequest(StrictModel):
+    parameters: dict[str, Any]
+
+
 class ConfigDraftDecisionRequest(StrictModel):
     reason: str = Field(min_length=3, max_length=500)
 
@@ -843,6 +899,243 @@ def assign_config_draft_capability_profile(
     return result
 
 
+@router.get(f"{CONTROL_PREFIX}/query-sources")
+def list_query_sources(request: Request) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_2.list_sources(context.principal)
+
+
+@router.post(f"{CONTROL_PREFIX}/query-sources", status_code=201)
+def create_query_source(
+    payload: QuerySourceCreateRequest,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p2_2.create_source(
+        context.principal,
+        site_id=payload.site_id,
+        display_name=payload.display_name,
+        engine=payload.engine,
+        read_only_account_confirmed=payload.read_only_account_confirmed,
+        connection_input=(payload.connection.model_dump() if payload.connection is not None else None),
+        excel_file_name=payload.excel_file_name,
+        excel_workbook_base64=payload.excel_workbook_base64,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/query-sources/{{source_id}}")
+def get_query_source(
+    source_id: str,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).p2_2.get_source(
+        context.principal,
+        source_id,
+    )
+    response.headers["ETag"] = result["etag"]
+    response.headers["Cache-Control"] = "no-store"
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/query-sources/{{source_id}}:test")
+def test_query_source(
+    source_id: str,
+    request: Request,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    return service_from_request(request).p2_2.test_source(
+        context.principal,
+        source_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.post(f"{CONTROL_PREFIX}/query-sources/{{source_id}}:disable")
+def disable_query_source(
+    source_id: str,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p2_2.disable_source(
+        context.principal,
+        source_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/query-datasets")
+def list_query_datasets(request: Request) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_2.list_datasets(
+        context.principal,
+    )
+
+
+@router.post(f"{CONTROL_PREFIX}/query-datasets", status_code=201)
+def create_query_dataset(
+    payload: QueryDatasetCreateRequest,
+    request: Request,
+    response: Response,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p2_2.create_dataset(
+        context.principal,
+        source_id=payload.source_id,
+        display_name=payload.display_name,
+        metric_definition=payload.metric_definition,
+        time_scope_description=payload.time_scope_description,
+        freshness_label=payload.freshness_label,
+        parameters=[item.model_dump() for item in payload.parameters],
+        output_fields=payload.output_fields,
+        definition=payload.definition.model_dump(exclude_none=True),
+        row_limit=payload.row_limit,
+        timeout_ms=payload.timeout_ms,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/query-datasets/{{dataset_id}}")
+def get_query_dataset(
+    dataset_id: str,
+    request: Request,
+    response: Response,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    result = service_from_request(request).p2_2.get_dataset(
+        context.principal,
+        dataset_id,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/query-datasets/{{dataset_id}}:disable")
+def disable_query_dataset(
+    dataset_id: str,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p2_2.disable_dataset(
+        context.principal,
+        dataset_id,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.put(f"{CONTROL_PREFIX}/config-drafts/{{draft_id}}/query-datasets")
+def assign_config_draft_query_datasets(
+    draft_id: str,
+    payload: DraftQueryDatasetAssignmentRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p2_2.assign_draft_datasets(
+        context.principal,
+        draft_id,
+        dataset_version_ids=payload.dataset_version_ids,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.get(f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/query-datasets")
+def list_screen_query_datasets(
+    screen_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_2.list_screen_datasets(
+        context.principal,
+        screen_id,
+    )
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/query-datasets/{{dataset_id}}:execute",
+    status_code=202,
+)
+def start_screen_query_execution(
+    screen_id: str,
+    dataset_id: str,
+    payload: QueryExecutionRequest,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    return service_from_request(request).p2_2.start_user_execution(
+        context.principal,
+        screen_id,
+        dataset_id,
+        parameters=payload.parameters,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.get(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/query-executions/{{execution_id}}",
+)
+def get_screen_query_execution(
+    screen_id: str,
+    execution_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_2.get_user_execution(
+        context.principal,
+        screen_id,
+        execution_id,
+    )
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/query-executions/{{execution_id}}:cancel",
+)
+def cancel_screen_query_execution(
+    screen_id: str,
+    execution_id: str,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    return service_from_request(request).p2_2.cancel_user_execution(
+        context.principal,
+        screen_id,
+        execution_id,
+        idempotency_key=idempotency_key,
+    )
+
+
 @router.post(f"{CONTROL_PREFIX}/config-drafts", status_code=201)
 def create_config_draft(
     payload: ConfigDraftCreateRequest,
@@ -1367,6 +1660,57 @@ def get_device_current_capabilities(
     return service_from_request(request).p2_1.current_device_capabilities(
         context,
         runtime_session_id,
+    )
+
+
+@router.get(f"{DEVICE_PREFIX}/query-datasets")
+def list_device_query_datasets(request: Request) -> dict[str, Any]:
+    context = device_from_request(request)
+    return service_from_request(request).p2_2.list_device_datasets(context)
+
+
+@router.post(
+    f"{DEVICE_PREFIX}/query-datasets/{{dataset_id}}:execute",
+    status_code=202,
+)
+def start_device_query_execution(
+    dataset_id: str,
+    payload: QueryExecutionRequest,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = device_from_request(request)
+    return service_from_request(request).p2_2.start_device_execution(
+        context,
+        dataset_id,
+        parameters=payload.parameters,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.get(f"{DEVICE_PREFIX}/query-executions/{{execution_id}}")
+def get_device_query_execution(
+    execution_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    context = device_from_request(request)
+    return service_from_request(request).p2_2.get_device_execution(
+        context,
+        execution_id,
+    )
+
+
+@router.post(f"{DEVICE_PREFIX}/query-executions/{{execution_id}}:cancel")
+def cancel_device_query_execution(
+    execution_id: str,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = device_from_request(request)
+    return service_from_request(request).p2_2.cancel_device_execution(
+        context,
+        execution_id,
+        idempotency_key=idempotency_key,
     )
 
 

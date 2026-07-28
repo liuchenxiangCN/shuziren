@@ -34,6 +34,9 @@ SECURITY_RECONCILIATION_TABLES = (
     "backup_records",
     "restore_plans",
     "restore_executions",
+    "query_secret_records",
+    "query_sources",
+    "query_datasets",
 )
 LIVE_RECONCILED_IDEMPOTENCY_PHASES = (
     "approveHighRiskAction",
@@ -251,6 +254,12 @@ class P13ControlPlane:
                 ),
             )
             self.owner.p2_1.copy_draft_assignment_forward(
+                connection,
+                draft_id=draft_id,
+                source_revision=draft["current_revision"],
+                target_revision=next_draft_revision,
+            )
+            self.owner.p2_2.copy_draft_assignment_forward(
                 connection,
                 draft_id=draft_id,
                 source_revision=draft["current_revision"],
@@ -566,6 +575,12 @@ class P13ControlPlane:
                 source_revision=draft["current_revision"],
                 target_revision=next_revision,
             )
+            self.owner.p2_2.copy_draft_assignment_forward(
+                connection,
+                draft_id=draft_id,
+                source_revision=draft["current_revision"],
+                target_revision=next_revision,
+            )
             metadata = self.owner._metadata(connection)
             connection.execute(
                 """
@@ -690,6 +705,12 @@ class P13ControlPlane:
                     "Approved draft evidence is unavailable",
                 )
             resolution = self._resolve_draft(connection, principal, draft)
+            self.owner.p2_2.require_release_validation(
+                connection,
+                draft=draft,
+                base_validation_record_id=draft["validation_record_id"],
+                query_resolution=resolution["query_resolution"],
+            )
             release_id = opaque_id("rel")
             release_sequence = self._next_release_sequence(connection, principal)
             connection.execute(
@@ -746,6 +767,13 @@ class P13ControlPlane:
                     release_target_id=release_target_id,
                     target=target,
                     capability_resolution=resolution["capability_resolution"],
+                    now=now,
+                )
+                self.owner.p2_2.insert_release_snapshot(
+                    connection,
+                    release_target_id=release_target_id,
+                    target=target,
+                    query_resolution=resolution["query_resolution"],
                     now=now,
                 )
             connection.execute(
@@ -1294,6 +1322,15 @@ class P13ControlPlane:
             "capability_profile_versions",
             "config_draft_capability_assignments",
             "release_target_capability_snapshots",
+            "query_secret_records",
+            "query_secret_versions",
+            "query_sources",
+            "query_source_versions",
+            "query_datasets",
+            "query_dataset_versions",
+            "config_draft_query_assignments",
+            "query_validation_records",
+            "release_target_query_snapshots",
             "security_audit_events",
         )
         now = self.owner.clock()
@@ -1759,11 +1796,16 @@ class P13ControlPlane:
                     )
                 try:
                     resolution = self._resolve_draft(connection, principal, draft)
-                except DraftValidationFailure as failure:
+                except ControlPlaneError as failure:
+                    if not isinstance(failure, DraftValidationFailure) and failure.status_code != 422:
+                        raise
+                    finding_code = (
+                        failure.finding_code if isinstance(failure, DraftValidationFailure) else failure.code
+                    )
                     findings = [
                         {
                             "severity": "ERROR",
-                            "code": failure.finding_code,
+                            "code": finding_code,
                             "message": failure.message,
                         }
                     ]
@@ -1802,7 +1844,7 @@ class P13ControlPlane:
                     event_type = "CONFIG_DRAFT_VALIDATION_FAILED"
                     event_details = {
                         "draft_revision": draft["current_revision"],
-                        "finding_codes": [failure.finding_code],
+                        "finding_codes": [finding_code],
                         "outcome": "INVALID",
                     }
                     audit_outcome = "REJECTED"
@@ -1839,8 +1881,30 @@ class P13ControlPlane:
                         }
                     ]
                     capability_resolution = resolution["capability_resolution"]
+                    query_resolution = resolution["query_resolution"]
                     if capability_resolution is not None:
-                        findings.extend(capability_resolution["dependency_findings"])
+                        for finding in capability_resolution["dependency_findings"]:
+                            if (
+                                query_resolution is not None
+                                and query_resolution["activation_eligible"]
+                                and finding.get("severity") == "ERROR"
+                                and finding.get("capability") == "querying"
+                                and finding.get("provider_id") == "controlled_query"
+                            ):
+                                findings.append(
+                                    {
+                                        "severity": "INFO",
+                                        "code": "P2_2_QUERY_SIDECAR_QUALIFIED",
+                                        "capability": "querying",
+                                        "provider_id": "controlled_query",
+                                        "message": (
+                                            "The frozen P2.2 dataset sidecar "
+                                            "qualifies controlled_query for this draft."
+                                        ),
+                                    }
+                                )
+                            else:
+                                findings.append(finding)
                     findings_json = canonical_json(findings)
                     validation_id = opaque_id("val")
                     connection.execute(
@@ -1878,6 +1942,14 @@ class P13ControlPlane:
                         """,
                         (validation_id, now, draft_id),
                     )
+                    self.owner.p2_2.record_validation(
+                        connection,
+                        principal=principal,
+                        draft=draft,
+                        base_validation_record_id=validation_id,
+                        query_resolution=query_resolution,
+                        now=now,
+                    )
                     event_type = "CONFIG_DRAFT_VALIDATED"
                     event_details = {
                         "draft_revision": draft["current_revision"],
@@ -1908,12 +1980,33 @@ class P13ControlPlane:
                         "Passed validation evidence is unavailable",
                     )
                 resolution = self._resolve_draft(connection, principal, draft)
+                self.owner.p2_2.require_release_validation(
+                    connection,
+                    draft=draft,
+                    base_validation_record_id=validation["validation_record_id"],
+                    query_resolution=resolution["query_resolution"],
+                )
                 evidence = {
                     "provider": "MOCK_FVS",
                     "outcome": "MOCK_PASSED",
                     "real_provider_verified": False,
                     "capabilities": self.owner.p2_1.preview_capability_evidence(
                         resolution["capability_resolution"]
+                    ),
+                    "controlled_querying": (
+                        {
+                            "provider": "controlled_query",
+                            "outcome": "DEPLOYMENT_LOCAL_AVAILABLE",
+                            "dataset_count": len(resolution["query_resolution"]["dataset_refs"]),
+                            "assignment_hash": resolution["query_resolution"]["assignment"][
+                                "assignment_hash"
+                            ],
+                            "real_query_execution_made": False,
+                            "external_calls_made": False,
+                            "product_certification": "UNVERIFIED",
+                        }
+                        if resolution["query_resolution"] is not None
+                        else None
                     ),
                     "targets": [
                         {
@@ -2206,8 +2299,18 @@ class P13ControlPlane:
             draft_revision=draft["current_revision"],
             targets=targets,
         )
+        query_resolution = self.owner.p2_2.resolve_draft_queries(
+            connection,
+            draft_id=draft["draft_id"],
+            draft_revision=draft["current_revision"],
+            targets=targets,
+            capability_resolution=capability_resolution,
+        )
         if capability_resolution is not None:
-            if not capability_resolution["activation_eligible"]:
+            if not self.owner.p2_2.composite_capability_activation_eligible(
+                capability_resolution,
+                query_resolution,
+            ):
                 raise DraftValidationFailure(
                     "CAPABILITY_PROFILE_NOT_ACTIVATION_ELIGIBLE",
                     "Assigned capability profile contains an unverified Provider",
@@ -2248,6 +2351,7 @@ class P13ControlPlane:
             "effective_hashes": effective_hashes,
             "targets": targets,
             "capability_resolution": capability_resolution,
+            "query_resolution": query_resolution,
             "fingerprint_hash": hashlib.sha256(
                 canonical_json(fingerprint_payload).encode("utf-8")
             ).hexdigest(),
@@ -2861,6 +2965,12 @@ class P13ControlPlane:
                 target_release_target_id=target_id,
                 now=now,
             )
+            self.owner.p2_2.copy_release_snapshot_forward(
+                connection,
+                source_release_target_id=source["release_target_id"],
+                target_release_target_id=target_id,
+                now=now,
+            )
             new_targets.append(
                 {
                     "screen_id": source["screen_id"],
@@ -3235,6 +3345,34 @@ class P13ControlPlane:
                 "restore_executions",
                 live_security["tables"]["restore_executions"],
             )
+            query_authority_columns = {
+                "query_secret_records": (
+                    "current_version_id",
+                    "state",
+                    "updated_at",
+                    "revision",
+                ),
+                "query_sources": (
+                    "state",
+                    "qualification_state",
+                    "qualification_code",
+                    "last_tested_at",
+                    "updated_at",
+                    "revision",
+                ),
+                "query_datasets": (
+                    "state",
+                    "updated_at",
+                    "revision",
+                ),
+            }
+            for table, update_columns in query_authority_columns.items():
+                self._update_existing_rows(
+                    connection,
+                    table,
+                    live_security["tables"][table],
+                    update_columns=update_columns,
+                )
             connection.execute("DELETE FROM auth_sessions")
             idempotency_phases_to_replace = (
                 *LIVE_RECONCILED_IDEMPOTENCY_PHASES,
@@ -3492,6 +3630,29 @@ class P13ControlPlane:
             connection.execute(sql, tuple(row[column] for column in columns))
 
     @staticmethod
+    def _update_existing_rows(
+        connection: sqlite3.Connection,
+        table: str,
+        snapshot: dict[str, Any],
+        *,
+        update_columns: tuple[str, ...],
+    ) -> None:
+        columns = snapshot["columns"]
+        primary_keys = [
+            row["name"] for row in connection.execute(f'PRAGMA table_info("{table}")').fetchall() if row["pk"]
+        ]
+        if any(column not in columns or column in primary_keys for column in update_columns):
+            raise BackupIntegrityError("Restore authority snapshot is invalid")
+        assignments = ", ".join(f'"{column}" = ?' for column in update_columns)
+        predicates = " AND ".join(f'"{column}" = ?' for column in primary_keys)
+        sql = f'UPDATE "{table}" SET {assignments} WHERE {predicates}'
+        for row in snapshot["rows"]:
+            connection.execute(
+                sql,
+                tuple(row[column] for column in (*update_columns, *primary_keys)),
+            )
+
+    @staticmethod
     def _append_audit_suffix(
         connection: sqlite3.Connection,
         live_rows: list[dict[str, Any]],
@@ -3673,6 +3834,11 @@ class P13ControlPlane:
                 row["draft_id"],
                 row["current_revision"],
             ),
+            "query_datasets": self.owner.p2_2.draft_assignment_response(
+                connection,
+                row["draft_id"],
+                row["current_revision"],
+            ),
             "content_hash": row["content_hash"],
             "state": row["state"],
             "draft_revision": row["current_revision"],
@@ -3800,6 +3966,10 @@ class P13ControlPlane:
             "effective_config": json.loads(row["canonical_effective_config_json"]),
             "content_hash": row["content_hash"],
             "capability_snapshot": self.owner.p2_1.release_snapshot_response(
+                connection,
+                row["release_target_id"],
+            ),
+            "query_snapshot": self.owner.p2_2.release_snapshot_response(
                 connection,
                 row["release_target_id"],
             ),
@@ -4239,3 +4409,4 @@ class P13ControlPlane:
             if actual != row["content_hash"]:
                 raise BackupIntegrityError("Staged restore release hash changed")
         BackupManager._validate_p21_capability_data(connection)
+        BackupManager._validate_p22_query_data(connection)

@@ -1345,7 +1345,7 @@ def test_legacy_applied_release_resolves_not_configured_after_004_upgrade(
         root_key,
         preview_mode=True,
     )
-    assert upgraded_service.status()["migration_version"] == "004_capability_profiles"
+    assert upgraded_service.status()["migration_version"] == full_migrations[-1][0]
     upgraded_app = _build_app(upgraded_service)
     upgraded_device = TestClient(upgraded_app, base_url="https://device.test")
     current = upgraded_device.get(
@@ -1568,6 +1568,15 @@ def test_p21_backup_restore_tamper_and_retention_preserve_sidecars(
         "capability_profile_versions",
         "config_draft_capability_assignments",
         "release_target_capability_snapshots",
+        "query_secret_records",
+        "query_secret_versions",
+        "query_sources",
+        "query_source_versions",
+        "query_datasets",
+        "query_dataset_versions",
+        "config_draft_query_assignments",
+        "query_validation_records",
+        "release_target_query_snapshots",
         "security_audit_events",
     )
     with service.store.connect() as connection:

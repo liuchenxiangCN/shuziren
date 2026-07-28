@@ -9,6 +9,46 @@
 
 ## 2026-07-28
 
+### P2.2 Controlled Querying Candidate Preparation
+
+#### Completed Facts
+
+- Added checksum-backed additive migration `005_controlled_querying` with
+  Site-owned source/dataset envelopes, immutable versions, exact draft/release
+  sidecars, sanitized execution metadata and authenticated Secret envelopes.
+- Added closed `.xlsx`, PostgreSQL, MySQL and Oracle adapters. Runtime accepts
+  only a published dataset ID and typed parameters; database templates are
+  administrator-approved, parsed single read-only statements with exact bind,
+  relation and output allowlists.
+- Added screen/session and credential-derived device catalogs, asynchronous
+  start/poll/cancel, exact idempotency, global/per-screen bounds, terminal
+  no-fallback behavior and in-memory bounded result retention.
+- Integrated query assignment with validation, preview, NORMAL release,
+  publication/acknowledgement and historical forward rollback without changing
+  accepted P1.3/P2.1 schemas.
+- Extended encrypted backup, fresh verification and staged restore validation
+  across the P2.2 graph while preserving current matching source/dataset
+  authority. Added fresh preview/browser launchers and a proposed ADR-0030.
+
+#### Verification To Date
+
+- Candidate-scoped Ruff passed; 116 API routes import; complete backend
+  regression passed 51 cases with three real-database cases gated separately.
+- PostgreSQL 17, MySQL 8.4 and Oracle Free 23 ephemeral read-only tests passed
+  DB-side INSERT denial plus exact published device query execution.
+- P2.2 target validation passed 47 checks and six mutation fixtures under both
+  PowerShell hosts. Pinned pnpm 9.15.4 frontend build passed.
+- A fresh 1280 by 720 browser run passed Excel registration, list refresh,
+  source qualification, immutable dataset creation, unpublished zero execution
+  and draft assignment display with no horizontal overflow or console
+  warning/error.
+- The first browser run found a missing QuerySource list projection field.
+  The blocker was fixed, covered by regression and rerun from a fresh fixture
+  before candidate creation.
+- Exact candidate commit, independent review, rollback binding and final
+  evidence hashes remain pending. P2.2 is not accepted and P2.3 has not
+  started.
+
 ### P2.1 User Acceptance
 
 #### Completed Facts
