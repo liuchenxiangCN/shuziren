@@ -760,6 +760,74 @@ def test_profile_versions_are_immutable_strong_and_secret_closed(
     assert path_submitted_value.encode() not in persisted_surfaces
 
 
+def test_backup_validation_closes_unassigned_profile_metadata_and_row_loss(
+    p21_control_plane: tuple[FastAPI, ControlPlaneService, Path],
+) -> None:
+    app, service, database_path = p21_control_plane
+    implementation, csrf_impl = login(app, "implementation")
+    screen = implementation.get("/api/v1/control-plane/screen-instances").json()["items"][0]
+    profile = _create_profile(
+        implementation,
+        csrf_impl,
+        site_id=screen["site_id"],
+        preset_id="text_only",
+        suffix="unassigned-recovery-anchor",
+    )
+
+    def database_copy(label: str) -> Path:
+        copied_path = database_path.parent / f"unassigned-{label}.db"
+        source = service.store.connect()
+        target = sqlite3.connect(copied_path)
+        try:
+            source.backup(target)
+            target.commit()
+        finally:
+            target.close()
+            source.close()
+        return copied_path
+
+    baseline_path = database_copy("baseline")
+    BackupManager._validate_snapshot(baseline_path.read_bytes())
+
+    metadata_tamper_cases = (
+        ("name", f" {profile['name']}"),
+        ("description", "internal-host:8443"),
+    )
+    for column, changed_value in metadata_tamper_cases:
+        metadata_path = database_copy(f"noncanonical-{column}")
+        connection = sqlite3.connect(metadata_path)
+        try:
+            connection.execute(
+                f"UPDATE capability_profiles SET {column} = ? WHERE profile_id = ?",
+                (changed_value, profile["profile_id"]),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        with pytest.raises(BackupIntegrityError, match="public metadata"):
+            BackupManager._validate_snapshot(metadata_path.read_bytes())
+
+    missing_rows_path = database_copy("missing-all-p21-rows")
+    connection = sqlite3.connect(missing_rows_path)
+    try:
+        trigger_sql = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'trigger' AND name = 'capability_profile_versions_no_delete'
+            """
+        ).fetchone()[0]
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute("DROP TRIGGER capability_profile_versions_no_delete")
+        for table in P21_TABLES:
+            connection.execute(f'DELETE FROM "{table}"')
+        connection.execute(trigger_sql)
+        connection.commit()
+    finally:
+        connection.close()
+    with pytest.raises(BackupIntegrityError, match="creation anchor"):
+        BackupManager._validate_snapshot(missing_rows_path.read_bytes())
+
+
 def test_unverified_profile_is_inspectable_but_cannot_validate(
     p21_control_plane: tuple[FastAPI, ControlPlaneService, Path],
 ) -> None:
@@ -1491,6 +1559,220 @@ def test_p21_backup_restore_tamper_and_retention_preserve_sidecars(
         raise
     with pytest.raises(BackupIntegrityError):
         BackupManager._validate_snapshot(tampered_fingerprint_path.read_bytes())
+
+    self_consistent_hash_path = database_copy("self-consistent-effective-hash")
+    connection = sqlite3.connect(self_consistent_hash_path)
+    try:
+        connection.row_factory = sqlite3.Row
+        fingerprint = connection.execute(
+            """
+            SELECT rf.*, dr.schema_version AS draft_schema_version,
+                   dr.content_hash AS draft_content_hash,
+                   d.control_plane_epoch AS draft_control_plane_epoch
+            FROM resolution_fingerprints rf
+            JOIN config_draft_revisions dr
+              ON dr.draft_id = rf.draft_id
+             AND dr.draft_revision = rf.draft_revision
+            JOIN config_drafts d ON d.draft_id = rf.draft_id
+            WHERE rf.draft_id = ? AND rf.draft_revision = ?
+            """,
+            (
+                release["normal_provenance"]["draft_id"],
+                release["normal_provenance"]["draft_revision"],
+            ),
+        ).fetchone()
+        inputs = json.loads(fingerprint["resolution_inputs_json"])
+        effective_hashes = json.loads(fingerprint["effective_hashes_json"])
+        effective_hashes[inputs[0]["screen_id"]] = "f" * 64
+        capability_envelope_hashes = {
+            item["screen_id"]: item["capability_profile"]["capability_envelope_hash"] for item in inputs
+        }
+        fingerprint_payload = {
+            "draft_id": fingerprint["draft_id"],
+            "draft_revision": fingerprint["draft_revision"],
+            "schema_version": fingerprint["draft_schema_version"],
+            "content_hash": fingerprint["draft_content_hash"],
+            "target_set_hash": fingerprint["target_set_hash"],
+            "group_revision": fingerprint["group_revision"],
+            "inputs": inputs,
+            "effective_hashes": effective_hashes,
+            "capability_envelope_hashes": capability_envelope_hashes,
+            "control_plane_epoch": fingerprint["draft_control_plane_epoch"],
+        }
+        rewritten_fingerprint_hash = hashlib.sha256(canonical_json(fingerprint_payload).encode()).hexdigest()
+        trigger_names = (
+            "resolution_fingerprints_no_update",
+            "validation_records_no_update",
+            "preview_records_no_update",
+            "config_approval_records_no_update",
+        )
+        trigger_sql_by_name = {
+            row["name"]: row["sql"]
+            for row in connection.execute(
+                f"""
+                SELECT name, sql FROM sqlite_master
+                WHERE type = 'trigger'
+                  AND name IN ({", ".join("?" for _ in trigger_names)})
+                """,
+                trigger_names,
+            ).fetchall()
+        }
+        for trigger_name in trigger_names:
+            connection.execute(f'DROP TRIGGER "{trigger_name}"')
+        connection.execute(
+            """
+            UPDATE resolution_fingerprints
+            SET effective_hashes_json = ?, fingerprint_hash = ?
+            WHERE fingerprint_id = ?
+            """,
+            (
+                canonical_json(effective_hashes),
+                rewritten_fingerprint_hash,
+                fingerprint["fingerprint_id"],
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE validation_records SET fingerprint_hash = ?
+            WHERE fingerprint_id = ?
+            """,
+            (rewritten_fingerprint_hash, fingerprint["fingerprint_id"]),
+        )
+        connection.execute(
+            """
+            UPDATE preview_records SET fingerprint_hash = ?
+            WHERE validation_record_id IN (
+                SELECT validation_record_id FROM validation_records
+                WHERE fingerprint_id = ?
+            )
+            """,
+            (rewritten_fingerprint_hash, fingerprint["fingerprint_id"]),
+        )
+        connection.execute(
+            """
+            UPDATE config_approval_records SET fingerprint_hash = ?
+            WHERE preview_record_id IN (
+                SELECT p.preview_record_id
+                FROM preview_records p
+                JOIN validation_records v
+                  ON v.validation_record_id = p.validation_record_id
+                WHERE v.fingerprint_id = ?
+            )
+            """,
+            (rewritten_fingerprint_hash, fingerprint["fingerprint_id"]),
+        )
+        for trigger_name in trigger_names:
+            connection.execute(trigger_sql_by_name[trigger_name])
+        persist_tamper(connection)
+    except Exception:
+        connection.close()
+        raise
+    with pytest.raises(BackupIntegrityError, match="effective hash changed"):
+        BackupManager._validate_snapshot(self_consistent_hash_path.read_bytes())
+
+    with service.store.connect() as connection:
+        evidence_ids = connection.execute(
+            """
+            SELECT v.validation_record_id, p.preview_record_id,
+                   a.approval_record_id
+            FROM validation_records v
+            JOIN preview_records p
+              ON p.validation_record_id = v.validation_record_id
+            JOIN config_approval_records a
+              ON a.preview_record_id = p.preview_record_id
+            JOIN resolution_fingerprints rf
+              ON rf.fingerprint_id = v.fingerprint_id
+            WHERE rf.draft_id = ? AND rf.draft_revision = ?
+            """,
+            (
+                release["normal_provenance"]["draft_id"],
+                release["normal_provenance"]["draft_revision"],
+            ),
+        ).fetchone()
+    evidence_tamper_cases = (
+        (
+            "validation_records",
+            "validation_records_no_update",
+            "validation_record_id",
+            evidence_ids["validation_record_id"],
+            "Validation fingerprint reference changed",
+        ),
+        (
+            "preview_records",
+            "preview_records_no_update",
+            "preview_record_id",
+            evidence_ids["preview_record_id"],
+            "Preview fingerprint reference changed",
+        ),
+        (
+            "config_approval_records",
+            "config_approval_records_no_update",
+            "approval_record_id",
+            evidence_ids["approval_record_id"],
+            "Approval fingerprint reference changed",
+        ),
+    )
+    for table, trigger_name, id_column, record_id, expected_error in evidence_tamper_cases:
+        evidence_path = database_copy(f"{table}-fingerprint-reference")
+        connection = sqlite3.connect(evidence_path)
+        try:
+            trigger_sql = connection.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?",
+                (trigger_name,),
+            ).fetchone()[0]
+            connection.execute(f'DROP TRIGGER "{trigger_name}"')
+            connection.execute(
+                f"UPDATE {table} SET fingerprint_hash = ? WHERE {id_column} = ?",
+                (hashlib.sha256(table.encode()).hexdigest(), record_id),
+            )
+            connection.execute(trigger_sql)
+            persist_tamper(connection)
+        except Exception:
+            connection.close()
+            raise
+        with pytest.raises(BackupIntegrityError, match=expected_error):
+            BackupManager._validate_snapshot(evidence_path.read_bytes())
+
+    release_binding_path = database_copy("release-target-effective-hash-binding")
+    connection = sqlite3.connect(release_binding_path)
+    try:
+        connection.row_factory = sqlite3.Row
+        trigger_sql = connection.execute(
+            """
+            SELECT sql FROM sqlite_master
+            WHERE type = 'trigger' AND name = 'release_targets_no_update'
+            """
+        ).fetchone()["sql"]
+        target = connection.execute(
+            """
+            SELECT canonical_effective_config_json
+            FROM release_targets WHERE release_target_id = ?
+            """,
+            (release["targets"][0]["release_target_id"],),
+        ).fetchone()
+        rewritten_effective = json.loads(target["canonical_effective_config_json"])
+        rewritten_effective["welcome_text"] = "P2.1 recovery binding variation"
+        rewritten_effective_json = canonical_json(rewritten_effective)
+        connection.execute("DROP TRIGGER release_targets_no_update")
+        connection.execute(
+            """
+            UPDATE release_targets
+            SET canonical_effective_config_json = ?, content_hash = ?
+            WHERE release_target_id = ?
+            """,
+            (
+                rewritten_effective_json,
+                hashlib.sha256(rewritten_effective_json.encode()).hexdigest(),
+                release["targets"][0]["release_target_id"],
+            ),
+        )
+        connection.execute(trigger_sql)
+        persist_tamper(connection)
+    except Exception:
+        connection.close()
+        raise
+    with pytest.raises(BackupIntegrityError, match="Normal release effective hash changed"):
+        BackupManager._validate_snapshot(release_binding_path.read_bytes())
 
     plan_response = admin_a.post(
         "/api/v1/control-plane/restore-plans",

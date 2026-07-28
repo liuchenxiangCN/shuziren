@@ -6,22 +6,36 @@ import sqlite3
 from pathlib import Path
 
 from app.control_plane.service import ControlPlaneService
-from app.control_plane.store import MIGRATION_004_VERSION, MIGRATIONS
+from app.control_plane.store import (
+    MIGRATION_004_VERSION,
+    MIGRATIONS,
+    ControlPlaneStore,
+)
 from app.control_plane.upgrade_preview import copy_sqlite_database
 
 
 def _verify_accepted_p1_3_source(path: Path) -> None:
     source_uri = f"{path.resolve().as_uri()}?mode=ro"
-    with sqlite3.connect(source_uri, uri=True) as connection:
-        rows = connection.execute(
-            "SELECT version, checksum_sha256 FROM schema_migrations ORDER BY rowid"
-        ).fetchall()
-        if rows != [(version, checksum) for version, checksum, _ in MIGRATIONS[:3]]:
-            raise SystemExit("Source is not an exact accepted P1.3 migration registry")
-        if connection.execute("PRAGMA foreign_key_check").fetchall():
-            raise SystemExit("Source P1.3 database has foreign-key violations")
-        if connection.execute("SELECT COUNT(*) FROM runtime_bindings").fetchone()[0] != 3:
-            raise SystemExit("Source P1.3 database lacks the accepted three-screen binding baseline")
+    try:
+        with sqlite3.connect(source_uri, uri=True) as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                "SELECT version, checksum_sha256 FROM schema_migrations ORDER BY rowid"
+            ).fetchall()
+            if [(row["version"], row["checksum_sha256"]) for row in rows] != [
+                (version, checksum) for version, checksum, _ in MIGRATIONS[:3]
+            ]:
+                raise SystemExit("Source is not an exact accepted P1.3 migration registry")
+            ControlPlaneStore.validate_schema_object_integrity(
+                connection,
+                MIGRATIONS[:3],
+            )
+            if connection.execute("PRAGMA foreign_key_check").fetchall():
+                raise SystemExit("Source P1.3 database has foreign-key violations")
+            if connection.execute("SELECT COUNT(*) FROM runtime_bindings").fetchone()[0] != 3:
+                raise SystemExit("Source P1.3 database lacks the accepted three-screen binding baseline")
+    except (RuntimeError, sqlite3.DatabaseError) as exc:
+        raise SystemExit("Source P1.3 schema object integrity verification failed") from exc
 
 
 def main() -> int:

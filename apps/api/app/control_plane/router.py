@@ -1425,11 +1425,69 @@ async def control_plane_error_handler(request: Request, exc: ControlPlaneError) 
     )
 
 
-def sanitized_validation_errors(exc: RequestValidationError) -> list[dict[str, Any]]:
+_VALIDATION_LOCATION_ROOTS = frozenset({"body", "cookie", "header", "path", "query"})
+
+
+def _sanitized_validation_location(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return ["request"]
+    root_value = value[0] if value else None
+    root = (
+        root_value if isinstance(root_value, str) and root_value in _VALIDATION_LOCATION_ROOTS else "request"
+    )
     return [
-        {key: value for key, value in error.items() if key not in {"input", "ctx", "url"}}
-        for error in exc.errors()
+        root,
+        *["item" if type(segment) is int else "field" for segment in value[1:]],
     ]
+
+
+def _sanitized_validation_type(value: Any) -> str:
+    if value == "missing":
+        return "missing"
+    if value == "extra_forbidden":
+        return "unexpected_field"
+    if value in {"json_invalid", "json_type"}:
+        return "invalid_json"
+    if isinstance(value, str) and value.endswith("_type"):
+        return "invalid_type"
+    if isinstance(value, str) and (
+        value.endswith("_parsing") or value in {"string_pattern_mismatch", "uuid_parsing"}
+    ):
+        return "invalid_format"
+    if isinstance(value, str) and any(
+        marker in value
+        for marker in (
+            "too_long",
+            "too_short",
+            "greater_than",
+            "less_than",
+            "multiple_of",
+        )
+    ):
+        return "constraint_violation"
+    return "invalid_value"
+
+
+def sanitized_validation_errors(exc: RequestValidationError) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    for error in exc.errors():
+        error_type = _sanitized_validation_type(error.get("type"))
+        sanitized.append(
+            {
+                "type": error_type,
+                "loc": _sanitized_validation_location(error.get("loc")),
+                "msg": {
+                    "missing": "Required request field is missing",
+                    "unexpected_field": "Unexpected request field",
+                    "invalid_json": "Request body is invalid",
+                    "invalid_type": "Request value has an invalid type",
+                    "invalid_format": "Request value has an invalid format",
+                    "constraint_violation": "Request value violates a constraint",
+                    "invalid_value": "Request value is invalid",
+                }[error_type],
+            }
+        )
+    return sanitized
 
 
 def _set_session_response(response: Response, cookie_value: str, csrf_token: str) -> None:

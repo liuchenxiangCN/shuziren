@@ -19,4 +19,4 @@ COPY docs/demo_data ./docs/demo_data
 
 EXPOSE 18080
 
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "18080"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "18080", "--no-access-log"]

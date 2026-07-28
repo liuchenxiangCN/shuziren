@@ -20,6 +20,7 @@ from cryptography.exceptions import InvalidTag
 from app.control_plane.errors import ControlPlaneError
 from app.control_plane.p2_1 import (
     CAPABILITY_KEYS,
+    PRESETS,
     PROFILE_SCHEMA_VERSION,
     PROFILE_STATES,
     PROVIDER_REGISTRY_HASH,
@@ -39,6 +40,8 @@ BACKUP_ENTRIES = {
     "verification.json",
 }
 PAYLOAD_ENTRIES = {"control-plane.logical.ndjson", "embedded-native.snapshot"}
+P1_CONFIG_SCHEMA_VERSION = "p1_screen_config_v1"
+P1_CONFIG_FIELDS = {"welcome_text", "fvs_binding_ref"}
 
 
 class BackupIntegrityError(RuntimeError):
@@ -546,6 +549,27 @@ class BackupManager:
         if set(versions_by_profile) != set(profile_by_id):
             raise BackupIntegrityError("Capability profile version lineage is incomplete")
         for profile in profiles:
+            try:
+                canonical_name = validator._public_text(
+                    profile["name"],
+                    "Capability profile name",
+                    minimum=1,
+                    maximum=128,
+                )
+                canonical_description = validator._public_text(
+                    profile["description"],
+                    "Capability profile description",
+                    minimum=0,
+                    maximum=500,
+                )
+            except ControlPlaneError as exc:
+                raise BackupIntegrityError("Capability profile public metadata is invalid") from exc
+            if (
+                canonical_name != profile["name"]
+                or canonical_description != profile["description"]
+                or profile["source_preset_id"] not in PRESETS
+            ):
+                raise BackupIntegrityError("Capability profile public metadata is invalid")
             lineage = versions_by_profile.get(profile["profile_id"], [])
             expected_numbers = list(range(1, profile["head_version_number"] + 1))
             actual_numbers = [row["version_number"] for row in lineage]
@@ -610,12 +634,134 @@ class BackupManager:
             ):
                 raise BackupIntegrityError("Draft capability assignment reference changed")
 
+        capability_event_types = {
+            "CAPABILITY_PROFILE_CREATED",
+            "CAPABILITY_PROFILE_VERSION_CREATED",
+            "CONFIG_DRAFT_CAPABILITY_PROFILE_ASSIGNED",
+        }
+        audit_rows = connection.execute("SELECT * FROM security_audit_events ORDER BY sequence").fetchall()
+        active_capability_sequences: set[int] = set()
+        active_sequences_by_event_hash: dict[str, frozenset[int]] = {}
+        for event in audit_rows:
+            if event["event_type"] in capability_event_types:
+                active_capability_sequences.add(event["sequence"])
+            elif event["event_type"] == "RESTORE_COMPLETED":
+                try:
+                    restore_details = json.loads(event["details_json"])
+                    source_head = restore_details["source_manifest_audit_head"]
+                    restored_sequences = active_sequences_by_event_hash[source_head]
+                except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                    raise BackupIntegrityError("Capability restore audit anchor is invalid") from exc
+                active_capability_sequences = set(restored_sequences)
+            active_sequences_by_event_hash[event["event_hash"]] = frozenset(active_capability_sequences)
+        capability_audit_events = [
+            event for event in audit_rows if event["sequence"] in active_capability_sequences
+        ]
+        for event in capability_audit_events:
+            try:
+                details = json.loads(event["details_json"])
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise BackupIntegrityError("Capability audit anchor is invalid") from exc
+            if (
+                event["outcome"] != "SUCCESS"
+                or not isinstance(details, dict)
+                or (
+                    event["event_type"].startswith("CAPABILITY_PROFILE_")
+                    and event["target_type"] != "CAPABILITY_PROFILE"
+                )
+                or (
+                    event["event_type"] == "CONFIG_DRAFT_CAPABILITY_PROFILE_ASSIGNED"
+                    and event["target_type"] != "CONFIG_DRAFT"
+                )
+            ):
+                raise BackupIntegrityError("Capability audit anchor is invalid")
+            if event["event_type"] == "CAPABILITY_PROFILE_CREATED":
+                profile = profile_by_id.get(event["target_id"])
+                version = (
+                    version_by_id.get(details.get("profile_version_id"))
+                    if set(details)
+                    == {
+                        "site_id",
+                        "source_preset_id",
+                        "profile_version_id",
+                        "content_hash",
+                        "activation_eligible",
+                    }
+                    else None
+                )
+                if (
+                    profile is None
+                    or version is None
+                    or version["profile_id"] != profile["profile_id"]
+                    or version["version_number"] != 1
+                    or details["site_id"] != profile["site_id"]
+                    or details["source_preset_id"] != profile["source_preset_id"]
+                    or details["content_hash"] != version["content_hash"]
+                    or details["activation_eligible"] != bool(version["activation_eligible"])
+                    or event["actor_id"] != profile["created_by_user_id"]
+                    or event["actor_id"] != version["created_by_user_id"]
+                    or event["created_at"] != profile["created_at"]
+                    or event["created_at"] != version["created_at"]
+                ):
+                    raise BackupIntegrityError("Capability profile creation anchor changed")
+            elif event["event_type"] == "CAPABILITY_PROFILE_VERSION_CREATED":
+                profile = profile_by_id.get(event["target_id"])
+                version = (
+                    version_by_id.get(details.get("profile_version_id"))
+                    if set(details)
+                    == {
+                        "profile_version_id",
+                        "version_number",
+                        "content_hash",
+                        "activation_eligible",
+                    }
+                    else None
+                )
+                if (
+                    profile is None
+                    or version is None
+                    or version["profile_id"] != profile["profile_id"]
+                    or details["version_number"] != version["version_number"]
+                    or details["content_hash"] != version["content_hash"]
+                    or details["activation_eligible"] != bool(version["activation_eligible"])
+                    or event["actor_id"] != version["created_by_user_id"]
+                    or event["created_at"] != version["created_at"]
+                ):
+                    raise BackupIntegrityError("Capability profile version anchor changed")
+            else:
+                assignment = (
+                    assignment_by_revision.get((event["target_id"], details.get("draft_revision")))
+                    if set(details)
+                    == {
+                        "draft_revision",
+                        "profile_id",
+                        "profile_version_id",
+                        "profile_content_hash",
+                        "provider_registry_version",
+                        "activation_eligible",
+                    }
+                    else None
+                )
+                if (
+                    assignment is None
+                    or details["profile_id"] != assignment["profile_id"]
+                    or details["profile_version_id"] != assignment["profile_version_id"]
+                    or details["profile_content_hash"] != assignment["profile_content_hash"]
+                    or details["provider_registry_version"] != assignment["provider_registry_version"]
+                    or details["activation_eligible"] != bool(assignment["activation_eligible"])
+                    or event["actor_id"] != assignment["assigned_by_user_id"]
+                    or event["created_at"] != assignment["assigned_at"]
+                ):
+                    raise BackupIntegrityError("Capability assignment audit anchor changed")
+
         fingerprint_capability_marker: dict[str, bool] = {}
         fingerprint_target_sets: dict[str, list[str]] = {}
         fingerprint_target_set_hashes: dict[str, str] = {}
+        fingerprint_effective_hashes: dict[str, dict[str, str]] = {}
         fingerprints = connection.execute(
             """
             SELECT rf.*, dr.schema_version AS draft_schema_version,
+                   dr.canonical_spec_json AS draft_canonical_spec_json,
                    dr.content_hash AS draft_content_hash,
                    d.control_plane_epoch AS draft_control_plane_epoch
             FROM resolution_fingerprints rf
@@ -626,11 +772,13 @@ class BackupManager:
             ORDER BY rf.fingerprint_id
             """
         ).fetchall()
+        fingerprint_by_id = {row["fingerprint_id"]: row for row in fingerprints}
         for fingerprint in fingerprints:
             try:
                 target_set = json.loads(fingerprint["target_set_json"])
                 inputs = json.loads(fingerprint["resolution_inputs_json"])
                 effective_hashes = json.loads(fingerprint["effective_hashes_json"])
+                draft_spec = json.loads(fingerprint["draft_canonical_spec_json"])
             except (json.JSONDecodeError, TypeError) as exc:
                 raise BackupIntegrityError("Resolution fingerprint JSON is invalid") from exc
             if (
@@ -647,6 +795,12 @@ class BackupManager:
                 or set(effective_hashes) != set(target_set)
                 or canonical_json(effective_hashes) != fingerprint["effective_hashes_json"]
                 or any(not BackupManager._is_sha256(value) for value in effective_hashes.values())
+                or fingerprint["draft_schema_version"] != P1_CONFIG_SCHEMA_VERSION
+                or not isinstance(draft_spec, dict)
+                or set(draft_spec) != P1_CONFIG_FIELDS
+                or canonical_json(draft_spec) != fingerprint["draft_canonical_spec_json"]
+                or hashlib.sha256(fingerprint["draft_canonical_spec_json"].encode("utf-8")).hexdigest()
+                != fingerprint["draft_content_hash"]
             ):
                 raise BackupIntegrityError("Resolution fingerprint structure is invalid")
 
@@ -693,6 +847,20 @@ class BackupManager:
                     )
                 ):
                     raise BackupIntegrityError("Resolution fingerprint input is invalid")
+                expected_effective = {
+                    "schema_version": P1_CONFIG_SCHEMA_VERSION,
+                    "screen_id": item["screen_id"],
+                    "digital_human_instance_id": item["digital_human_instance_id"],
+                    "welcome_text": draft_spec["welcome_text"],
+                    "fvs_binding_ref": draft_spec["fvs_binding_ref"],
+                    "fvs_status": "UNVERIFIED",
+                    "preview_provider": "MOCK_FVS",
+                }
+                expected_effective_hash = hashlib.sha256(
+                    canonical_json(expected_effective).encode("utf-8")
+                ).hexdigest()
+                if effective_hashes.get(item["screen_id"]) != expected_effective_hash:
+                    raise BackupIntegrityError("Resolution effective hash changed")
                 input_screen_ids.append(item["screen_id"])
                 marker_presence.append(has_marker)
                 if not has_marker:
@@ -773,16 +941,54 @@ class BackupManager:
             fingerprint_capability_marker[fingerprint["fingerprint_id"]] = has_capability_marker
             fingerprint_target_sets[fingerprint["fingerprint_id"]] = target_set
             fingerprint_target_set_hashes[fingerprint["fingerprint_id"]] = fingerprint["target_set_hash"]
+            fingerprint_effective_hashes[fingerprint["fingerprint_id"]] = effective_hashes
 
-        p21_validation_fingerprint_ids = {
-            row["fingerprint_id"]
-            for row in connection.execute(
-                """
-                SELECT fingerprint_id FROM validation_records
-                WHERE validator_version = 'p2_1_capability_profile_validator_v1'
-                """
-            ).fetchall()
-        }
+        validations = connection.execute(
+            "SELECT * FROM validation_records ORDER BY validation_record_id"
+        ).fetchall()
+        validation_by_id = {row["validation_record_id"]: row for row in validations}
+        p21_validation_fingerprint_ids: set[str] = set()
+        for validation in validations:
+            if validation["outcome"] != "VALID":
+                continue
+            fingerprint = fingerprint_by_id.get(validation["fingerprint_id"])
+            if (
+                fingerprint is None
+                or validation["draft_id"] != fingerprint["draft_id"]
+                or validation["draft_revision"] != fingerprint["draft_revision"]
+                or validation["fingerprint_hash"] != fingerprint["fingerprint_hash"]
+            ):
+                raise BackupIntegrityError("Validation fingerprint reference changed")
+            if validation["validator_version"] == "p2_1_capability_profile_validator_v1":
+                p21_validation_fingerprint_ids.add(validation["fingerprint_id"])
+
+        previews = connection.execute("SELECT * FROM preview_records ORDER BY preview_record_id").fetchall()
+        preview_by_id = {row["preview_record_id"]: row for row in previews}
+        for preview in previews:
+            validation = validation_by_id.get(preview["validation_record_id"])
+            if (
+                validation is None
+                or validation["outcome"] != "VALID"
+                or preview["draft_id"] != validation["draft_id"]
+                or preview["draft_revision"] != validation["draft_revision"]
+                or preview["fingerprint_hash"] != validation["fingerprint_hash"]
+            ):
+                raise BackupIntegrityError("Preview fingerprint reference changed")
+
+        approvals = connection.execute(
+            "SELECT * FROM config_approval_records ORDER BY approval_record_id"
+        ).fetchall()
+        approval_by_id = {row["approval_record_id"]: row for row in approvals}
+        for approval in approvals:
+            preview = preview_by_id.get(approval["preview_record_id"])
+            if (
+                preview is None
+                or approval["draft_id"] != preview["draft_id"]
+                or approval["draft_revision"] != preview["draft_revision"]
+                or approval["fingerprint_hash"] != preview["fingerprint_hash"]
+            ):
+                raise BackupIntegrityError("Approval fingerprint reference changed")
+
         marked_fingerprint_ids = {
             fingerprint_id for fingerprint_id, marked in fingerprint_capability_marker.items() if marked
         }
@@ -926,7 +1132,21 @@ class BackupManager:
                 (release["normal_draft_id"], release["normal_draft_revision"])
             )
             has_marker = fingerprint_capability_marker.get(release["normal_fingerprint_id"])
-            if has_marker is None or (assignment is not None) != has_marker:
+            effective_hashes = fingerprint_effective_hashes.get(release["normal_fingerprint_id"])
+            approval = approval_by_id.get(release["normal_approval_record_id"])
+            preview = preview_by_id.get(approval["preview_record_id"]) if approval is not None else None
+            validation = (
+                validation_by_id.get(preview["validation_record_id"]) if preview is not None else None
+            )
+            if (
+                has_marker is None
+                or effective_hashes is None
+                or (assignment is not None) != has_marker
+                or approval is None
+                or approval["decision"] != "APPROVED"
+                or validation is None
+                or validation["fingerprint_id"] != release["normal_fingerprint_id"]
+            ):
                 raise BackupIntegrityError("Normal release capability lineage is incomplete")
             targets = targets_by_release.get(release["release_id"], [])
             if (
@@ -937,6 +1157,8 @@ class BackupManager:
             ):
                 raise BackupIntegrityError("Normal release target set is incomplete")
             for target in targets:
+                if effective_hashes.get(target["screen_id"]) != target["content_hash"]:
+                    raise BackupIntegrityError("Normal release effective hash changed")
                 snapshot = snapshot_by_target.get(target["release_target_id"])
                 if not has_marker:
                     if snapshot is not None:

@@ -54,7 +54,16 @@ $env:CONTROL_PLANE_ALLOWED_ORIGINS = '["http://localhost:18100"]'
 $uvPath = (Get-Command uv).Source
 $apiProcess = Start-Process `
     -FilePath $uvPath `
-    -ArgumentList @("run", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "18180") `
+    -ArgumentList @(
+        "run",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "18180",
+        "--no-access-log"
+    ) `
     -WorkingDirectory (Join-Path $repoRoot "apps/api") `
     -RedirectStandardOutput (Join-Path $evidenceRoot "browser/api.stdout.log") `
     -RedirectStandardError (Join-Path $evidenceRoot "browser/api.stderr.log") `

@@ -60,7 +60,7 @@ Push-Location $apiRoot
 try {
     Write-Host "Starting P2.1 local API at http://127.0.0.1:18080"
     Write-Host "Root key and passwords will not be printed."
-    & uv run uvicorn app.main:app --host 127.0.0.1 --port 18080
+    & uv run uvicorn app.main:app --host 127.0.0.1 --port 18080 --no-access-log
     if ($LASTEXITCODE -ne 0) {
         throw "P2.1 local API exited with code $LASTEXITCODE."
     }
