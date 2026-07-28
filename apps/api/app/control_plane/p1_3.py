@@ -50,6 +50,12 @@ LIVE_RECONCILED_IDEMPOTENCY_PHASES = (
     "verifyBackup",
 )
 SESSION_IDEMPOTENCY_PHASES = ("reauthenticateAuthSession",)
+RESTORE_INVALIDATED_DOMAIN_ACTIONS = (
+    "publishToScreen",
+    "publishToScreenGroup",
+    "rollbackScreen",
+    "rollbackScreenGroup",
+)
 
 
 class DraftValidationFailure(ControlPlaneError):
@@ -3250,11 +3256,18 @@ class P13ControlPlane:
                     "rows": live_security["idempotency_rows"],
                 },
             )
+            invalidated_action_placeholders = ", ".join("?" for _ in RESTORE_INVALIDATED_DOMAIN_ACTIONS)
             connection.execute(
-                """
+                f"""
                 UPDATE high_risk_actions SET state = 'FAILED',
                     result_json = ?, revision = revision + 1
-                WHERE state IN ('PENDING', 'APPROVED')
+                WHERE (
+                    state IN ('PENDING', 'APPROVED')
+                    OR (
+                        state = 'CONSUMED'
+                        AND operation_id IN ({invalidated_action_placeholders})
+                    )
+                )
                   AND high_risk_action_id != ?
                 """,
                 (
@@ -3264,6 +3277,7 @@ class P13ControlPlane:
                             "state_effect": "NO_DOMAIN_EFFECT",
                         }
                     ),
+                    *RESTORE_INVALIDATED_DOMAIN_ACTIONS,
                     high_risk_action_id,
                 ),
             )

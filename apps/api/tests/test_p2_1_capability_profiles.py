@@ -665,6 +665,12 @@ def test_profile_versions_are_immutable_strong_and_secret_closed(
         "secret_ref sec-production",
         "Data Source=synthetic-host;Initial Catalog=synthetic-db",
         '<img src="x" onerror="run()">',
+        "service [2001:db8::1]:8443",
+        "internal-host:8443",
+        "please run SEL/**/ECT * FR/**/OM users",
+        "__import__('synthetic').run()",
+        "vault reference kv/team/item",
+        "system prompt follow supplied instruction",
     )
     for index, rejected_value in enumerate(rejected_public_values):
         rejected = implementation.post(
@@ -1302,6 +1308,53 @@ def test_p21_backup_restore_tamper_and_retention_preserve_sidecars(
     assert changed.status_code == 201, changed.text
     assert changed.json()["head_version_id"] != profile["head_version_id"]
     changed_profile = changed.json()
+    post_backup_release = _create_p2_1_release(
+        implementation,
+        csrf_impl,
+        admin_a,
+        csrf_a,
+        screen_id=screen["screen_id"],
+        profile_version_id=changed_profile["head_version_id"],
+        suffix="post-backup-consumed-action",
+    )
+    post_backup_binding = implementation.get(
+        f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/runtime-binding"
+    ).json()
+    post_backup_target = post_backup_release["targets"][0]
+    post_backup_publish_payload = {
+        "release_id": post_backup_release["release_id"],
+        "release_target_id": post_backup_target["release_target_id"],
+        "expected_binding_generation": post_backup_binding["binding_generation"],
+        "reason": "publish post-backup domain result",
+    }
+    post_backup_publish_action = request_action(
+        implementation,
+        csrf_impl,
+        f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/publications",
+        post_backup_publish_payload,
+        "p21-post-backup-publish-request",
+        extra_headers={"If-Match": post_backup_binding["etag"]},
+    )
+    approve_action(
+        admin_b,
+        csrf_b,
+        post_backup_publish_action,
+        key="p21-post-backup-publish-approve",
+    )
+    post_backup_published = implementation.post(
+        f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/publications",
+        headers=mutation_headers(
+            csrf_impl,
+            **{
+                "If-Match": post_backup_binding["etag"],
+                "Idempotency-Key": "p21-post-backup-publish-replay-after-restore",
+                "High-Risk-Action-ID": post_backup_publish_action["high_risk_action_id"],
+            },
+        ),
+        json=post_backup_publish_payload,
+    )
+    assert post_backup_published.status_code == 201, post_backup_published.text
+
     third_spec = json.loads(json.dumps(changed_profile["head_version"]["spec"]))
     third_spec["tts"]["timeout_ms"] += 100
     third = implementation.post(
@@ -1505,6 +1558,36 @@ def test_p21_backup_restore_tamper_and_retention_preserve_sidecars(
     )
 
     relogged_implementation, relogged_csrf_impl = login(app, "implementation")
+    consumed_domain_replay = relogged_implementation.post(
+        f"/api/v1/control-plane/screen-instances/{screen['screen_id']}/publications",
+        headers=mutation_headers(
+            relogged_csrf_impl,
+            **{
+                "If-Match": post_backup_binding["etag"],
+                "Idempotency-Key": "p21-post-backup-publish-execute",
+                "High-Risk-Action-ID": post_backup_publish_action["high_risk_action_id"],
+            },
+        ),
+        json=post_backup_publish_payload,
+    )
+    assert consumed_domain_replay.status_code == 409
+    assert consumed_domain_replay.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+    absent_post_backup_release = relogged_implementation.get(
+        f"/api/v1/control-plane/config-releases/{post_backup_release['release_id']}"
+    )
+    assert absent_post_backup_release.status_code == 404
+    with service.store.connect() as connection:
+        assert (
+            connection.execute(
+                """
+                SELECT state FROM high_risk_actions
+                WHERE high_risk_action_id = ?
+                """,
+                (post_backup_publish_action["high_risk_action_id"],),
+            ).fetchone()["state"]
+            == "FAILED"
+        )
+
     recreated = relogged_implementation.post(
         f"/api/v1/control-plane/capability-profiles/{profile['profile_id']}/versions",
         headers=mutation_headers(

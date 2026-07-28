@@ -296,7 +296,9 @@ _SENSITIVE_DESCRIPTOR = re.compile(
         password|passwd|passphrase|pwd|token|cookie|authorization|
         bearer|basic[-_\s]?auth|secret(?:[-_\s]?(?:ref|reference))?|
         credentials?|dsn|connection[-_\s]?string|data[-_\s]?source|
-        initial[-_\s]?catalog|endpoint
+        initial[-_\s]?catalog|endpoint|host(?:name)?|port|url|uri|
+        socket[-_\s]?address|vault|key[-_\s]?vault|secret[-_\s]?store|
+        secret[-_\s]?manager|parameter[-_\s]?store
     )\b
     """
 )
@@ -322,7 +324,10 @@ _DSN_VALUE = re.compile(
 _ENDPOINT_VALUE = re.compile(
     r"""(?ix)(
         \b[a-z][a-z0-9+.-]{1,31}://|
+        \[[0-9a-f:.%]+\](?::\d{1,5})?|
+        (?<![a-z0-9])(?:[0-9a-f]{0,4}:){2,}[0-9a-f:.%]*(?::\d{1,5})?|
         \b(?:localhost|(?:\d{1,3}\.){3}\d{1,3})(?::\d{1,5})\b|
+        \b[a-z][a-z0-9-]{0,62}:\d{1,5}\b|
         \b(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d{1,5})?(?:[/?:#][^\s]*)?
     )"""
 )
@@ -339,17 +344,26 @@ _FREE_SQL_VALUE = re.compile(
 )
 _EXECUTABLE_VALUE = re.compile(
     r"""(?isx)(
-        <\s*/?\s*(?:script|iframe|object|embed|svg|form|img)\b|
+        <\s*/?\s*[a-z][a-z0-9:-]*\b|
         \bon[a-z]{3,32}\s*=|
         \bjavascript\s*:|
         \beval\s*\(|
         \bnew\s+function\b|
-        \b(?:child_process|subprocess)\b|
+        \b(?:child_process|subprocess|__import__|lambda|compile|pickle|marshal)\b|
+        \b(?:os|sys|pathlib|socket|requests)\s*\.|
+        \b[a-z_][a-z0-9_.]*\s*\([^)]*\)|
         \b(?:shell(?:\s+command)?|powershell|pwsh|cmd(?:\.exe)?|bash)\b|
         \b(?:rm|del|erase|rmdir|curl|wget|chmod|chown|sudo|python|node)\s+(?:[-/]|[^\s])|
-        \$\(|`|&&|\|\|
+        \$\(|\$\{|{{|}}|`|&&|\|\||=>
     )"""
 )
+_PROMPT_VALUE = re.compile(
+    r"""(?ix)\b(
+        prompt|system[-_\s]?message|system[-_\s]?instruction|
+        developer[-_\s]?message|ignore[-_\s]+(?:all[-_\s]+)?previous[-_\s]+instructions?
+    )\b"""
+)
+_SQL_COMMENT = re.compile(r"(?is)/\*.*?\*/|--[^\r\n]*|#[^\r\n]*")
 _OWNERSHIP_SELECTOR = re.compile(
     r"(?ix)\b(?:tenant|deployment|site|screen|digital[-_\s]?human|credential)[-_\s]?id\s*[:=]"
 )
@@ -2072,7 +2086,6 @@ class P21ControlPlane:
                         }
                     )
         canonical_spec = canonical_json(normalized)
-        self._reject_secret_material(canonical_spec, "Capability profile")
         state_summary = {capability: summaries[capability]["state"] for capability in CAPABILITY_KEYS}
         ordered_states = [state_summary[key] for key in CAPABILITY_KEYS]
         overall_state = next(
@@ -2169,14 +2182,16 @@ class P21ControlPlane:
     @staticmethod
     def _reject_secret_material(value: str, label: str) -> None:
         normalized = unicodedata.normalize("NFKC", value)
+        sql_decommented = _SQL_COMMENT.sub("", normalized)
         if (
             _SECRET_ASSIGNMENT.search(normalized)
             or _SENSITIVE_DESCRIPTOR.search(normalized)
             or _SECRET_VALUE.search(normalized)
             or _DSN_VALUE.search(normalized)
             or _ENDPOINT_VALUE.search(normalized)
-            or _FREE_SQL_VALUE.search(normalized)
+            or _FREE_SQL_VALUE.search(sql_decommented)
             or _EXECUTABLE_VALUE.search(normalized)
+            or _PROMPT_VALUE.search(normalized)
         ):
             raise ControlPlaneError(
                 422,
