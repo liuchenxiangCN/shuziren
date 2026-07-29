@@ -9,6 +9,22 @@
 
 ## 2026-07-29
 
+### P2.3 User Acceptance
+
+#### Completed Facts
+
+- The user explicitly accepted P2.3 through `通过` without conditions or
+  scope reduction, in the same structured prompt that authorized the
+  candidate commit.
+- P2.3 runtime candidate `a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
+  `8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, schema `p1_control_plane_001`
+  and migration `005_controlled_querying` became the accepted runtime
+  baseline; accepted P2.2 `a75d3327fdc1ab4b83b0bba501d387af150353c4` remains
+  the rollback target with no data reversal required.
+- ADR-0031 is accepted; NEXT_ACTIONS, CODEX_CONTEXT, 13_RISKS_AND_TODO
+  (R-045 mitigated), CHANGELOG, 00_INDEX and the P2.3 acceptance package were
+  synchronized to the accepted state.
+
 ### P2.3 Candidate Complete And Presented For Acceptance
 
 #### Completed Facts

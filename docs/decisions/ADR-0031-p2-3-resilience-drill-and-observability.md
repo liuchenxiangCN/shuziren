@@ -2,10 +2,10 @@
 
 ## Status
 
-Proposed
+Accepted
 
-Proposed with the P2.3 candidate. It becomes `Accepted` only with the explicit
-P2.3 user decision.
+The user explicitly accepted P2.3 without conditions or scope reduction on
+2026-07-29 through the decision `通过`.
 
 ## Date
 

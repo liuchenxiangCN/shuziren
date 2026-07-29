@@ -3,13 +3,13 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE`
-- Candidate commit: `PENDING`
+- State: `ACCEPTED`
+- Candidate commit: `a124f63b8f3b5e499b6c561e78199a26f860edc9`
 - Candidate fingerprint:
   `FE0F87AC1B3F1FD5373681E86BDFA0DE909D6A1E637BD22E2A97DEFD57F26097`
   over 36 files
 - API version: `v1`
-- User decision: `PENDING`
+- User decision: `通过` without conditions or scope reduction on 2026-07-29
 
 This file describes the P2.3 candidate development-preview result. It adds no
 schema migration; the store remains `p1_control_plane_001` at

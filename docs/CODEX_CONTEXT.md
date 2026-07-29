@@ -15,16 +15,20 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P2.3 Active; Result Card Frozen`. G0 and P1.0
-through P2.2 are explicitly accepted. P1.1 proves local identity/device trust,
-P1.2 three-screen inventory, P1.3 draft/release/recovery and P2.1 per-screen
-capability profiles. P2.2 candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4`,
-tree `aaa499de416b522e21c02f41119024296fc2c3a0`, implements the frozen local
-controlled-querying result. Its automated, browser, exact real-database,
-rollback and independent-review gates passed, and the user accepted it without
-conditions on 2026-07-28. The user activated P2.3 with `完成P2.3开发` on
-2026-07-29; the P2.3 result card and non-scope are frozen against accepted
-P2.2.
+Current phase: `Productization P2.3 Accepted; P2.4 Blocked By External Gate`.
+G0 and P1.0 through P2.3 are explicitly accepted. P1.1 proves local
+identity/device trust, P1.2 three-screen inventory, P1.3
+draft/release/recovery and P2.1 per-screen capability profiles. P2.2
+implements the frozen local controlled-querying result. P2.3 candidate
+`a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
+`8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, is the accepted integrated
+resilience certification: three-screen concurrent correctness with distinct
+capability profiles, single-source/provider failure isolation, a screen-bound
+resilience drill for equivalent fallback versus terminal no-fallback, bounded
+backpressure observability and a deployment-local capacity measurement, with
+no schema migration. Its automated, browser, capacity, Compose, rollback and
+independent-review gates passed, and the user accepted it without conditions
+on 2026-07-29. P2.4 remains blocked by the FineReport plugin external gate.
 
 ## Frozen Product Boundaries
 
@@ -40,17 +44,17 @@ P2.2.
 
 ## Current As-Built Baseline
 
-The accepted runtime baseline is P2.2 commit
+The accepted runtime baseline is P2.3 commit
+`a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
+`8a2f4e36ca0751b6106a174f7dae63be9299ad5b`. It retains the original POC route
+meanings and accepted P1/P2.1/P2.2 controls, then adds screen-bound
+metadata-only execution listing, queue-status observability, an audited
+in-process resilience drill over the accepted fallback contract and a
+reproducible deployment-local capacity harness. Accepted P2.2 commit
 `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-`aaa499de416b522e21c02f41119024296fc2c3a0`. It retains the original POC route
-meanings and accepted P1/P2.1 controls, then adds Site-owned immutable
-QuerySources and datasets, exact release query snapshots, write-only encrypted
-database credentials and bounded screen/device execution. Accepted P2.1
-commit `8f364b93b574c058cd8cd617f925107985318098`, tree
-`7c277e32b6419bd3720591c454e8282d94f081ec`, plus the verified WAL-safe
-pre-`005` copy remains the P2.2 product/data rollback target. External
-Providers and FVS remain `UNVERIFIED`, and production readiness is not
-claimed.
+`aaa499de416b522e21c02f41119024296fc2c3a0`, remains the P2.3 product rollback
+target with no data reversal required. External Providers and FVS remain
+`UNVERIFIED`, and production readiness is not claimed.
 
 Implemented POC contracts remain authoritative for the original POC namespaces:
 

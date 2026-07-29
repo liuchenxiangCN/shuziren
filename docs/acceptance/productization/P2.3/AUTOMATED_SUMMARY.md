@@ -3,16 +3,16 @@
 ## Status
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
-- State: `CANDIDATE`
-- Candidate commit: `PENDING` (working tree on branch
-  `codex/p2-2-controlled-querying`, HEAD `e2835e7b6b29c9f115d8e80d27a641e1f2188a73`)
+- State: `ACCEPTED`
+- Candidate commit: `a124f63b8f3b5e499b6c561e78199a26f860edc9`
+- Candidate tree: `8a2f4e36ca0751b6106a174f7dae63be9299ad5b`
 - Candidate fingerprint:
   `FE0F87AC1B3F1FD5373681E86BDFA0DE909D6A1E637BD22E2A97DEFD57F26097`
   over 36 files
 - Automated gates: `PASS`
 - Independent review: `PASS_WITH_NONBLOCKING`; zero blocking findings,
   seven non-blocking findings, N1–N3 closed before candidate binding
-- User decision: `PENDING`
+- User decision: `通过` without conditions or scope reduction on 2026-07-29
 
 ## Passed Results
 

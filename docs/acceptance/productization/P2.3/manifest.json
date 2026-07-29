@@ -4,22 +4,22 @@
   "lifecycle": "ACCEPTANCE_EVIDENCE",
   "generated_at": "2026-07-29T16:30:00Z",
   "gate_summary": "PASS",
-  "acceptance_state": "CANDIDATE",
+  "acceptance_state": "ACCEPTED",
   "base_accepted": {
     "commit": "a75d3327fdc1ab4b83b0bba501d387af150353c4",
     "tree": "aaa499de416b522e21c02f41119024296fc2c3a0",
     "acceptance_record": "79421d1"
   },
   "candidate": {
-    "commit": "PENDING",
+    "commit": "a124f63b8f3b5e499b6c561e78199a26f860edc9",
     "branch": "codex/p2-2-controlled-querying",
-    "worktree_head": "e2835e7b6b29c9f115d8e80d27a641e1f2188a73",
     "fingerprint_sha256": "fe0f87ac1b3f1fd5373681e86bdfa0de909d6a1e637bd22e2a97defd57f26097",
     "fingerprint_file_count": 36,
     "fingerprint_evidence": {
       "path": "logs/productization/P2.3-20260729-234531/verification/candidate-fingerprint.json",
       "sha256": "70a325637b386de93f5fc2e3af3c17f72a8cee1efdbe40abd7068e6ca31fb900"
-    }
+    },
+    "tree": "8a2f4e36ca0751b6106a174f7dae63be9299ad5b"
   },
   "database": {
     "logical_schema_version": "p1_control_plane_001",
@@ -149,6 +149,10 @@
     ]
   },
   "user_decision": {
-    "status": "PENDING"
-  }
+    "status": "RECORDED",
+    "decision": "\u901a\u8fc7",
+    "date": "2026-07-29",
+    "conversation_reference": "Current Kimi Code session; explicit user answer \u901a\u8fc7 in the structured acceptance prompt"
+  },
+  "accepted_at": "2026-07-29"
 }

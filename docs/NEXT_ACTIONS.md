@@ -9,38 +9,42 @@
 
 ## Current Phase
 
-`Productization P2.3 Active; Result Card Frozen`.
+`Productization P2.3 Accepted; P2.4 Blocked By External Gate`.
 
-G0 and P1.0 through P2.2 are explicitly accepted. The user accepted P2.2
-without conditions or scope reduction through `确认验收` on 2026-07-28.
-Candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-`aaa499de416b522e21c02f41119024296fc2c3a0`, fingerprint
-`8A1A369FA328F6A516D9A36AD5F36C314629D2E683BBF38304510521817D357D`
-over 47 files, schema `p1_control_plane_001` with migration
-`005_controlled_querying`, is the accepted runtime baseline and the P2.3
-rollback target. Its automated gates, three exact ephemeral database
-adapters, fresh 1280 by 720 browser workflow, accepted-P2.1 rollback and
-final independent review pass; reviewer Einstein reported zero blocking and
-zero non-blocking findings.
+G0 and P1.0 through P2.3 are explicitly accepted. The user accepted P2.3
+without conditions or scope reduction through `通过` on 2026-07-29. Candidate
+`a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
+`8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, fingerprint
+`FE0F87AC1B3F1FD5373681E86BDFA0DE909D6A1E637BD22E2A97DEFD57F26097` over 36
+files, schema `p1_control_plane_001` with migration
+`005_controlled_querying`, is the accepted runtime baseline. Its automated
+gates, fresh 1280 by 720 browser workflow, capacity measurement, Compose
+smoke, accepted-P2.2 rollback and independent review pass; reviewer Faraday
+reported zero blocking findings and seven non-blocking findings with N1–N3
+closed before candidate binding.
 
-The user activated P2.3 with the explicit instruction `完成P2.3开发` on
-2026-07-29. The P2.3 result card and non-scope are frozen against accepted
-P2.2.
+Accepted P2.2 candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
+`aaa499de416b522e21c02f41119024296fc2c3a0`, remains the product rollback
+target for P2.3; P2.3 added no migration, so no data reversal is required.
 
 ## Next Task
 
-Implement `Productization P2.3 Concurrent And Failure Isolation` exactly as
-frozen in
-[acceptance/productization/P2.3/ACCEPTANCE_CARD.md](acceptance/productization/P2.3/ACCEPTANCE_CARD.md):
-the integrated resilience certification of accepted P2.1 and P2.2, with
-three-screen concurrent correctness, single-source/provider failure
-isolation, a live screen-bound resilience drill for equivalent fallback
-versus terminal no-fallback, bounded backpressure evidence and a
-deployment-local capacity measurement. P2.3 adds no schema migration.
+Await an explicit user instruction for the next batch. P2.4
+`FineReport Official Plugin` remains blocked by its external gate: official
+API, authentication, session, permission-inheritance and upgrade-stability
+evidence must exist before P2.4 activation.
 
-### Active P2.3 Result Card
+Acceptance of P2.3 does not activate P2.4.
+
+### Accepted P2.3 Baseline
 
 - [acceptance/productization/P2.3/ACCEPTANCE_CARD.md](acceptance/productization/P2.3/ACCEPTANCE_CARD.md)
+- [acceptance/productization/P2.3/AUTOMATED_SUMMARY.md](acceptance/productization/P2.3/AUTOMATED_SUMMARY.md)
+- [acceptance/productization/P2.3/IMPLEMENTED_API.md](acceptance/productization/P2.3/IMPLEMENTED_API.md)
+- [acceptance/productization/P2.3/KNOWN_LIMITATIONS.md](acceptance/productization/P2.3/KNOWN_LIMITATIONS.md)
+- [acceptance/productization/P2.3/RUNBOOK.md](acceptance/productization/P2.3/RUNBOOK.md)
+- [acceptance/productization/P2.3/manifest.json](acceptance/productization/P2.3/manifest.json)
+- [acceptance/productization/P2.3/USER_DECISION.md](acceptance/productization/P2.3/USER_DECISION.md)
 
 ### Accepted P2.2 Baseline
 

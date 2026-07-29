@@ -11,7 +11,7 @@
 
 ### Added
 
-- P2.3 candidate screen-bound resilience drill, per-screen metadata-only
+- Accepted P2.3 screen-bound resilience drill, per-screen metadata-only
   execution list and queue-status view, and a reproducible deployment-local
   capacity measurement harness; no schema migration and no device-prefix
   routes.
@@ -69,12 +69,12 @@
 
 ### Changed
 
-- G0 and P1.0 through P2.2 are explicitly accepted. P2.2 candidate
-  `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-  `aaa499de416b522e21c02f41119024296fc2c3a0`, is the accepted runtime
-  baseline and the P2.3 rollback target. P2.3 was activated by explicit user
-  instruction on 2026-07-29; its result card is frozen and the candidate is
-  presented for the user decision.
+- G0 and P1.0 through P2.3 are explicitly accepted. P2.3 candidate
+  `a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
+  `8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, is the accepted runtime
+  baseline. Accepted P2.2 candidate
+  `a75d3327fdc1ab4b83b0bba501d387af150353c4` remains the P2.3 product
+  rollback target with no data reversal required.
 - ADR-0030 is accepted with P2.2; its additive controlled-query sidecar
   decision does not activate P2.3 or certify a customer/version combination.
 - ADR-0029 is accepted with P2.1; its additive immutable capability-profile

@@ -4,13 +4,13 @@
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
 - Batch: `P2.3 Concurrent And Failure Isolation`
-- State: `ACTIVE_RESULT_CARD_FROZEN`
+- State: `ACCEPTED`
 - Activated by: explicit user instruction `完成P2.3开发`
 - Activated at: 2026-07-29
 - Base accepted commit: `a75d3327fdc1ab4b83b0bba501d387af150353c4`
 - Base accepted tree: `aaa499de416b522e21c02f41119024296fc2c3a0`
-- Candidate commit: `PENDING`
-- Candidate tree: `PENDING`
+- Candidate commit: `a124f63b8f3b5e499b6c561e78199a26f860edc9`
+- Candidate tree: `8a2f4e36ca0751b6106a174f7dae63be9299ad5b`
 - Logical schema: `p1_control_plane_001`
 - Latest migration: `005_controlled_querying` (unchanged; P2.3 adds no schema
   migration)
@@ -20,7 +20,7 @@
   [CAPABILITY_PROFILES.md](../../../product/contracts/CAPABILITY_PROFILES.md)
   and
   [CONTROLLED_QUERYING.md](../../../product/contracts/CONTROLLED_QUERYING.md)
-- User decision: `PENDING`
+- User decision: `通过` without conditions or scope reduction on 2026-07-29
 
 ## User-Visible Outcome
 

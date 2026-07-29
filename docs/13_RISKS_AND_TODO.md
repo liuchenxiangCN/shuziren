@@ -16,7 +16,7 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 | R-041 | Multi-screen configuration, session, identity or permission leakage | Accepted P2.2 preserves separate ScreenInstance / DigitalHumanInstance / DeviceEnrollment contexts, immutable capability/query snapshots and credential-scoped resolution/execution; later batches must preserve these controls | Mitigated |
 | R-043 | FineReport plugin external API, authentication, session, permission inheritance and upgrade stability are unknown | 2026-07-29 local probe of plugin 1.2.5 on FineReport 11.0 (jar 11.5.11) produced deployment-local evidence for API surface, authentication, session and permission behavior (see `docs/integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md` §2), including recorded finding F-01 (OpenAPI sessions chain skips template-permission checks; record-only per user decision). Keep the provider `Unverified` and unpublished until official documentation and upgrade-stability confirmation arrive | Blocked |
 | R-044 | Reusing the POC admin token or local-only boundary would make production roles insecure | P1.1 proves the development-preview IAM, session, RBAC, separate device credential and immutable-audit slice; later batches must preserve it while production activation and custodian controls remain unverified | Open |
-| R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | Accepted P2.2 proves bounded SQLite plus screen-bound local/Mock and controlled-query timeout, cancellation, backpressure and recovery contracts; integrated measured capacity remains a later gate | Open |
+| R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | Accepted P2.3 certifies three-screen concurrent correctness, single-source/provider failure isolation, bounded backpressure and recovery on bounded SQLite, with a deployment-local capacity measurement; customer-environment capacity remains uncertified | Mitigated |
 | R-046 | Plugin failure could fall back to a database or Excel source with broader permission | Accepted P2.2 preserves only technical, equivalent screen-bound fallback and makes permission/validation/cancellation failures terminal; real plugin integration must preserve this rule | Open |
 | R-047 | “FineReport / FVS 11.0+ target” may be interpreted as automatic compatibility | Publish only exact certified FineReport + FVS + plugin + browser + product combinations | Open |
 | R-048 | “No product hard cap” may be interpreted as unlimited throughput or SLA | Keep three-screen correctness as the first baseline and publish only measured capacity guidance | Mitigated |
@@ -26,14 +26,14 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product State And Blockers
 
-### P2.3 Active; Result Card Frozen
+### P2.3 Accepted; P2.4 Blocked By External Gate
 
-The user explicitly accepted P2.2 without conditions on 2026-07-28. Candidate
-`a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-`aaa499de416b522e21c02f41119024296fc2c3a0`, is the accepted runtime baseline
-and the P2.3 rollback target. The user activated P2.3 with `完成P2.3开发` on
-2026-07-29; the P2.3 result card and non-scope are frozen against accepted
-P2.2.
+The user explicitly accepted P2.3 without conditions on 2026-07-29. Candidate
+`a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
+`8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, is the accepted runtime baseline.
+Accepted P2.2 candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4` remains
+the P2.3 product rollback target; P2.3 added no migration, so no data
+reversal is required.
 
 - P2.2 automated, browser, real-database, migration/recovery, Docker,
   Secret-scan and accepted-P2.1 rollback evidence passes; final independent
@@ -47,8 +47,9 @@ P2.2.
 - Accepted P2.2 keeps external Providers `unverified`, blocks their activation
   and resolves legacy P1.3 releases as `NOT_CONFIGURED_P2_1` rather than using
   a global Mock fallback.
-- P2.3 must preserve the accepted P2.2 capability, query, ownership, release,
-  recovery and isolation boundaries. No free-SQL path is authorized.
+- P2.3 preserved the accepted P2.2 capability, query, ownership, release,
+  recovery and isolation boundaries. Later batches must preserve them and the
+  P2.3 drill/observability contract. No free-SQL path is authorized.
 - PostgreSQL 17, MySQL 8.4 and Oracle Free 23 passed isolated exact read-only
   adapter tests. This closes only the accepted result's deployment-local
   reference evidence; customer/version product certification remains
