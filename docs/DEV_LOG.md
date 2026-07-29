@@ -7,6 +7,45 @@
 - Last reviewed: 2026-07-28
 - Full POC and initial P0 history: [archive/poc-v1/root-snapshots/DEV_LOG_FULL_HISTORY.md](archive/poc-v1/root-snapshots/DEV_LOG_FULL_HISTORY.md)
 
+## 2026-07-29
+
+### FineReport AI Plugin Local Probe (Deployment-Local Evidence)
+
+#### Completed Facts
+
+- Installed plugin `com.fr.plugin.decision.ai.v11` 1.2.5 from the local sample
+  ZIP into the local FineReport 11.0 designer (jar 11.5.11) through the
+  platform plugin manager; manual file copy into `WEB-INF/plugins` was proven
+  insufficient for runtime registration.
+- Established deployment-local evidence for the plugin contract: platform
+  login and Bearer transport, OpenAPI token extraction order
+  (`fine_auth_token` query, Bearer header, cookie), 302-to-login behavior on
+  invalid tokens, the full `/ai/api/*` OpenAPI surface (health, auth/refresh,
+  search/templates, templates/list+meta, params/range+validate,
+  sessions+data, chart/validate, summary/template, embed) and the in-platform
+  SSE chat chain (`/ai/assets/chat*`) with frame types
+  `chatId/reasoning/msg/tool_call/complete` and `tokenUsage`.
+- Main-JAR classes are vendor-encrypted; route-level facts were recovered from
+  bundled plaintext frontend JS and runtime Arthas `jad` dumps of the loaded
+  classes.
+- Configured user-supplied DeepSeek (`deepseek-v4-flash`) and SiliconFlow
+  embedding endpoints in the local plugin; plugin connectivity tests passed
+  for streaming and tool-calling capabilities. Indexed two of four local FVS
+  templates; the two failures trace to missing template files in
+  `reportlets/`, not to the plugin.
+- Permission inheritance measured with a zero-permission test user:
+  list/search/meta/params/summary and chat retrieval enforce FineReport
+  directory permission; recorded finding F-01 — the OpenAPI sessions chain
+  (`POST /ai/api/sessions`, `GET /ai/api/sessions/{id}/data`) does not enforce
+  template permission. Per user decision F-01 is record-only and does not
+  block this project.
+- Distilled results were synchronized into
+  `docs/integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md` §2 and R-043 /
+  P2-external-gate status in `docs/13_RISKS_AND_TODO.md`. Raw probe evidence
+  stays in gitignored `data/plugin-probe/`; no keys, tokens or vendor binaries
+  were committed. The plugin remains `Unverified`; upgrade stability and
+  official documentation remain open gate items.
+
 ## 2026-07-28
 
 ### P2.2 User Acceptance

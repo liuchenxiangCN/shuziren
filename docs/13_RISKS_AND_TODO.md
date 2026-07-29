@@ -14,7 +14,7 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 | ID | Risk | Required Control | Status |
 | --- | --- | --- | --- |
 | R-041 | Multi-screen configuration, session, identity or permission leakage | Accepted P2.2 preserves separate ScreenInstance / DigitalHumanInstance / DeviceEnrollment contexts, immutable capability/query snapshots and credential-scoped resolution/execution; later batches must preserve these controls | Mitigated |
-| R-043 | FineReport plugin external API, authentication, session, permission inheritance and upgrade stability are unknown | Keep the provider `Unverified` and unpublished until official documentation and isolated real-environment probes pass | Blocked |
+| R-043 | FineReport plugin external API, authentication, session, permission inheritance and upgrade stability are unknown | 2026-07-29 local probe of plugin 1.2.5 on FineReport 11.0 (jar 11.5.11) produced deployment-local evidence for API surface, authentication, session and permission behavior (see `docs/integrations/FINEREPORT_AI_PLUGIN_INTEGRATION.md` §2), including recorded finding F-01 (OpenAPI sessions chain skips template-permission checks; record-only per user decision). Keep the provider `Unverified` and unpublished until official documentation and upgrade-stability confirmation arrive | Blocked |
 | R-044 | Reusing the POC admin token or local-only boundary would make production roles insecure | P1.1 proves the development-preview IAM, session, RBAC, separate device credential and immutable-audit slice; later batches must preserve it while production activation and custodian controls remain unverified | Open |
 | R-045 | Embedded storage and global providers may not support product publishing, recovery and multi-screen correctness | Accepted P2.2 proves bounded SQLite plus screen-bound local/Mock and controlled-query timeout, cancellation, backpressure and recovery contracts; integrated measured capacity remains a later gate | Open |
 | R-046 | Plugin failure could fall back to a database or Excel source with broader permission | Accepted P2.2 preserves only technical, equivalent screen-bound fallback and makes permission/validation/cancellation failures terminal; real plugin integration must preserve this rule | Open |
@@ -55,11 +55,11 @@ product/data rollback target. P2.3 has not started.
 
 ### P2 External Gate
 
-- Obtain official FineReport plugin OpenAPI or equivalent interface documentation.
-- Confirm authentication and session behavior.
-- Confirm whether and how FineReport template / data permission is inherited.
-- Confirm upgrade and compatibility guarantees.
-- Validate in an isolated legal customer FineReport 11.0 environment before expanding the certification matrix.
+- Obtain official FineReport plugin OpenAPI or equivalent interface documentation. (Still open.)
+- Confirm authentication and session behavior. (Deployment-local evidence obtained 2026-07-29 for plugin 1.2.5 on FineReport 11.0 jar 11.5.11; vendor confirmation still open.)
+- Confirm whether and how FineReport template / data permission is inherited. (Deployment-local evidence obtained 2026-07-29, including recorded finding F-01: the OpenAPI sessions chain does not enforce template permission; record-only per user decision.)
+- Confirm upgrade and compatibility guarantees. (Still open; single-version local probing cannot prove this.)
+- Validate in an isolated legal customer FineReport 11.0 environment before expanding the certification matrix. (Local 11.0 designer environment validated 2026-07-29; customer environment remains uncovered.)
 
 ### Compatibility Work
 
