@@ -4,7 +4,7 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: ADR navigation and lifecycle
-- Last reviewed: 2026-07-28
+- Last reviewed: 2026-07-29
 
 ## Current Product Decisions
 
@@ -15,6 +15,10 @@
 - [ADR-0030](ADR-0030-p2-2-controlled-query-sidecar.md): accepted additive
   controlled-query sidecars, write-only connection material and screen-bound
   bounded execution that preserve the accepted P1/P2.1 boundaries.
+- [ADR-0031](ADR-0031-p2-3-resilience-drill-and-observability.md): proposed
+  screen-bound resilience drill, queue observability and deployment-local
+  capacity measurement with no schema migration; becomes accepted only with
+  the explicit P2.3 user decision.
 
 ## Implemented POC Decisions
 

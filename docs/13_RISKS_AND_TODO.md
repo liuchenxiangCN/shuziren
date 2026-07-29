@@ -4,7 +4,7 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: active standard-product risks and current external blockers
-- Last reviewed: 2026-07-28
+- Last reviewed: 2026-07-29
 - Historical POC risks: [archive/poc-v1/root-snapshots/RISKS_AND_TODO_FULL_HISTORY.md](archive/poc-v1/root-snapshots/RISKS_AND_TODO_FULL_HISTORY.md)
 
 Customer-specific and POC现场 issues are not tracked here. They remain in customer documents or the archive.
@@ -26,13 +26,14 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product State And Blockers
 
-### P2.2 Accepted; P2.3 Awaiting Explicit Activation
+### P2.3 Active; Result Card Frozen
 
 The user explicitly accepted P2.2 without conditions on 2026-07-28. Candidate
 `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-`aaa499de416b522e21c02f41119024296fc2c3a0`, is the accepted runtime baseline.
-Accepted P2.1 plus the verified WAL-safe pre-`005` copy remains the P2.2
-product/data rollback target. P2.3 has not started.
+`aaa499de416b522e21c02f41119024296fc2c3a0`, is the accepted runtime baseline
+and the P2.3 rollback target. The user activated P2.3 with `完成P2.3开发` on
+2026-07-29; the P2.3 result card and non-scope are frozen against accepted
+P2.2.
 
 - P2.2 automated, browser, real-database, migration/recovery, Docker,
   Secret-scan and accepted-P2.1 rollback evidence passes; final independent

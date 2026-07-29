@@ -4,10 +4,59 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: factual work completed after productization began
-- Last reviewed: 2026-07-28
+- Last reviewed: 2026-07-29
 - Full POC and initial P0 history: [archive/poc-v1/root-snapshots/DEV_LOG_FULL_HISTORY.md](archive/poc-v1/root-snapshots/DEV_LOG_FULL_HISTORY.md)
 
 ## 2026-07-29
+
+### P2.3 Candidate Complete And Presented For Acceptance
+
+#### Completed Facts
+
+- Implemented the frozen P2.3 result: screen-bound metadata-only execution
+  list, queue-status view and resilience drill (`apps/api/app/control_plane/p2_3.py`,
+  four browser-session routes, no device routes), `/manage` queries-view
+  observability and drill UI, a deployment-local capacity harness
+  (`capacity_p2_3.py`), preview/browser/contract/Secret scripts and the P2.3
+  test suites. No schema migration; head stays `005_controlled_querying`.
+- Gates passed: 77 backend cases (3 environment-gated skips), 46 contract
+  checks plus 8 mutation fixtures under both PowerShell hosts, frontend
+  build, fresh 1280×720 headless-Chrome workflow (document width 1265,
+  effective console count 0 with 2 documented raw exclusions), Compose smoke
+  with in-container head `005_controlled_querying`, dual-host Secret scans,
+  copied-P2.2-database zero-migration upgrade, accepted-P2.2 rollback
+  (67 original tests, 116 routes, no P2.3 surface) and 425-check lifecycle
+  lint under both hosts.
+- Capacity measurement (deployment-local reference, not an SLA): sequential
+  medians 73–76 ms per screen, 14.1 completed/s three-screen concurrent, 12
+  saturation submissions with 6 retryable backpressure rejections and 3/3
+  recovery on the reference machine.
+- Independent reviewer `Faraday` returned `PASS_WITH_NONBLOCKING` (0 blocking,
+  7 non-blocking; N1–N3 closed before binding) after rerunning the suites and
+  21 own negative probes.
+- Candidate fingerprint
+  `39712F425BD478FFF88465C72C3D6EBC56A915C6303A7150380DF1363D674C47` over 36
+  files; raw evidence under `logs/productization/P2.3-20260729-234531` (39
+  hashed files, zero missing/unexpected/mismatched). The candidate commit is
+  pending user acceptance; user decision is pending.
+
+### P2.3 Activation And Result-Card Freeze
+
+#### Completed Facts
+
+- The user activated `Productization P2.3 Concurrent And Failure Isolation`
+  with the explicit instruction `完成P2.3开发`.
+- The P2.3 result card and non-scope were frozen against accepted P2.2 at
+  `docs/acceptance/productization/P2.3/ACCEPTANCE_CARD.md`: an integrated
+  resilience certification of accepted P2.1/P2.2 covering three-screen
+  concurrent correctness with distinct capability profiles, single-source and
+  single-provider failure isolation, a live screen-bound resilience drill for
+  equivalent fallback versus terminal no-fallback, bounded backpressure
+  evidence and a deployment-local capacity measurement. P2.3 adds no schema
+  migration; the rollback target is accepted P2.2 commit
+  `a75d3327fdc1ab4b83b0bba501d387af150353c4`.
+- `docs/NEXT_ACTIONS.md`, `docs/CODEX_CONTEXT.md` and
+  `docs/13_RISKS_AND_TODO.md` were synchronized to the active P2.3 state.
 
 ### FineReport AI Plugin Local Probe (Deployment-Local Evidence)
 

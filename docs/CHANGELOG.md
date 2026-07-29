@@ -4,13 +4,19 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: standard-product changes
-- Last reviewed: 2026-07-28
+- Last reviewed: 2026-07-29
 - Historical POC changelog: [archive/poc-v1/root-snapshots/CHANGELOG_FULL_HISTORY.md](archive/poc-v1/root-snapshots/CHANGELOG_FULL_HISTORY.md)
 
 ## Unreleased
 
 ### Added
 
+- P2.3 candidate screen-bound resilience drill, per-screen metadata-only
+  execution list and queue-status view, and a reproducible deployment-local
+  capacity measurement harness; no schema migration and no device-prefix
+  routes.
+- P2.3 preview/browser launchers, machine-readable resilience contract with
+  dual-host negative fixtures, and Secret-surface scans.
 - Accepted P2.2 QuerySources for bounded `.xlsx`, PostgreSQL, MySQL and
   Oracle; write-only encrypted database credentials; immutable approved
   datasets; exact draft/release query sidecars; and screen/device-bound
@@ -66,8 +72,9 @@
 - G0 and P1.0 through P2.2 are explicitly accepted. P2.2 candidate
   `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
   `aaa499de416b522e21c02f41119024296fc2c3a0`, is the accepted runtime
-  baseline. P2.1 plus the verified WAL-safe pre-`005` copy remains the P2.2
-  product/data rollback target; P2.3 awaits explicit activation.
+  baseline and the P2.3 rollback target. P2.3 was activated by explicit user
+  instruction on 2026-07-29; its result card is frozen and the candidate is
+  presented for the user decision.
 - ADR-0030 is accepted with P2.2; its additive controlled-query sidecar
   decision does not activate P2.3 or certify a customer/version combination.
 - ADR-0029 is accepted with P2.1; its additive immutable capability-profile

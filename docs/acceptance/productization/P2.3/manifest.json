@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "batch": "P2.3",
+  "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "generated_at": "2026-07-29T16:30:00Z",
+  "gate_summary": "PASS",
+  "acceptance_state": "CANDIDATE",
+  "base_accepted": {
+    "commit": "a75d3327fdc1ab4b83b0bba501d387af150353c4",
+    "tree": "aaa499de416b522e21c02f41119024296fc2c3a0",
+    "acceptance_record": "79421d1"
+  },
+  "candidate": {
+    "commit": "PENDING",
+    "branch": "codex/p2-2-controlled-querying",
+    "worktree_head": "e2835e7b6b29c9f115d8e80d27a641e1f2188a73",
+    "fingerprint_sha256": "fe0f87ac1b3f1fd5373681e86bdfa0de909d6a1e637bd22e2a97defd57f26097",
+    "fingerprint_file_count": 36,
+    "fingerprint_evidence": {
+      "path": "logs/productization/P2.3-20260729-234531/verification/candidate-fingerprint.json",
+      "sha256": "70a325637b386de93f5fc2e3af3c17f72a8cee1efdbe40abd7068e6ca31fb900"
+    }
+  },
+  "database": {
+    "logical_schema_version": "p1_control_plane_001",
+    "latest_migration": "005_controlled_querying",
+    "migration_checksum_sha256": "d6661b95fcf08e478c29ea20314f3dc158be88433a7fa3c3c86d119b33cfbcf4",
+    "migration_change": "NONE \u2014 P2.3 adds no migration; checksum identical to accepted P2.2"
+  },
+  "evidence_root": "logs/productization/P2.3-20260729-234531",
+  "raw_evidence_manifest": {
+    "path": "logs/productization/P2.3-20260729-234531/evidence-manifest.json",
+    "sha256": "c631f9c9f324a36891f07e7efc75d02026dbd7d1799e2d979cedfd1dc649976a",
+    "file_count": 39
+  },
+  "manifest_verification": {
+    "path": "logs/productization/P2.3-20260729-234531/verification/manifest-verification.json",
+    "sha256": "3d38fd0844b6b1bee6784827e687026cfadffb82412e5fc57250fe10d1bcc86b",
+    "missing": 0,
+    "unexpected": 0,
+    "mismatched": 0
+  },
+  "gates": [
+    {
+      "id": "backend_quality_concurrency_and_isolation",
+      "status": "PASS",
+      "note": "Candidate-scoped Ruff passed; 77 backend cases passed with 3 environment-gated real-database skips, including four-screen global saturation, executor starvation, six timeout/cancel race rounds, the eight-signal drill matrix and three distinct-profile mixed-load isolation.",
+      "evidence": [
+        "test-results/ruff-final.txt",
+        "test-results/backend-full-final.txt"
+      ]
+    },
+    {
+      "id": "resilience_contract",
+      "status": "PASS",
+      "note": "Both PowerShell hosts passed 46 checks and all 8 mutation fixtures.",
+      "evidence": [
+        "contract/validate-pwsh7.txt",
+        "contract/validate-winps.txt",
+        "contract/selftest-pwsh7.txt",
+        "contract/selftest-winps.txt"
+      ]
+    },
+    {
+      "id": "capacity_measurement",
+      "status": "PASS",
+      "note": "Deployment-local reference run: 73-76 ms sequential medians, 14.1 completed/s three-screen concurrent, 12 saturation submissions with 6 retryable rejections and 3/3 recovery; no SLA language.",
+      "evidence": [
+        "capacity/capacity-measurement.json",
+        "capacity/capacity-measurement.md"
+      ],
+      "evidence_sha256": "ded7b4195c5a225084f60878d46777d3310d761f5b8c75d5b66a7ada19893553"
+    },
+    {
+      "id": "frontend_build_and_browser_workflow",
+      "status": "PASS",
+      "note": "Pinned pnpm 9.15.4 built 19 modules. Fresh 1280 by 720 headless-Chrome workflow passed per-screen observability, UI query to SUCCEEDED and both drill outcomes; document width 1265, effective console warning/error count 0 with 2 documented raw exclusions (vite favicon 404, pre-login 401 session probe).",
+      "evidence": [
+        "test-results/frontend-build.txt",
+        "browser/browser-evidence.json"
+      ],
+      "evidence_sha256": "cdecc2164b482f018d834258853824b1464e0654d80ff666b7aa90314f20387a"
+    },
+    {
+      "id": "docker_compose",
+      "status": "PASS",
+      "note": "Exact-candidate images built and started; health OK, P2.3 routes present with 401 before authentication, in-container store initializes to head 005_controlled_querying, teardown and cleanup verified.",
+      "evidence": [
+        "docker/compose-smoke.txt"
+      ]
+    },
+    {
+      "id": "secret_surfaces",
+      "status": "PASS",
+      "note": "Both PowerShell hosts returned zero exact and zero unapproved findings.",
+      "evidence": [
+        "security/security/secret-scan.json"
+      ],
+      "evidence_sha256": "24dd5358cac85921bc96bc675d1e6165af7d7e0f3f32f4c2653a75f9fd2291dd"
+    },
+    {
+      "id": "migration_and_copied_upgrade",
+      "status": "PASS",
+      "note": "No migration added; a copied accepted-P2.2-era database opens unchanged with head 005_controlled_querying; empty preview initialization passed.",
+      "evidence": [
+        "migration/copied-p2-2-upgrade-check.txt"
+      ]
+    },
+    {
+      "id": "accepted_p2_2_rollback",
+      "status": "PASS",
+      "note": "Accepted P2.2 worktree ran its 67 original tests, exposed 116 routes with no P2.3 route or module, and required no data reversal.",
+      "evidence": [
+        "rollback/rollback-verification.txt"
+      ]
+    },
+    {
+      "id": "document_lifecycle_and_evidence_integrity",
+      "status": "PASS",
+      "note": "Both PowerShell hosts passed 425 lifecycle checks; raw-evidence manifest hashed 39 files with zero missing, unexpected or mismatched entries.",
+      "evidence": [
+        "test-results/lifecycle-final-pwsh7.txt",
+        "test-results/lifecycle-final-winps.txt",
+        "verification/manifest-verification.json",
+        "review/independent-review-faraday.md"
+      ]
+    }
+  ],
+  "independent_reviews": [
+    {
+      "reviewer": "Faraday",
+      "candidate": "working tree on e2835e7b6b29c9f115d8e80d27a641e1f2188a73",
+      "status": "PASS_WITH_NONBLOCKING",
+      "blocking_findings": 0,
+      "nonblocking_findings": 7,
+      "disposition": "N1-N3 closed before candidate binding; N4-N7 recorded as limitations",
+      "report": "review/independent-review-faraday.md",
+      "report_sha256": "5add6a5aa33d152e9139a1b00e119a50ae3e1e7a7661dc0c645dabebcb62ede8"
+    }
+  ],
+  "independent_review_status": "PASS_WITH_NONBLOCKING",
+  "rollback": {
+    "status": "PASS",
+    "target_commit": "a75d3327fdc1ab4b83b0bba501d387af150353c4",
+    "target_tree": "aaa499de416b522e21c02f41119024296fc2c3a0",
+    "data_reversal": "NOT_REQUIRED \u2014 no migration added",
+    "evidence": [
+      "rollback/rollback-verification.txt"
+    ]
+  },
+  "user_decision": {
+    "status": "PENDING"
+  }
+}

@@ -4,7 +4,7 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: standard product target and current execution state
-- Last reviewed: 2026-07-28
+- Last reviewed: 2026-07-29
 - Historical context: [archive/poc-v1/root-snapshots/CODEX_CONTEXT_FULL_HISTORY.md](archive/poc-v1/root-snapshots/CODEX_CONTEXT_FULL_HISTORY.md)
 
 ## Product
@@ -15,15 +15,16 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P2.2 Accepted; P2.3 Awaiting Explicit
-Activation`. G0 and P1.0 through P2.2 are explicitly accepted. P1.1 proves
-local identity/device trust, P1.2 three-screen inventory, P1.3
-draft/release/recovery and P2.1 per-screen capability profiles. P2.2 candidate
-`a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-`aaa499de416b522e21c02f41119024296fc2c3a0`, implements the frozen local
+Current phase: `Productization P2.3 Active; Result Card Frozen`. G0 and P1.0
+through P2.2 are explicitly accepted. P1.1 proves local identity/device trust,
+P1.2 three-screen inventory, P1.3 draft/release/recovery and P2.1 per-screen
+capability profiles. P2.2 candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4`,
+tree `aaa499de416b522e21c02f41119024296fc2c3a0`, implements the frozen local
 controlled-querying result. Its automated, browser, exact real-database,
 rollback and independent-review gates passed, and the user accepted it without
-conditions on 2026-07-28. P2.3 is queued and not active.
+conditions on 2026-07-28. The user activated P2.3 with `完成P2.3开发` on
+2026-07-29; the P2.3 result card and non-scope are frozen against accepted
+P2.2.
 
 ## Frozen Product Boundaries
 
@@ -59,8 +60,9 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 Accepted behavior is recorded under [acceptance/productization](acceptance/productization).
 P2.1/P2.2 target boundaries remain under [product/contracts](product/contracts);
 the accepted P2.2 facts and limitations are under
-[acceptance/productization/P2.2](acceptance/productization/P2.2). P2.3 remains
-queued and requires a separate explicit activation instruction.
+[acceptance/productization/P2.2](acceptance/productization/P2.2). P2.3 is
+active with its result card frozen at
+[acceptance/productization/P2.3/ACCEPTANCE_CARD.md](acceptance/productization/P2.3/ACCEPTANCE_CARD.md).
 
 ## Non-Negotiable Rules
 

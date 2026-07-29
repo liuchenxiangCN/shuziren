@@ -4,12 +4,12 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: exactly one active result batch
-- Last reviewed: 2026-07-28
+- Last reviewed: 2026-07-29
 - Historical tasks: [archive/poc-v1/root-snapshots/NEXT_ACTIONS_FULL_HISTORY.md](archive/poc-v1/root-snapshots/NEXT_ACTIONS_FULL_HISTORY.md)
 
 ## Current Phase
 
-`Productization P2.2 Accepted; P2.3 Awaiting Explicit Activation`.
+`Productization P2.3 Active; Result Card Frozen`.
 
 G0 and P1.0 through P2.2 are explicitly accepted. The user accepted P2.2
 without conditions or scope reduction through `确认验收` on 2026-07-28.
@@ -17,23 +17,30 @@ Candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
 `aaa499de416b522e21c02f41119024296fc2c3a0`, fingerprint
 `8A1A369FA328F6A516D9A36AD5F36C314629D2E683BBF38304510521817D357D`
 over 47 files, schema `p1_control_plane_001` with migration
-`005_controlled_querying`, is the accepted runtime baseline. Its automated
-gates, three exact ephemeral database adapters, fresh 1280 by 720 browser
-workflow, accepted-P2.1 rollback and final independent review pass; reviewer
-Einstein reported zero blocking and zero non-blocking findings.
+`005_controlled_querying`, is the accepted runtime baseline and the P2.3
+rollback target. Its automated gates, three exact ephemeral database
+adapters, fresh 1280 by 720 browser workflow, accepted-P2.1 rollback and
+final independent review pass; reviewer Einstein reported zero blocking and
+zero non-blocking findings.
 
-Accepted P2.1 candidate `8f364b93b574c058cd8cd617f925107985318098`,
-tree `7c277e32b6419bd3720591c454e8282d94f081ec`, plus the verified
-WAL-safe pre-`005` copy remains the product/data rollback target for P2.2.
-P2.3 is not active.
+The user activated P2.3 with the explicit instruction `完成P2.3开发` on
+2026-07-29. The P2.3 result card and non-scope are frozen against accepted
+P2.2.
 
 ## Next Task
 
-Await an explicit user instruction to begin P2.3. On that instruction, freeze
-the complete P2.3 result card and non-scope against accepted P2.2 before
-implementing any integrated resilience or capacity-certification behavior.
+Implement `Productization P2.3 Concurrent And Failure Isolation` exactly as
+frozen in
+[acceptance/productization/P2.3/ACCEPTANCE_CARD.md](acceptance/productization/P2.3/ACCEPTANCE_CARD.md):
+the integrated resilience certification of accepted P2.1 and P2.2, with
+three-screen concurrent correctness, single-source/provider failure
+isolation, a live screen-bound resilience drill for equivalent fallback
+versus terminal no-fallback, bounded backpressure evidence and a
+deployment-local capacity measurement. P2.3 adds no schema migration.
 
-Acceptance of P2.2 does not activate P2.3 or P2.4.
+### Active P2.3 Result Card
+
+- [acceptance/productization/P2.3/ACCEPTANCE_CARD.md](acceptance/productization/P2.3/ACCEPTANCE_CARD.md)
 
 ### Accepted P2.2 Baseline
 
@@ -62,7 +69,5 @@ Acceptance of P2.2 does not activate P2.3 or P2.4.
 
 ## Queued
 
-`Productization P2.3 Concurrent And Failure Isolation`.
-
-P2.3 has not started. Only a separate explicit start instruction can activate
-it. P2.4 remains queued and blocked by its external FineReport plugin gate.
+`Productization P2.4 FineReport Official Plugin` remains queued and blocked by
+its external FineReport plugin gate.
