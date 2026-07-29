@@ -18,6 +18,7 @@ from app.control_plane.errors import ControlPlaneError
 from app.control_plane.p1_3 import P13ControlPlane
 from app.control_plane.p2_1 import P21ControlPlane
 from app.control_plane.p2_2 import P22ControlPlane
+from app.control_plane.p2_3 import P23ControlPlane
 from app.control_plane.security import (
     Ciphertext,
     PasswordPolicy,
@@ -206,6 +207,10 @@ IDEMPOTENCY_OPERATION_ROUTES = {
         "cancelControlledQueryDevice",
         "/api/v1/device/query-executions/{execution_id}:cancel",
     ),
+    "runResilienceDrill": (
+        "runResilienceDrill",
+        "/api/v1/control-plane/screen-instances/{screen_id}/resilience-drills",
+    ),
     "reviseConfigDraft": (
         "reviseConfigDraft",
         "/api/v1/control-plane/config-drafts/{draft_id}:revise",
@@ -388,6 +393,7 @@ class ControlPlaneService:
             if query_source_root is not None
             else Path(database_path).resolve().parent / "query-sources",
         )
+        self.p2_3 = P23ControlPlane(self)
 
     def status(self) -> dict[str, Any]:
         with self.store.connect() as connection:

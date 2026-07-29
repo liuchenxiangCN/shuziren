@@ -423,6 +423,83 @@ export interface QueryExecution {
   error?: { code: string; message: string; retryable: boolean };
 }
 
+export type QueryExecutionState =
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'TIMED_OUT'
+  | 'CANCELLED'
+  | 'REJECTED_BACKPRESSURE';
+
+export interface ScreenExecutionListItem {
+  execution_id: string;
+  dataset_id: string;
+  dataset_label: string | null;
+  state: QueryExecutionState;
+  request_id: string;
+  latency_ms: number | null;
+  row_count: number | null;
+  result_retained: boolean;
+  error: { code: string; message: string; retryable: boolean } | null;
+  created_at: number;
+  terminal_at: number | null;
+}
+
+export interface ScreenQueueStatus {
+  api_version: 'v1';
+  screen_instance_id: string;
+  screen: {
+    inflight: number;
+    per_screen_limit: number;
+  };
+  capacity: {
+    global_inflight_limit: number;
+    per_screen_inflight_limit: number;
+    executor_workers: number;
+    retained_terminal_jobs: number;
+  };
+  counters: {
+    rejected_backpressure: number;
+  };
+}
+
+export type DrillCapability = CapabilityKey;
+
+export type DrillSignal =
+  | 'timeout'
+  | 'unavailable'
+  | 'unsupported'
+  | 'permission_denied'
+  | 'invalid_request'
+  | 'unauthorized_template'
+  | 'cancelled'
+  | 'backpressure';
+
+export interface ResilienceDrill {
+  api_version: 'v1';
+  drill_id: string;
+  screen_instance_id: string;
+  capability: DrillCapability;
+  signal: DrillSignal;
+  primary_provider_id: string | null;
+  fallback_provider_ids: string[];
+  permission_equivalent: boolean | null;
+  provider_execution_started: boolean;
+  queue_admission: 'N/A' | 'REJECTED';
+  decision: string | null;
+  resolved_provider_id: string | null;
+  outcome:
+    | 'FALLBACK_RESOLVED'
+    | 'TERMINAL_NO_FALLBACK'
+    | 'CAPABILITY_DISABLED'
+    | 'NO_FALLBACK_CONFIGURED';
+  terminal: boolean;
+  fallback_allowed: boolean;
+  created_at: number;
+  latency_ms: number;
+}
+
 export interface ConfigDraft {
   draft_id: string;
   target: {
@@ -893,6 +970,50 @@ export function cancelScreenQueryExecution(
       headers: { 'Idempotency-Key': randomIdempotencyKey('controlled-query-cancel') },
     },
     { csrf: true },
+  );
+}
+
+export function listScreenQueryExecutions(
+  screenId: string,
+  limit = 50,
+): Promise<{
+  api_version: 'v1';
+  screen_instance_id: string;
+  items: ScreenExecutionListItem[];
+}> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/query-executions?limit=${limit}`,
+  );
+}
+
+export function getScreenQueueStatus(screenId: string): Promise<ScreenQueueStatus> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/queue-status`,
+  );
+}
+
+export function startResilienceDrill(
+  screenId: string,
+  capability: DrillCapability,
+  signal: DrillSignal,
+): Promise<ResilienceDrill> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/resilience-drills`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('resilience-drill-start') },
+      body: JSON.stringify({ capability, signal }),
+    },
+    { csrf: true },
+  );
+}
+
+export function getResilienceDrill(
+  screenId: string,
+  drillId: string,
+): Promise<ResilienceDrill> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/resilience-drills/${encodeURIComponent(drillId)}`,
   );
 }
 

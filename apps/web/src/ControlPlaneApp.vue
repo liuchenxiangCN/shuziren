@@ -29,6 +29,7 @@ import {
   getRuntimeBinding,
   getScreenQueryExecution,
   getScreenEffectiveCapabilities,
+  getScreenQueueStatus,
   getStorageProfile,
   issueEnrollment,
   listAuditEvents,
@@ -42,6 +43,7 @@ import {
   listScreenGroups,
   listScreenInstances,
   listScreenQueryDatasets,
+  listScreenQueryExecutions,
   listSites,
   listUsers,
   loadSession,
@@ -57,6 +59,7 @@ import {
   rotateCredential,
   signIn,
   signOut,
+  startResilienceDrill,
   startScreenQuery,
   testQuerySource,
   type AuditEvent,
@@ -72,16 +75,21 @@ import {
   type ConfigRelease,
   type ControlPlaneSession,
   type ControlPlaneUser,
+  type DrillSignal,
   type HighRiskAction,
   type QueryDataset,
   type QueryEngine,
   type QueryExecution,
+  type QueryExecutionState,
   type QueryParameterDefinition,
   type QuerySource,
+  type ResilienceDrill,
   type RestorePlan,
+  type ScreenExecutionListItem,
   type ScreenGroupInventory,
   type ScreenEffectiveCapabilities,
   type ScreenInventory,
+  type ScreenQueueStatus,
   type SiteInventory,
   transitionConfigDraft,
   updateScreenGroup,
@@ -214,6 +222,48 @@ const runtimeQueryDatasets = ref<Array<{
 const runtimeQueryDatasetId = ref('');
 const runtimeQueryParametersJson = ref('{}');
 const runtimeQueryExecution = ref<QueryExecution | null>(null);
+const runtimeScreenExecutions = ref<ScreenExecutionListItem[]>([]);
+const runtimeQueueStatus = ref<ScreenQueueStatus | null>(null);
+let runtimeObservabilityPollGeneration = 0;
+const drillCapability = ref<CapabilityKey>('dora');
+const drillSignal = ref<DrillSignal>('timeout');
+const drillSignals: DrillSignal[] = [
+  'timeout',
+  'unavailable',
+  'unsupported',
+  'permission_denied',
+  'invalid_request',
+  'unauthorized_template',
+  'cancelled',
+  'backpressure',
+];
+const drillSignalLabels: Record<DrillSignal, string> = {
+  timeout: '超时 timeout',
+  unavailable: '不可用 unavailable',
+  unsupported: '不支持 unsupported',
+  permission_denied: '权限拒绝 permission_denied',
+  invalid_request: '非法请求 invalid_request',
+  unauthorized_template: '未授权模板 unauthorized_template',
+  cancelled: '已取消 cancelled',
+  backpressure: '背压 backpressure',
+};
+const drillOutcomeLabels: Record<ResilienceDrill['outcome'], string> = {
+  FALLBACK_RESOLVED: '等价回退成功',
+  TERMINAL_NO_FALLBACK: '终态无回退',
+  CAPABILITY_DISABLED: '能力未启用',
+  NO_FALLBACK_CONFIGURED: '未配置回退',
+};
+const executionStateLabels: Record<QueryExecutionState, string> = {
+  QUEUED: '排队中',
+  RUNNING: '执行中',
+  SUCCEEDED: '成功',
+  FAILED: '失败',
+  TIMED_OUT: '超时',
+  CANCELLED: '已取消',
+  REJECTED_BACKPRESSURE: '背压拒绝（可重试）',
+};
+const resilienceDrill = ref<ResilienceDrill | null>(null);
+const drillError = ref('');
 const releaseDraft = ref<ConfigDraft | null>(null);
 const releaseCandidate = ref<ConfigRelease | null>(null);
 const releasePublication = ref<Record<string, any> | null>(null);
@@ -505,6 +555,11 @@ async function logout() {
     queryDatasets.value = [];
     runtimeQueryDatasets.value = [];
     runtimeQueryExecution.value = null;
+    runtimeObservabilityPollGeneration += 1;
+    runtimeScreenExecutions.value = [];
+    runtimeQueueStatus.value = null;
+    resilienceDrill.value = null;
+    drillError.value = '';
     releaseDraft.value = null;
     releaseCandidate.value = null;
     releasePublication.value = null;
@@ -608,6 +663,15 @@ async function loadActiveView() {
     }
     if (!runtimeQueryScreenId.value) {
       runtimeQueryScreenId.value = screenResult.items[0]?.screen_id || '';
+    }
+    runtimeObservabilityPollGeneration += 1;
+    runtimeScreenExecutions.value = [];
+    runtimeQueueStatus.value = null;
+    if (runtimeQueryScreenId.value) {
+      await refreshRuntimeScreenObservability();
+      if (runtimeScreenExecutions.value.some((item) => isExecutionInflight(item.state))) {
+        queueRuntimeObservabilityPoll(runtimeObservabilityPollGeneration);
+      }
     }
   } else if (activeView.value === 'releases' && canReadScreens.value) {
     const [
@@ -1095,6 +1159,11 @@ async function loadRuntimeQueryDatasets() {
       runtimeQueryDatasetId.value = result.items[0]?.dataset_id || '';
     }
     runtimeQueryExecution.value = null;
+    await refreshRuntimeScreenObservability();
+    runtimeObservabilityPollGeneration += 1;
+    if (runtimeScreenExecutions.value.some((item) => isExecutionInflight(item.state))) {
+      queueRuntimeObservabilityPoll(runtimeObservabilityPollGeneration);
+    }
     message.value =
       `已从 applied ReleaseTarget 读取 ${result.items.length} 个按屏数据集；`
       + '未使用 desired 或全局回退。';
@@ -1123,6 +1192,11 @@ async function executeRuntimeQuery() {
       );
       runtimeQueryExecution.value = execution;
     }
+    await refreshRuntimeScreenObservability();
+    runtimeObservabilityPollGeneration += 1;
+    if (runtimeScreenExecutions.value.some((item) => isExecutionInflight(item.state))) {
+      queueRuntimeObservabilityPoll(runtimeObservabilityPollGeneration);
+    }
     message.value =
       `受控查询 ${execution.request_id}：${execution.state}`
       + (execution.latency_ms === undefined ? '' : ` · ${execution.latency_ms} ms`);
@@ -1136,8 +1210,95 @@ async function cancelRuntimeQuery() {
       runtimeQueryScreenId.value,
       runtimeQueryExecution.value!.execution_id,
     );
+    await refreshRuntimeScreenObservability();
     message.value = `查询 ${runtimeQueryExecution.value.execution_id} 已进入终态。`;
   });
+}
+
+function isExecutionInflight(state: QueryExecutionState) {
+  return state === 'QUEUED' || state === 'RUNNING';
+}
+
+async function refreshRuntimeScreenObservability() {
+  if (!runtimeQueryScreenId.value) return;
+  const [executionResult, queueStatus] = await Promise.all([
+    listScreenQueryExecutions(runtimeQueryScreenId.value),
+    getScreenQueueStatus(runtimeQueryScreenId.value),
+  ]);
+  runtimeScreenExecutions.value = executionResult.items;
+  runtimeQueueStatus.value = queueStatus;
+}
+
+function queueRuntimeObservabilityPoll(generation: number) {
+  window.setTimeout(async () => {
+    if (generation !== runtimeObservabilityPollGeneration) return;
+    if (!session.value || activeView.value !== 'queries' || !runtimeQueryScreenId.value) return;
+    try {
+      await refreshRuntimeScreenObservability();
+    } catch {
+      return;
+    }
+    if (runtimeScreenExecutions.value.some((item) => isExecutionInflight(item.state))) {
+      queueRuntimeObservabilityPoll(generation);
+    }
+  }, 1000);
+}
+
+async function loadRuntimeObservability() {
+  if (!runtimeQueryScreenId.value) return;
+  await run(async () => {
+    await refreshRuntimeScreenObservability();
+    runtimeObservabilityPollGeneration += 1;
+    if (runtimeScreenExecutions.value.some((item) => isExecutionInflight(item.state))) {
+      queueRuntimeObservabilityPoll(runtimeObservabilityPollGeneration);
+    }
+    message.value =
+      `已读取当前屏幕 ${runtimeScreenExecutions.value.length} 条执行记录与队列占用；`
+      + '仅包含本屏数据。';
+  });
+}
+
+function onRuntimeQueryScreenChange() {
+  runtimeObservabilityPollGeneration += 1;
+  runtimeScreenExecutions.value = [];
+  runtimeQueueStatus.value = null;
+  runtimeQueryExecution.value = null;
+  resilienceDrill.value = null;
+  drillError.value = '';
+}
+
+async function cancelListedExecution(item: ScreenExecutionListItem) {
+  await run(async () => {
+    await cancelScreenQueryExecution(runtimeQueryScreenId.value, item.execution_id);
+    await refreshRuntimeScreenObservability();
+    message.value = `查询 ${item.execution_id} 已进入终态。`;
+  });
+}
+
+async function runResilienceDrillNow() {
+  if (!runtimeQueryScreenId.value || busy.value) return;
+  busy.value = true;
+  error.value = '';
+  drillError.value = '';
+  try {
+    resilienceDrill.value = await startResilienceDrill(
+      runtimeQueryScreenId.value,
+      drillCapability.value,
+      drillSignal.value,
+    );
+    message.value =
+      `故障演练 ${resilienceDrill.value.drill_id}：`
+      + drillOutcomeLabels[resilienceDrill.value.outcome];
+  } catch (caught) {
+    const apiError = caught as ControlPlaneApiError;
+    if (apiError.status === 401) {
+      session.value = null;
+      clearSensitiveState();
+    }
+    drillError.value = `${apiError.code || 'REQUEST_FAILED'}：${apiError.message}`;
+  } finally {
+    busy.value = false;
+  }
 }
 
 async function assignDraftQueryDatasets() {
@@ -2370,7 +2531,7 @@ function formatTime(value?: number | null) {
               <div class="cp-form-grid">
                 <label>
                   屏幕
-                  <select v-model="runtimeQueryScreenId">
+                  <select v-model="runtimeQueryScreenId" @change="onRuntimeQueryScreenChange">
                     <option
                       v-for="screen in screens"
                       :key="screen.screen_id"
@@ -2459,6 +2620,178 @@ function formatTime(value?: number | null) {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">Own-screen executions only</p>
+                  <h2>本屏执行列表</h2>
+                  <p>只展示当前屏幕自己的执行记录；不会读取其他屏幕的请求、结果或错误。</p>
+                </div>
+                <button
+                  class="secondary"
+                  :disabled="busy || !runtimeQueryScreenId"
+                  @click="loadRuntimeObservability"
+                >
+                  刷新
+                </button>
+              </div>
+              <div v-if="runtimeScreenExecutions.length" class="cp-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>状态</th>
+                      <th>请求 ID</th>
+                      <th>数据集</th>
+                      <th>延迟</th>
+                      <th>行数</th>
+                      <th>错误</th>
+                      <th>创建时间</th>
+                      <th>终态时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="item in runtimeScreenExecutions"
+                      :key="item.execution_id"
+                    >
+                      <td>{{ executionStateLabels[item.state] }}</td>
+                      <td>{{ item.request_id }}</td>
+                      <td>{{ item.dataset_label || item.dataset_id }}</td>
+                      <td>{{ item.latency_ms === null ? '-' : `${item.latency_ms} ms` }}</td>
+                      <td>{{ item.row_count === null ? '-' : item.row_count }}</td>
+                      <td>
+                        <template v-if="item.error">
+                          {{ item.error.code }} · {{ item.error.message }}
+                        </template>
+                        <template v-else>-</template>
+                      </td>
+                      <td>{{ formatTime(item.created_at) }}</td>
+                      <td>{{ formatTime(item.terminal_at) }}</td>
+                      <td>
+                        <button
+                          v-if="isExecutionInflight(item.state)"
+                          class="secondary"
+                          :disabled="busy"
+                          @click="cancelListedExecution(item)"
+                        >
+                          取消
+                        </button>
+                        <template v-else>-</template>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p v-else class="cp-empty">当前屏幕暂无执行记录。</p>
+            </article>
+
+            <article class="cp-card">
+              <div>
+                <p class="cp-eyebrow">Queue occupancy · own screen only</p>
+                <h2>本屏队列占用</h2>
+                <p>容量事实为部署级静态配置；在途与背压计数只统计当前屏幕。</p>
+              </div>
+              <div v-if="runtimeQueueStatus" class="cp-stat-strip">
+                <span>
+                  <strong>
+                    {{ runtimeQueueStatus.screen.inflight }}/{{ runtimeQueueStatus.screen.per_screen_limit }}
+                  </strong>
+                  本屏在途
+                </span>
+                <span>
+                  <strong>{{ runtimeQueueStatus.capacity.global_inflight_limit }}</strong>
+                  全局在途上限
+                </span>
+                <span>
+                  <strong>{{ runtimeQueueStatus.capacity.executor_workers }}</strong>
+                  执行线程
+                </span>
+                <span>
+                  <strong>{{ runtimeQueueStatus.capacity.retained_terminal_jobs }}</strong>
+                  终态结果保留
+                </span>
+                <span>
+                  <strong>{{ runtimeQueueStatus.counters.rejected_backpressure }}</strong>
+                  背压拒绝
+                </span>
+              </div>
+              <p v-else class="cp-empty">读取本屏执行列表后展示队列占用。</p>
+            </article>
+
+            <article class="cp-card">
+              <div>
+                <p class="cp-eyebrow">Resilience drill · no real provider call</p>
+                <h2>故障演练</h2>
+                <p>
+                  向当前屏幕注入故障信号，走真实能力解析决策路径；
+                  不发起真实 Provider 调用，结果已脱敏并写入审计。
+                </p>
+              </div>
+              <div class="cp-form-grid">
+                <label>
+                  能力
+                  <select v-model="drillCapability">
+                    <option
+                      v-for="capability in capabilityKeys"
+                      :key="capability"
+                      :value="capability"
+                    >
+                      {{ capabilityLabels[capability] }}
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  注入信号
+                  <select v-model="drillSignal">
+                    <option
+                      v-for="signal in drillSignals"
+                      :key="signal"
+                      :value="signal"
+                    >
+                      {{ drillSignalLabels[signal] }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+              <div class="cp-actions">
+                <button
+                  :disabled="busy || !runtimeQueryScreenId"
+                  @click="runResilienceDrillNow"
+                >
+                  运行演练
+                </button>
+              </div>
+              <div v-if="drillError" class="cp-notice error">{{ drillError }}</div>
+              <div v-if="resilienceDrill" class="cp-evidence">
+                <strong>
+                  {{ drillOutcomeLabels[resilienceDrill.outcome] }} ·
+                  {{ capabilityLabels[resilienceDrill.capability] }} ·
+                  {{ drillSignalLabels[resilienceDrill.signal] }}
+                </strong>
+                <span>
+                  decision：{{ resilienceDrill.decision || '无' }} ·
+                  主 Provider：{{ resilienceDrill.primary_provider_id || '无' }} ·
+                  解析 Provider：{{ resilienceDrill.resolved_provider_id || '无' }}
+                </span>
+                <span>
+                  Provider 执行已开始：{{ resilienceDrill.provider_execution_started ? '是' : '否' }} ·
+                  队列准入：{{ resilienceDrill.queue_admission }} ·
+                  权限等价：{{
+                    resilienceDrill.permission_equivalent === null
+                      ? '不适用'
+                      : resilienceDrill.permission_equivalent ? '是' : '否'
+                  }}
+                </span>
+                <span>
+                  终态：{{ resilienceDrill.terminal ? '是' : '否' }} ·
+                  允许回退：{{ resilienceDrill.fallback_allowed ? '是' : '否' }} ·
+                  {{ resilienceDrill.latency_ms }} ms ·
+                  {{ formatTime(resilienceDrill.created_at) }}
+                </span>
               </div>
             </article>
           </template>

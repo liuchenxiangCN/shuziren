@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -181,6 +181,28 @@ class DraftQueryDatasetAssignmentRequest(StrictModel):
 
 class QueryExecutionRequest(StrictModel):
     parameters: dict[str, Any]
+
+
+class ResilienceDrillRequest(StrictModel):
+    capability: Literal[
+        "dora",
+        "knowledge",
+        "direct_llm",
+        "asr",
+        "tts",
+        "querying",
+        "fvs_control",
+    ]
+    signal: Literal[
+        "timeout",
+        "unavailable",
+        "unsupported",
+        "permission_denied",
+        "invalid_request",
+        "unauthorized_template",
+        "cancelled",
+        "backpressure",
+    ]
 
 
 class ConfigDraftDecisionRequest(StrictModel):
@@ -1133,6 +1155,68 @@ def cancel_screen_query_execution(
         screen_id,
         execution_id,
         idempotency_key=idempotency_key,
+    )
+
+
+@router.get(f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/query-executions")
+def list_screen_query_executions(
+    screen_id: str,
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=100),
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_3.list_screen_executions(
+        context.principal,
+        screen_id,
+        limit=limit,
+    )
+
+
+@router.get(f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/queue-status")
+def get_screen_queue_status(
+    screen_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_3.screen_queue_status(
+        context.principal,
+        screen_id,
+    )
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/resilience-drills",
+    status_code=201,
+)
+def start_screen_resilience_drill(
+    screen_id: str,
+    payload: ResilienceDrillRequest,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    return service_from_request(request).p2_3.start_resilience_drill(
+        context.principal,
+        screen_id,
+        capability=payload.capability,
+        signal=payload.signal,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.get(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/resilience-drills/{{drill_id}}",
+)
+def get_screen_resilience_drill(
+    screen_id: str,
+    drill_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p2_3.get_resilience_drill(
+        context.principal,
+        screen_id,
+        drill_id,
     )
 
 
