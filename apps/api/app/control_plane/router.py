@@ -205,6 +205,84 @@ class ResilienceDrillRequest(StrictModel):
     ]
 
 
+class AvatarResourceManifestRequest(StrictModel):
+    path: str = Field(min_length=1, max_length=128)
+    media_type: str = Field(min_length=1, max_length=128)
+    size_bytes: int = Field(ge=1, le=2_097_152)
+    sha256: str = Field(min_length=64, max_length=64)
+
+
+class AvatarStateMappingRequest(StrictModel):
+    idle: str = Field(min_length=1, max_length=128)
+    listening: str = Field(min_length=1, max_length=128)
+    thinking: str = Field(min_length=1, max_length=128)
+    speaking: str = Field(min_length=1, max_length=128)
+    error: str = Field(min_length=1, max_length=128)
+
+
+class AvatarRequirementsRequest(StrictModel):
+    browser: str = Field(min_length=1, max_length=128)
+    gpu: str = Field(min_length=1, max_length=128)
+    vram_mb: int = Field(ge=0, le=1_048_576)
+    memory_mb: int = Field(ge=0, le=1_048_576)
+
+
+class AvatarCanvasRequest(StrictModel):
+    aspect_ratio: str = Field(min_length=3, max_length=16)
+    transparent_background: bool
+    safe_area_percent: int = Field(ge=0, le=40)
+
+
+class AvatarLicenseRequest(StrictModel):
+    kind: str = Field(min_length=1, max_length=64)
+    rights_holder: str = Field(min_length=1, max_length=128)
+    expires_at: str | None = Field(default=None, max_length=64)
+    usage_scope: str = Field(min_length=1, max_length=64)
+
+
+class AvatarPackageManifestRequest(StrictModel):
+    schema_version: str = Field(min_length=1, max_length=64)
+    avatar_id: str = Field(min_length=1, max_length=64)
+    version: str = Field(min_length=1, max_length=32)
+    display_name: str = Field(min_length=1, max_length=128)
+    avatar_type: str = Field(min_length=1, max_length=32)
+    renderer_type: str = Field(min_length=1, max_length=64)
+    renderer_version_range: str = Field(min_length=1, max_length=32)
+    entry_asset: str = Field(min_length=1, max_length=128)
+    resources: list[AvatarResourceManifestRequest] = Field(min_length=1, max_length=16)
+    states: AvatarStateMappingRequest
+    lip_sync_mode: str = Field(min_length=1, max_length=32)
+    requirements: AvatarRequirementsRequest
+    canvas: AvatarCanvasRequest
+    license: AvatarLicenseRequest
+
+
+class AvatarResourceUploadRequest(StrictModel):
+    path: str = Field(min_length=1, max_length=128)
+    content_base64: str = Field(min_length=1, max_length=2_796_208)
+
+
+class AvatarPackageCreateRequest(StrictModel):
+    site_id: str = Field(min_length=1, max_length=200)
+    manifest: AvatarPackageManifestRequest
+    files: list[AvatarResourceUploadRequest] = Field(min_length=1, max_length=16)
+
+
+class AvatarPrefetchRequest(StrictModel):
+    expected_content_hash: str = Field(min_length=64, max_length=64)
+
+
+class AvatarPublishRequest(StrictModel):
+    package_version_id: str = Field(min_length=1, max_length=200)
+    expected_binding_generation: int = Field(ge=0)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class AvatarRollbackRequest(StrictModel):
+    expected_binding_generation: int = Field(ge=1)
+    reason: str = Field(min_length=3, max_length=500)
+
+
 class ConfigDraftDecisionRequest(StrictModel):
     reason: str = Field(min_length=3, max_length=500)
 
@@ -1220,6 +1298,118 @@ def get_screen_resilience_drill(
     )
 
 
+@router.get(f"{CONTROL_PREFIX}/renderer-providers")
+def list_renderer_providers(request: Request) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p3.list_renderers(context.principal)
+
+
+@router.get(f"{CONTROL_PREFIX}/avatar-packages")
+def list_avatar_packages(request: Request) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p3.list_packages(context.principal)
+
+
+@router.post(f"{CONTROL_PREFIX}/avatar-packages", status_code=201)
+def create_avatar_package_version(
+    payload: AvatarPackageCreateRequest,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    return service_from_request(request).p3.create_package_version(
+        context.principal,
+        site_id=payload.site_id,
+        manifest=payload.manifest.model_dump(),
+        files=[item.model_dump() for item in payload.files],
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.get(f"{CONTROL_PREFIX}/avatar-package-versions/{{package_version_id}}/preview")
+def get_avatar_package_preview(
+    package_version_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p3.get_package_preview(
+        context.principal,
+        package_version_id,
+    )
+
+
+@router.post(
+    f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/avatar-package-versions/"
+    "{package_version_id}:prefetch",
+)
+def prefetch_avatar_package(
+    screen_id: str,
+    package_version_id: str,
+    payload: AvatarPrefetchRequest,
+    request: Request,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    return service_from_request(request).p3.prefetch(
+        context.principal,
+        screen_id,
+        package_version_id,
+        expected_content_hash=payload.expected_content_hash,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.get(f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/avatar-binding")
+def get_screen_avatar_binding(screen_id: str, request: Request) -> dict[str, Any]:
+    context = session_from_request(request)
+    return service_from_request(request).p3.get_binding(context.principal, screen_id)
+
+
+@router.post(f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/avatar-publications")
+def publish_avatar_to_screen(
+    screen_id: str,
+    payload: AvatarPublishRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p3.publish(
+        context.principal,
+        screen_id,
+        package_version_id=payload.package_version_id,
+        expected_binding_generation=payload.expected_binding_generation,
+        reason=payload.reason,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
+@router.post(f"{CONTROL_PREFIX}/screen-instances/{{screen_id}}/avatar-rollbacks")
+def rollback_avatar_on_screen(
+    screen_id: str,
+    payload: AvatarRollbackRequest,
+    request: Request,
+    response: Response,
+    if_match: IfMatchHeader,
+    idempotency_key: IdempotencyKeyHeader,
+) -> dict[str, Any]:
+    context = mutating_session(request)
+    result = service_from_request(request).p3.rollback(
+        context.principal,
+        screen_id,
+        expected_binding_generation=payload.expected_binding_generation,
+        reason=payload.reason,
+        if_match=if_match,
+        idempotency_key=idempotency_key,
+    )
+    response.headers["ETag"] = result["etag"]
+    return result
+
+
 @router.post(f"{CONTROL_PREFIX}/config-drafts", status_code=201)
 def create_config_draft(
     payload: ConfigDraftCreateRequest,
@@ -1745,6 +1935,12 @@ def get_device_current_capabilities(
         context,
         runtime_session_id,
     )
+
+
+@router.get(f"{DEVICE_PREFIX}/avatar/current")
+def get_device_current_avatar(request: Request) -> dict[str, Any]:
+    context = device_from_request(request)
+    return service_from_request(request).p3.get_device_current_avatar(context)
 
 
 @router.get(f"{DEVICE_PREFIX}/query-datasets")

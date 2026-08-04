@@ -4,7 +4,12 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$EvidenceRoot,
     [string]$BaseCommit = "c24f041a0414ea5361a6fcb7216d7be99ea0bb56",
-    [ValidateSet("p2_1_secret_surfaces", "p2_2_secret_surfaces", "p2_3_secret_surfaces")]
+    [ValidateSet(
+        "p2_1_secret_surfaces",
+        "p2_2_secret_surfaces",
+        "p2_3_secret_surfaces",
+        "p3_secret_surfaces"
+    )]
     [string]$Gate = "p2_1_secret_surfaces"
 )
 
@@ -17,7 +22,13 @@ if (-not $resolvedEvidenceRoot.StartsWith($repoPrefix, [System.StringComparison]
 }
 
 $exactSecrets = [System.Collections.Generic.List[string]]::new()
-foreach ($envName in @(".env.p2-3-preview", ".env.p2-2-preview", ".env.p2-1-preview", ".env.p1-3-preview")) {
+foreach ($envName in @(
+    ".env.p3-preview",
+    ".env.p2-3-preview",
+    ".env.p2-2-preview",
+    ".env.p2-1-preview",
+    ".env.p1-3-preview"
+)) {
     $envPath = Join-Path $repoRoot $envName
     if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
         continue
@@ -76,7 +87,9 @@ foreach ($root in @(
             $file.Name -notlike "control-plane-p1-*.db" -and
             $file.Name -notlike "control-plane-p1-*.db-*" -and
             $file.Name -notlike "control-plane-p2-*.db" -and
-            $file.Name -notlike "control-plane-p2-*.db-*"
+            $file.Name -notlike "control-plane-p2-*.db-*" -and
+            $file.Name -notlike "control-plane-p3*.db" -and
+            $file.Name -notlike "control-plane-p3*.db-*"
         ) {
             continue
         }

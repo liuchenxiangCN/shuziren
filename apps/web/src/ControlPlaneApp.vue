@@ -9,6 +9,7 @@ import {
   claimEnrollment,
   ControlPlaneApiError,
   createBackup,
+  createAvatarPackageVersion,
   createCapabilityProfile,
   createCapabilityProfileVersion,
   createConfigDraft,
@@ -25,20 +26,24 @@ import {
   getConfigDraft,
   getConfigRelease,
   getCapabilityProfile,
+  getAvatarPackagePreview,
   getCredentialMetadata,
   getRuntimeBinding,
   getScreenQueryExecution,
   getScreenEffectiveCapabilities,
   getScreenQueueStatus,
+  getScreenAvatarBinding,
   getStorageProfile,
   issueEnrollment,
   listAuditEvents,
   listCapabilityProfilePresets,
   listCapabilityProfiles,
   listCapabilityProviders,
+  listAvatarPackages,
   listPendingActions,
   listQueryDatasets,
   listQuerySources,
+  listRendererProviders,
   listRoleDefinitions,
   listScreenGroups,
   listScreenInstances,
@@ -49,6 +54,7 @@ import {
   loadSession,
   publishReleaseToGroup,
   publishReleaseToScreen,
+  publishAvatarToScreen,
   randomIdempotencyKey,
   reauthenticate,
   rejectAction,
@@ -56,13 +62,21 @@ import {
   revokeCredential,
   rollbackGroupRelease,
   rollbackScreenRelease,
+  rollbackAvatarOnScreen,
   rotateCredential,
   signIn,
   signOut,
   startResilienceDrill,
   startScreenQuery,
+  prefetchAvatarPackage,
   testQuerySource,
   type AuditEvent,
+  type AvatarBinding,
+  type AvatarPackage,
+  type AvatarPackageCreatePayload,
+  type AvatarPackagePreview,
+  type AvatarPackageVersion,
+  type AvatarPrefetch,
   type BackupRecord,
   type CapabilityKey,
   type CapabilityProfile,
@@ -84,6 +98,7 @@ import {
   type QueryParameterDefinition,
   type QuerySource,
   type ResilienceDrill,
+  type RendererProviderCatalog,
   type RestorePlan,
   type ScreenExecutionListItem,
   type ScreenGroupInventory,
@@ -103,6 +118,7 @@ type View =
   | 'inventory'
   | 'capabilities'
   | 'queries'
+  | 'avatars'
   | 'releases'
   | 'users'
   | 'approvals'
@@ -264,6 +280,19 @@ const executionStateLabels: Record<QueryExecutionState, string> = {
 };
 const resilienceDrill = ref<ResilienceDrill | null>(null);
 const drillError = ref('');
+const rendererCatalog = ref<RendererProviderCatalog | null>(null);
+const avatarPackages = ref<AvatarPackage[]>([]);
+const avatarScreenId = ref('');
+const avatarBinding = ref<AvatarBinding | null>(null);
+const selectedAvatarVersionId = ref('');
+const avatarPreview = ref<AvatarPackagePreview | null>(null);
+const avatarPrefetch = ref<AvatarPrefetch | null>(null);
+const newAvatarVersion = ref('1.0.0');
+const newAvatarLabel = ref('青色测试讲解员');
+const newAvatarBackground = ref('#E8F5F0');
+const newAvatarAccent = ref('#147D64');
+const avatarPublishReason = ref('发布已预取并验证的测试形象版本');
+const avatarRollbackReason = ref('回退到上一已验证测试形象版本');
 const releaseDraft = ref<ConfigDraft | null>(null);
 const releaseCandidate = ref<ConfigRelease | null>(null);
 const releasePublication = ref<Record<string, any> | null>(null);
@@ -373,6 +402,14 @@ const selectedQuerySource = computed(() =>
   querySources.value.find(
     (source) => source.source_id === queryDatasetSourceId.value,
   ),
+);
+const avatarVersions = computed(() =>
+  avatarPackages.value.flatMap((avatarPackage) => avatarPackage.versions),
+);
+const selectedAvatarVersion = computed(() =>
+  avatarVersions.value.find(
+    (version) => version.package_version_id === selectedAvatarVersionId.value,
+  ) || null,
 );
 const selectedEditorStateSummary = computed<Record<CapabilityKey, CapabilityState>>(() =>
   Object.fromEntries(
@@ -560,6 +597,11 @@ async function logout() {
     runtimeQueueStatus.value = null;
     resilienceDrill.value = null;
     drillError.value = '';
+    rendererCatalog.value = null;
+    avatarPackages.value = [];
+    avatarBinding.value = null;
+    avatarPreview.value = null;
+    avatarPrefetch.value = null;
     releaseDraft.value = null;
     releaseCandidate.value = null;
     releasePublication.value = null;
@@ -673,6 +715,31 @@ async function loadActiveView() {
         queueRuntimeObservabilityPoll(runtimeObservabilityPollGeneration);
       }
     }
+  } else if (activeView.value === 'avatars' && canReadConfig.value) {
+    const [rendererResult, packageResult, siteResult, screenResult] = await Promise.all([
+      listRendererProviders(),
+      listAvatarPackages(),
+      listSites(),
+      listScreenInstances(),
+    ]);
+    rendererCatalog.value = rendererResult;
+    avatarPackages.value = packageResult.items;
+    sites.value = siteResult.items;
+    screens.value = screenResult.items;
+    if (!avatarScreenId.value) {
+      avatarScreenId.value = screenResult.items[0]?.screen_id || '';
+    }
+    if (
+      !selectedAvatarVersionId.value
+      || !packageResult.items.some((item) =>
+        item.versions.some(
+          (version) => version.package_version_id === selectedAvatarVersionId.value,
+        ))
+    ) {
+      selectedAvatarVersionId.value = packageResult.items[0]?.versions[0]?.package_version_id || '';
+    }
+    await refreshAvatarBinding();
+    if (selectedAvatarVersionId.value) await loadAvatarPreview();
   } else if (activeView.value === 'releases' && canReadScreens.value) {
     const [
       groupResult,
@@ -721,6 +788,159 @@ async function loadScreenCapabilityStates() {
   screenCapabilities.value = Object.fromEntries(
     results.map((result) => [result.screen_id, result]),
   );
+}
+
+function utf8Base64(bytes: Uint8Array): string {
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const buffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function createTestAvatarVersion() {
+  const siteId = sites.value[0]?.site_id;
+  if (!siteId) return;
+  await run(async () => {
+    const previewModel = {
+      schema_version: 'p3_test_avatar_preview_v1' as const,
+      label: newAvatarLabel.value,
+      background: newAvatarBackground.value,
+      accent: newAvatarAccent.value,
+    };
+    const bytes = new TextEncoder().encode(JSON.stringify(previewModel));
+    const digest = await sha256Hex(bytes);
+    const payload: AvatarPackageCreatePayload = {
+      site_id: siteId,
+      manifest: {
+        schema_version: 'p3_avatar_package_v1',
+        avatar_id: 'test-guide',
+        version: newAvatarVersion.value,
+        display_name: '测试讲解员',
+        avatar_type: 'test',
+        renderer_type: 'test_card',
+        renderer_version_range: '^1.0.0',
+        entry_asset: 'avatar.json',
+        resources: [{
+          path: 'avatar.json',
+          media_type: 'application/vnd.shuziren.test-avatar+json',
+          size_bytes: bytes.byteLength,
+          sha256: digest,
+        }],
+        states: {
+          idle: 'avatar.json',
+          listening: 'avatar.json',
+          thinking: 'avatar.json',
+          speaking: 'avatar.json',
+          error: 'avatar.json',
+        },
+        lip_sync_mode: 'volume',
+        requirements: {
+          browser: 'test-contract',
+          gpu: 'not-required',
+          vram_mb: 0,
+          memory_mb: 64,
+        },
+        canvas: {
+          aspect_ratio: '1:1',
+          transparent_background: false,
+          safe_area_percent: 8,
+        },
+        license: {
+          kind: 'TEST_ONLY',
+          rights_holder: 'Generated P3 preview fixture',
+          expires_at: null,
+          usage_scope: 'DEVELOPMENT_PREVIEW',
+        },
+      },
+      files: [{ path: 'avatar.json', content_base64: utf8Base64(bytes) }],
+    };
+    const created = await createAvatarPackageVersion(payload);
+    selectedAvatarVersionId.value = created.package_version_id;
+    message.value = `已创建不可变测试形象版本 ${created.version}；未加载任何脚本或供应商 SDK。`;
+    const packages = await listAvatarPackages();
+    avatarPackages.value = packages.items;
+    await loadAvatarPreview();
+  });
+}
+
+async function refreshAvatarBinding() {
+  if (!avatarScreenId.value) {
+    avatarBinding.value = null;
+    return;
+  }
+  avatarBinding.value = await getScreenAvatarBinding(avatarScreenId.value);
+}
+
+async function loadAvatarPreview() {
+  if (!selectedAvatarVersionId.value) {
+    avatarPreview.value = null;
+    return;
+  }
+  avatarPreview.value = await getAvatarPackagePreview(selectedAvatarVersionId.value);
+}
+
+async function changeAvatarScreen() {
+  await run(async () => {
+    avatarPrefetch.value = null;
+    await refreshAvatarBinding();
+  });
+}
+
+async function changeAvatarVersion() {
+  await run(async () => {
+    avatarPrefetch.value = null;
+    await loadAvatarPreview();
+  });
+}
+
+async function prefetchSelectedAvatar(corrupt = false) {
+  const version = selectedAvatarVersion.value;
+  if (!version || !avatarScreenId.value) return;
+  await run(async () => {
+    avatarPrefetch.value = await prefetchAvatarPackage(
+      avatarScreenId.value,
+      version.package_version_id,
+      corrupt ? '0'.repeat(64) : version.content_hash,
+    );
+    if (avatarPrefetch.value.outcome === 'READY') {
+      message.value = '目标屏已按精确 SHA-256 完成预取，可执行原子切换。';
+    } else {
+      message.value = '预取验证失败；当前屏幕形象保持不变。';
+    }
+    await refreshAvatarBinding();
+  });
+}
+
+async function publishSelectedAvatar() {
+  const version = selectedAvatarVersion.value;
+  if (!version || !avatarBinding.value) return;
+  await run(async () => {
+    avatarBinding.value = await publishAvatarToScreen(
+      avatarBinding.value!,
+      version.package_version_id,
+      avatarPublishReason.value,
+    );
+    message.value = `已仅切换目标屏；当前绑定代际 ${avatarBinding.value.binding_generation}。`;
+  });
+}
+
+async function rollbackSelectedAvatar() {
+  if (!avatarBinding.value) return;
+  await run(async () => {
+    avatarBinding.value = await rollbackAvatarOnScreen(
+      avatarBinding.value!,
+      avatarRollbackReason.value,
+    );
+    message.value = `已回退到上一已验证版本；新绑定代际 ${avatarBinding.value.binding_generation}。`;
+  });
 }
 
 async function submitGroup() {
@@ -1630,6 +1850,12 @@ function formatTime(value?: number | null) {
             @click="switchView('queries')"
           >
             受控问数
+          </button>
+          <button
+            :class="{ active: activeView === 'avatars' }"
+            @click="switchView('avatars')"
+          >
+            测试形象
           </button>
           <button :class="{ active: activeView === 'releases' }" @click="switchView('releases')">
             发布中心
@@ -2797,6 +3023,236 @@ function formatTime(value?: number | null) {
           </template>
         </section>
 
+        <section v-else-if="activeView === 'avatars'" class="cp-grid">
+          <article v-if="!canReadConfig" class="cp-card wide">
+            <div class="cp-denied">当前角色没有 `config.read`，API 已拒绝读取 Renderer 与形象包。</div>
+          </article>
+
+          <template v-else>
+            <article class="cp-card wide cp-boundary">
+              <div>
+                <p class="cp-eyebrow">P3 test-only boundary</p>
+                <h2>验证扩展与安全切换，不声明真实 2D / 3D 支持</h2>
+                <p>
+                  这里只接受严格 JSON 测试卡片。JavaScript、Wasm、HTML、CSS、SVG、压缩包、
+                  未注册 Renderer 与真实供应商资产均会被后端拒绝。
+                </p>
+              </div>
+              <div class="cp-stat-strip">
+                <span><strong>TEST_ONLY</strong>许可范围</span>
+                <span><strong>SHA-256</strong>预取校验</span>
+                <span><strong>0</strong>动态脚本</span>
+              </div>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">Immutable Renderer registry</p>
+                  <h2>Renderer 注册表</h2>
+                </div>
+                <span class="cp-pill">{{ rendererCatalog?.registry_version || '未加载' }}</span>
+              </div>
+              <div class="cp-screen-grid">
+                <article
+                  v-for="renderer in rendererCatalog?.items || []"
+                  :key="renderer.renderer_type"
+                  class="cp-screen"
+                >
+                  <div class="cp-card-title">
+                    <div>
+                      <span class="cp-pill">{{ renderer.renderer_type }}</span>
+                      <h3>{{ renderer.display_name }}</h3>
+                    </div>
+                    <span class="cp-health">{{ renderer.state }}</span>
+                  </div>
+                  <dl>
+                    <div><dt>Renderer 版本</dt><dd>{{ renderer.renderer_version }}</dd></div>
+                    <div><dt>契约版本</dt><dd>{{ renderer.contract_version }}</dd></div>
+                    <div><dt>测试专用</dt><dd>{{ renderer.test_only ? '是' : '否' }}</dd></div>
+                    <div><dt>生产可用</dt><dd>{{ renderer.production_eligible ? '是' : '否' }}</dd></div>
+                  </dl>
+                  <p>{{ renderer.compatibility_note }}</p>
+                </article>
+              </div>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">Declarative AvatarPackage</p>
+                  <h2>创建不可变测试形象版本</h2>
+                </div>
+                <span class="cp-pill">p3_avatar_package_v1</span>
+              </div>
+              <div class="cp-form-grid">
+                <label>
+                  语义版本
+                  <input v-model="newAvatarVersion" placeholder="1.0.0" />
+                </label>
+                <label>
+                  预览标签
+                  <input v-model="newAvatarLabel" maxlength="64" />
+                </label>
+                <label>
+                  背景色
+                  <input v-model="newAvatarBackground" type="color" />
+                </label>
+                <label>
+                  强调色
+                  <input v-model="newAvatarAccent" type="color" />
+                </label>
+              </div>
+              <div class="cp-actions">
+                <button
+                  :disabled="busy || !canEditTechnicalConfig || !newAvatarVersion || !newAvatarLabel"
+                  @click="createTestAvatarVersion"
+                >
+                  创建测试版本
+                </button>
+              </div>
+              <p v-if="!canEditTechnicalConfig" class="cp-muted">
+                当前角色可查看，但没有 `config.edit_technical`，不能创建版本。
+              </p>
+            </article>
+
+            <article class="cp-card wide">
+              <div class="cp-card-title">
+                <div>
+                  <p class="cp-eyebrow">Preview → prefetch → atomic switch → rollback</p>
+                  <h2>按屏安全切换</h2>
+                </div>
+                <button class="secondary" :disabled="busy" @click="run(loadActiveView)">刷新</button>
+              </div>
+              <div class="cp-form-grid">
+                <label>
+                  目标屏
+                  <select v-model="avatarScreenId" @change="changeAvatarScreen">
+                    <option v-for="screen in screens" :key="screen.screen_id" :value="screen.screen_id">
+                      {{ screen.display_name }} · {{ screen.slug }}
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  不可变版本
+                  <select v-model="selectedAvatarVersionId" @change="changeAvatarVersion">
+                    <option
+                      v-for="version in avatarVersions"
+                      :key="version.package_version_id"
+                      :value="version.package_version_id"
+                    >
+                      {{ version.display_name }} · {{ version.version }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+
+              <div v-if="avatarPreview" class="cp-avatar-preview-grid">
+                <div
+                  class="cp-avatar-preview"
+                  :style="{
+                    background: avatarPreview.preview_model.background,
+                    borderColor: avatarPreview.preview_model.accent,
+                  }"
+                >
+                  <span
+                    class="cp-avatar-orb"
+                    :style="{ background: avatarPreview.preview_model.accent }"
+                  ></span>
+                  <strong>{{ avatarPreview.preview_model.label }}</strong>
+                  <small>产品代码渲染 · 无动态内容</small>
+                </div>
+                <div class="cp-evidence">
+                  <strong>{{ selectedAvatarVersion?.display_name }} · {{ selectedAvatarVersion?.version }}</strong>
+                  <span>Renderer：{{ avatarPreview.renderer_type }} {{ avatarPreview.renderer_version }}</span>
+                  <span>兼容契约：test_card 1.0.0 · 生产可用：否 · 测试专用：是</span>
+                  <small>Manifest SHA-256</small>
+                  <code>{{ avatarPreview.manifest_hash }}</code>
+                  <small>内容集合 SHA-256</small>
+                  <code>{{ avatarPreview.content_hash }}</code>
+                  <template v-for="resource in avatarPreview.resources" :key="resource.path">
+                    <small>{{ resource.path }} · {{ resource.media_type }} · {{ resource.size_bytes }} B</small>
+                    <code>{{ resource.sha256 }}</code>
+                  </template>
+                </div>
+              </div>
+
+              <div class="cp-actions">
+                <button
+                  class="secondary"
+                  :disabled="busy || !selectedAvatarVersion || !permissions.has('config.preview')"
+                  @click="prefetchSelectedAvatar(false)"
+                >
+                  预取并校验
+                </button>
+                <button
+                  class="secondary danger"
+                  :disabled="busy || !selectedAvatarVersion || !permissions.has('config.preview')"
+                  @click="prefetchSelectedAvatar(true)"
+                >
+                  模拟损坏哈希
+                </button>
+                <button
+                  :disabled="
+                    busy
+                    || !canPublish
+                    || avatarPrefetch?.outcome !== 'READY'
+                    || avatarPrefetch?.package_version_id !== selectedAvatarVersionId
+                  "
+                  @click="publishSelectedAvatar"
+                >
+                  原子切换到目标屏
+                </button>
+                <button
+                  class="secondary"
+                  :disabled="busy || !canRollback || !avatarBinding?.previous"
+                  @click="rollbackSelectedAvatar"
+                >
+                  回退上一版本
+                </button>
+              </div>
+
+              <div v-if="avatarPrefetch" :class="['cp-notice', avatarPrefetch.outcome === 'READY' ? 'success' : 'error']">
+                预取 {{ avatarPrefetch.outcome }} ·
+                {{ avatarPrefetch.failure?.message || '精确内容指纹验证通过' }}
+              </div>
+
+              <div v-if="avatarBinding" class="cp-state-grid cp-avatar-state-grid">
+                <div>
+                  <span>绑定状态</span>
+                  <strong>{{ avatarBinding.state }}</strong>
+                </div>
+                <div>
+                  <span>当前版本</span>
+                  <strong>{{ avatarBinding.current?.version || '未绑定' }}</strong>
+                </div>
+                <div>
+                  <span>上一版本</span>
+                  <strong>{{ avatarBinding.previous?.version || '无' }}</strong>
+                </div>
+                <div>
+                  <span>绑定代际</span>
+                  <strong>{{ avatarBinding.binding_generation }}</strong>
+                </div>
+              </div>
+
+              <div v-if="avatarBinding?.history?.length" class="cp-table-wrap">
+                <table>
+                  <thead><tr><th>操作</th><th>目标版本 ID</th><th>代际</th><th>时间</th></tr></thead>
+                  <tbody>
+                    <tr v-for="item in avatarBinding.history" :key="item.switch_id">
+                      <td>{{ item.operation }}</td>
+                      <td><code>{{ item.to_package_version_id }}</code></td>
+                      <td>{{ item.binding_generation }}</td>
+                      <td>{{ formatTime(item.created_at) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </template>
+        </section>
+
         <section v-else-if="activeView === 'releases'" class="cp-grid">
           <article class="cp-card wide cp-boundary">
             <div>
@@ -3311,6 +3767,7 @@ function formatTime(value?: number | null) {
 .cp-reauth input { min-width: 0; }
 button { cursor: pointer; border: 0; border-radius: 10px; padding: 10px 15px; background: #176247; color: #fff; font-weight: 700; }
 button.secondary { background: #e5ece8; color: #27483d; }
+button.danger { background: #fff0ee; color: #9c332a; }
 button:disabled { cursor: not-allowed; opacity: .55; }
 .cp-notice { margin: 14px 0; padding: 12px 16px; border-radius: 10px; font-weight: 650; }
 .cp-notice.success { background: #dff3e8; color: #145b3e; }
@@ -3382,6 +3839,14 @@ legend { padding: 0 6px; color: #53675f; font-size: 12px; font-weight: 800; }
 .cp-hash-line code, .cp-target-list code { overflow-wrap: anywhere; color: #176247; font-size: 11px; }
 .cp-evidence { display: grid; gap: 5px; padding: 14px; border: 1px solid #bcdac9; border-radius: 11px; background: #eef8f2; color: #31584a; overflow-wrap: anywhere; }
 .cp-evidence.warning { border-color: #e2cf9d; background: #fff8e8; color: #755b1c; }
+.cp-muted { color: #72827b !important; font-size: 13px; }
+.cp-avatar-preview-grid { display: grid; grid-template-columns: minmax(220px, .7fr) minmax(0, 1.3fr); gap: 14px; }
+.cp-avatar-preview { min-height: 190px; display: grid; place-items: center; align-content: center; gap: 10px; border: 3px solid; border-radius: 18px; color: #17302a; text-align: center; }
+.cp-avatar-preview small { color: #53675f; }
+.cp-avatar-orb { width: 62px; height: 62px; border-radius: 50%; box-shadow: 0 12px 28px rgba(23, 48, 42, .18); }
+.cp-avatar-state-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cp-avatar-state-grid > div { display: grid; gap: 5px; padding: 13px; border: 1px solid #dce5df; border-radius: 11px; background: #fafcfb; }
+.cp-avatar-state-grid span { color: #72827b; font-size: 11px; font-weight: 800; }
 .cp-approval-box { display: grid; gap: 12px; padding: 16px; border: 1px solid #ccd9d2; border-radius: 12px; background: #fafcfb; }
 .cp-target-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
 .cp-target-list > div { display: grid; gap: 4px; min-width: 0; padding: 11px; border: 1px solid #e0e8e3; border-radius: 9px; }
@@ -3411,6 +3876,7 @@ pre { overflow: auto; margin: 0; padding: 15px; border-radius: 10px; background:
   .cp-grid { grid-template-columns: 1fr; }
   .cp-screen-grid, .cp-form-grid, .cp-target-list, .cp-state-grid, .cp-preset-grid, .cp-capability-grid, .cp-check-grid { grid-template-columns: 1fr; }
   .cp-fallback-add { grid-template-columns: 1fr; }
+  .cp-avatar-preview-grid { grid-template-columns: 1fr; }
   .cp-nav { overflow-x: auto; }
 }
 </style>

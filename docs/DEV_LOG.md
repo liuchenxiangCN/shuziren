@@ -4,8 +4,41 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: factual work completed after productization began
-- Last reviewed: 2026-07-29
+- Last reviewed: 2026-08-04
 - Full POC and initial P0 history: [archive/poc-v1/root-snapshots/DEV_LOG_FULL_HISTORY.md](archive/poc-v1/root-snapshots/DEV_LOG_FULL_HISTORY.md)
+
+## 2026-08-04
+
+### P3 Renderer Extension Candidate Implementation
+
+#### Completed Facts
+
+- The user explicitly activated P3 with `开始P3`; this authorizes the result
+  batch but is not user acceptance. P2.4 remains deferred and blocked by its
+  independent official-plugin evidence gate.
+- Implemented one fixed `test_card` Renderer 1.0.0, immutable declarative
+  AvatarPackage versions/resources, safe product-code preview, exact-hash
+  screen prefetch, atomic per-screen publication, device-scoped current read
+  and audited rollback. Every P3 surface is marked `TEST_ONLY` and
+  `production_eligible=false`; no real 2D/3D format or supplier asset is
+  represented as supported.
+- Added additive migration `006_renderer_avatar_packages`, full P3 integrity
+  checks in backup/restore and retention, Windows same-volume staged restore,
+  local/browser preview scripts, an 85-check contract with 9 mutation cases,
+  Secret-surface scan coverage and a dedicated backend matrix.
+- The current implementation passed 95 backend tests with 3 environment-gated
+  skips, candidate-scoped Ruff, API import, frontend type/build, P3 contract
+  gates, Secret scan and a fresh 1280 by 720 browser workflow. That browser
+  run visibly proved Renderer compatibility, manifest/content/resource
+  hashes, failed-hash retention, switch and rollback with no horizontal
+  overflow or unexpected console entry.
+- The original accepted-P2.3 worktree passed its unchanged suite (77 passed,
+  3 skipped), proving the product-code rollback target against a pre-P3
+  database. Migration 006 remains forward-only; rollback retains P3 data and
+  serves P2.3 from a verified pre-P3 database copy.
+- Docker Compose configuration passed, but the container smoke remains
+  `Blocked` because Docker Desktop is not running. Candidate binding,
+  final independent review and user decision remain pending.
 
 ## 2026-07-29
 

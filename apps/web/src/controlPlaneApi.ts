@@ -609,6 +609,150 @@ export interface RestorePlan {
   etag: string;
 }
 
+export interface RendererProviderCatalog {
+  api_version: 'v1';
+  registry_version: string;
+  items: Array<{
+    renderer_type: 'test_card';
+    display_name: string;
+    renderer_version: string;
+    contract_version: string;
+    state: 'available';
+    test_only: true;
+    supported_avatar_types: ['test'];
+    supported_manifest_schema_versions: string[];
+    supported_media_types: string[];
+    production_eligible: false;
+    compatibility_note: string;
+  }>;
+}
+
+export interface AvatarPreviewModel {
+  schema_version: 'p3_test_avatar_preview_v1';
+  label: string;
+  background: string;
+  accent: string;
+}
+
+export interface AvatarPackageResource {
+  path: string;
+  media_type: string;
+  size_bytes: number;
+  sha256: string;
+}
+
+export interface AvatarPackageVersion {
+  api_version: 'v1';
+  package_version_id: string;
+  package_id: string;
+  site_id: string;
+  avatar_id: string;
+  display_name: string;
+  version: string;
+  schema_version: 'p3_avatar_package_v1';
+  renderer_type: 'test_card';
+  renderer_contract_version: '1.0.0';
+  avatar_type: 'test';
+  manifest_hash: string;
+  content_hash: string;
+  total_bytes: number;
+  resources: AvatarPackageResource[];
+  preview_model: AvatarPreviewModel;
+  test_only: true;
+  production_eligible: false;
+  immutable: true;
+  created_at: number;
+}
+
+export interface AvatarPackage {
+  api_version: 'v1';
+  package_id: string;
+  site_id: string;
+  avatar_id: string;
+  display_name: string;
+  test_only: true;
+  immutable: true;
+  versions: AvatarPackageVersion[];
+  created_at: number;
+}
+
+export interface AvatarPackagePreview {
+  api_version: 'v1';
+  package_version_id: string;
+  renderer_type: 'test_card';
+  renderer_version: '1.0.0';
+  test_only: true;
+  production_eligible: false;
+  manifest_hash: string;
+  content_hash: string;
+  resources: AvatarPackageResource[];
+  preview_model: AvatarPreviewModel;
+}
+
+export interface AvatarPrefetch {
+  api_version: 'v1';
+  prefetch_id: string;
+  screen_id: string;
+  package_version_id: string;
+  expected_content_hash: string;
+  verified_content_hash: string;
+  outcome: 'READY' | 'FAILED';
+  failure?: { code: string; message: string } | null;
+  created_at: number;
+}
+
+export interface AvatarBinding {
+  api_version: 'v1';
+  screen_id: string;
+  state: 'ACTIVE' | 'UNBOUND';
+  binding_generation: number;
+  current?: AvatarPackageVersion | null;
+  previous?: AvatarPackageVersion | null;
+  etag: string;
+  updated_at?: number;
+  history?: Array<{
+    switch_id: string;
+    from_package_version_id?: string | null;
+    to_package_version_id: string;
+    operation: 'PUBLISH' | 'ROLLBACK';
+    outcome: 'SUCCEEDED';
+    binding_generation: number;
+    reason: string;
+    created_at: number;
+  }>;
+}
+
+export interface AvatarPackageCreatePayload {
+  site_id: string;
+  manifest: {
+    schema_version: 'p3_avatar_package_v1';
+    avatar_id: string;
+    version: string;
+    display_name: string;
+    avatar_type: 'test';
+    renderer_type: 'test_card';
+    renderer_version_range: '^1.0.0';
+    entry_asset: 'avatar.json';
+    resources: Array<{
+      path: 'avatar.json';
+      media_type: 'application/vnd.shuziren.test-avatar+json';
+      size_bytes: number;
+      sha256: string;
+    }>;
+    states: Record<'idle' | 'listening' | 'thinking' | 'speaking' | 'error', 'avatar.json'>;
+    lip_sync_mode: 'volume';
+    requirements: { browser: string; gpu: string; vram_mb: number; memory_mb: number };
+    canvas: { aspect_ratio: string; transparent_background: boolean; safe_area_percent: number };
+    license: {
+      kind: 'TEST_ONLY';
+      rights_holder: string;
+      expires_at: null;
+      usage_scope: 'DEVELOPMENT_PREVIEW';
+    };
+  };
+  files: Array<{ path: 'avatar.json'; content_base64: string }>;
+}
+
 export class ControlPlaneApiError extends Error {
   status: number;
   code: string;
@@ -789,6 +933,102 @@ export function getScreenEffectiveCapabilities(
 ): Promise<ScreenEffectiveCapabilities> {
   return controlPlaneRequest(
     `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/effective-capabilities`,
+  );
+}
+
+export function listRendererProviders(): Promise<RendererProviderCatalog> {
+  return controlPlaneRequest('/api/v1/control-plane/renderer-providers');
+}
+
+export function listAvatarPackages(): Promise<InventoryPage<AvatarPackage>> {
+  return controlPlaneRequest('/api/v1/control-plane/avatar-packages');
+}
+
+export function createAvatarPackageVersion(
+  payload: AvatarPackageCreatePayload,
+): Promise<AvatarPackageVersion> {
+  return controlPlaneRequest(
+    '/api/v1/control-plane/avatar-packages',
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('avatar-package-create') },
+      body: JSON.stringify(payload),
+    },
+    { csrf: true },
+  );
+}
+
+export function getAvatarPackagePreview(
+  packageVersionId: string,
+): Promise<AvatarPackagePreview> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/avatar-package-versions/${encodeURIComponent(packageVersionId)}/preview`,
+  );
+}
+
+export function prefetchAvatarPackage(
+  screenId: string,
+  packageVersionId: string,
+  expectedContentHash: string,
+): Promise<AvatarPrefetch> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/avatar-package-versions/${encodeURIComponent(packageVersionId)}:prefetch`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': randomIdempotencyKey('avatar-package-prefetch') },
+      body: JSON.stringify({ expected_content_hash: expectedContentHash }),
+    },
+    { csrf: true },
+  );
+}
+
+export function getScreenAvatarBinding(screenId: string): Promise<AvatarBinding> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(screenId)}/avatar-binding`,
+  );
+}
+
+export function publishAvatarToScreen(
+  binding: AvatarBinding,
+  packageVersionId: string,
+  reason: string,
+): Promise<AvatarBinding> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(binding.screen_id)}/avatar-publications`,
+    {
+      method: 'POST',
+      headers: {
+        'If-Match': binding.etag,
+        'Idempotency-Key': randomIdempotencyKey('avatar-publication'),
+      },
+      body: JSON.stringify({
+        package_version_id: packageVersionId,
+        expected_binding_generation: binding.binding_generation,
+        reason,
+      }),
+    },
+    { csrf: true },
+  );
+}
+
+export function rollbackAvatarOnScreen(
+  binding: AvatarBinding,
+  reason: string,
+): Promise<AvatarBinding> {
+  return controlPlaneRequest(
+    `/api/v1/control-plane/screen-instances/${encodeURIComponent(binding.screen_id)}/avatar-rollbacks`,
+    {
+      method: 'POST',
+      headers: {
+        'If-Match': binding.etag,
+        'Idempotency-Key': randomIdempotencyKey('avatar-rollback'),
+      },
+      body: JSON.stringify({
+        expected_binding_generation: binding.binding_generation,
+        reason,
+      }),
+    },
+    { csrf: true },
   );
 }
 

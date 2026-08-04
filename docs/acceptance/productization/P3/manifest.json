@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "batch": "P3",
+  "lifecycle": "ACCEPTANCE_EVIDENCE",
+  "generated_at": "2026-08-04T00:00:00Z",
+  "gate_summary": "IN_PROGRESS",
+  "acceptance_state": "PENDING_USER_DECISION",
+  "base_accepted": {
+    "commit": "a124f63b8f3b5e499b6c561e78199a26f860edc9",
+    "tree": "8a2f4e36ca0751b6106a174f7dae63be9299ad5b",
+    "acceptance_record": "6488044ae731a5f4928874896452254897de5b5e"
+  },
+  "candidate": {
+    "commit": "TBD",
+    "tree": "TBD",
+    "branch": "TBD",
+    "fingerprint_sha256": "TBD",
+    "fingerprint_file_count": 0
+  },
+  "database": {
+    "logical_schema_version": "p1_control_plane_001",
+    "latest_migration": "006_renderer_avatar_packages",
+    "migration_checksum_sha256": "TBD",
+    "migration_change": "ADDITIVE"
+  },
+  "evidence_root": "TBD",
+  "gates": [],
+  "independent_reviews": [],
+  "independent_review_status": "PENDING",
+  "rollback": {
+    "status": "IN_PROGRESS",
+    "target_commit": "a124f63b8f3b5e499b6c561e78199a26f860edc9",
+    "target_tree": "8a2f4e36ca0751b6106a174f7dae63be9299ad5b",
+    "data_reversal": "FORBIDDEN; retain P3 database and serve P2.3 from a verified pre-P3 database copy",
+    "evidence": []
+  },
+  "user_decision": {
+    "status": "PENDING",
+    "decision": null,
+    "date": null
+  }
+}

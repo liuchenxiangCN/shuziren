@@ -1577,6 +1577,12 @@ def test_p21_backup_restore_tamper_and_retention_preserve_sidecars(
         "config_draft_query_assignments",
         "query_validation_records",
         "release_target_query_snapshots",
+        "avatar_packages",
+        "avatar_package_versions",
+        "avatar_package_resources",
+        "screen_avatar_bindings",
+        "avatar_prefetch_records",
+        "avatar_switch_records",
         "security_audit_events",
     )
     with service.store.connect() as connection:

@@ -4,13 +4,20 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: standard-product changes
-- Last reviewed: 2026-07-29
+- Last reviewed: 2026-08-04
 - Historical POC changelog: [archive/poc-v1/root-snapshots/CHANGELOG_FULL_HISTORY.md](archive/poc-v1/root-snapshots/CHANGELOG_FULL_HISTORY.md)
 
 ## Unreleased
 
 ### Added
 
+- Active P3 candidate with a fixed test-only Renderer registry, immutable
+  declarative AvatarPackage versions, safe preview, exact-hash per-screen
+  prefetch, atomic publication, device-scoped current read and audited
+  rollback. It does not claim real 2D/3D or production Renderer support.
+- Additive `006_renderer_avatar_packages`, package/resource integrity and
+  recovery validation, three-screen isolation tests, local/browser P3
+  preview launchers and a strict P3 contract/Secret gate.
 - Accepted P2.3 screen-bound resilience drill, per-screen metadata-only
   execution list and queue-status view, and a reproducible deployment-local
   capacity measurement harness; no schema migration and no device-prefix
@@ -69,6 +76,9 @@
 
 ### Changed
 
+- P3 is active and awaiting candidate evidence, independent review and an
+  explicit user decision. P2.4 is intentionally deferred and remains blocked
+  by its official-plugin evidence gate.
 - G0 and P1.0 through P2.3 are explicitly accepted. P2.3 candidate
   `a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
   `8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, is the accepted runtime
@@ -103,6 +113,10 @@
 
 ### Security
 
+- P3 accepts only one bounded declarative JSON test resource with normalized
+  paths, exact media type, semantic version, byte/file limits and SHA-256;
+  script, Wasm, HTML/CSS/SVG, archive, executable, malformed and incompatible
+  package inputs fail before storage or binding changes.
 - P2.2 accepts connection material only through write-only Secret routes,
   rejects free SQL and closed-grammar escapes, binds immutable datasets to
   screen/device release snapshots and makes permission, validation and

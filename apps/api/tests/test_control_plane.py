@@ -2031,7 +2031,7 @@ def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
         screens = connection.execute("SELECT screen_id, slug FROM screen_instances ORDER BY slug").fetchall()
         assert tuple(screens[0]) == ("screen-trust-fixture", "screen-1")
         assert len(screens) == 3
-        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 5
+        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 6
         assert [
             row[0]
             for row in connection.execute(
@@ -2041,7 +2041,8 @@ def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
                     'THREE_SCREEN_INVENTORY_MIGRATED',
                     'PUBLISH_ROLLBACK_RECOVERY_SCHEMA_MIGRATED',
                     'CAPABILITY_PROFILE_SCHEMA_MIGRATED',
-                    'CONTROLLED_QUERY_SCHEMA_MIGRATED'
+                    'CONTROLLED_QUERY_SCHEMA_MIGRATED',
+                    'RENDERER_AVATAR_SCHEMA_MIGRATED'
                 )
                 ORDER BY sequence
                 """
@@ -2051,10 +2052,11 @@ def test_accepted_p1_1_copy_upgrade_and_failed_migration_are_recoverable(
             "PUBLISH_ROLLBACK_RECOVERY_SCHEMA_MIGRATED",
             "CAPABILITY_PROFILE_SCHEMA_MIGRATED",
             "CONTROLLED_QUERY_SCHEMA_MIGRATED",
+            "RENDERER_AVATAR_SCHEMA_MIGRATED",
         ]
     ControlPlaneService(str(legacy_path), root_key, preview_mode=True)
     with service.store.connect() as connection:
-        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 5
+        assert connection.execute("SELECT COUNT(*) FROM security_audit_events").fetchone()[0] == 6
 
     with sqlite3.connect(pre_migration_copy) as connection:
         assert connection.execute("SELECT version, checksum_sha256 FROM schema_migrations").fetchone() == (

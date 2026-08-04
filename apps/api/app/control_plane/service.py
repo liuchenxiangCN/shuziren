@@ -19,6 +19,7 @@ from app.control_plane.p1_3 import P13ControlPlane
 from app.control_plane.p2_1 import P21ControlPlane
 from app.control_plane.p2_2 import P22ControlPlane
 from app.control_plane.p2_3 import P23ControlPlane
+from app.control_plane.p3 import P3ControlPlane
 from app.control_plane.security import (
     Ciphertext,
     PasswordPolicy,
@@ -211,6 +212,22 @@ IDEMPOTENCY_OPERATION_ROUTES = {
         "runResilienceDrill",
         "/api/v1/control-plane/screen-instances/{screen_id}/resilience-drills",
     ),
+    "createAvatarPackageVersion": (
+        "createAvatarPackageVersion",
+        "/api/v1/control-plane/avatar-packages",
+    ),
+    "prefetchAvatarPackage": (
+        "prefetchAvatarPackage",
+        "/api/v1/control-plane/screen-instances/{screen_id}/avatar-package-versions/{package_version_id}:prefetch",
+    ),
+    "publishAvatarToScreen": (
+        "publishAvatarToScreen",
+        "/api/v1/control-plane/screen-instances/{screen_id}/avatar-publications",
+    ),
+    "rollbackAvatarOnScreen": (
+        "rollbackAvatarOnScreen",
+        "/api/v1/control-plane/screen-instances/{screen_id}/avatar-rollbacks",
+    ),
     "reviseConfigDraft": (
         "reviseConfigDraft",
         "/api/v1/control-plane/config-drafts/{draft_id}:revise",
@@ -394,6 +411,7 @@ class ControlPlaneService:
             else Path(database_path).resolve().parent / "query-sources",
         )
         self.p2_3 = P23ControlPlane(self)
+        self.p3 = P3ControlPlane(self)
 
     def status(self) -> dict[str, Any]:
         with self.store.connect() as connection:

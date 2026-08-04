@@ -16,6 +16,7 @@ MIGRATION_002_VERSION = "002_three_screen_inventory"
 MIGRATION_003_VERSION = "003_publish_rollback_recovery"
 MIGRATION_004_VERSION = "004_capability_profiles"
 MIGRATION_005_VERSION = "005_controlled_querying"
+MIGRATION_006_VERSION = "006_renderer_avatar_packages"
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -1705,6 +1706,235 @@ END;
 
 MIGRATION_005_CHECKSUM_SHA256 = hashlib.sha256(CONTROLLED_QUERYING_SCHEMA_SQL.encode("utf-8")).hexdigest()
 
+RENDERER_AVATAR_SCHEMA_SQL = """
+CREATE TABLE avatar_packages (
+    package_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    avatar_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    UNIQUE (tenant_id, deployment_id, site_id, avatar_id),
+    UNIQUE (tenant_id, deployment_id, site_id, package_id),
+    FOREIGN KEY (tenant_id, deployment_id, site_id)
+        REFERENCES sites(tenant_id, deployment_id, site_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, created_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE avatar_package_versions (
+    package_version_id TEXT PRIMARY KEY,
+    package_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    version TEXT NOT NULL,
+    schema_version TEXT NOT NULL CHECK (schema_version = 'p3_avatar_package_v1'),
+    renderer_type TEXT NOT NULL CHECK (renderer_type = 'test_card'),
+    renderer_contract_version TEXT NOT NULL CHECK (renderer_contract_version = '1.0.0'),
+    avatar_type TEXT NOT NULL CHECK (avatar_type = 'test'),
+    canonical_manifest_json TEXT NOT NULL,
+    manifest_hash TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    canonical_preview_json TEXT NOT NULL,
+    total_bytes INTEGER NOT NULL CHECK (total_bytes BETWEEN 1 AND 2097152),
+    created_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    UNIQUE (package_id, version),
+    UNIQUE (tenant_id, deployment_id, site_id, package_version_id),
+    FOREIGN KEY (tenant_id, deployment_id, site_id, package_id)
+        REFERENCES avatar_packages(tenant_id, deployment_id, site_id, package_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, created_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_avatar_package_versions_package
+    ON avatar_package_versions(package_id, created_at, package_version_id);
+
+CREATE TABLE avatar_package_resources (
+    package_version_id TEXT NOT NULL,
+    resource_path TEXT NOT NULL,
+    media_type TEXT NOT NULL CHECK (
+        media_type = 'application/vnd.shuziren.test-avatar+json'
+    ),
+    size_bytes INTEGER NOT NULL CHECK (size_bytes BETWEEN 1 AND 2097152),
+    sha256 TEXT NOT NULL,
+    content_blob BLOB NOT NULL,
+    PRIMARY KEY (package_version_id, resource_path),
+    FOREIGN KEY (package_version_id)
+        REFERENCES avatar_package_versions(package_version_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE screen_avatar_bindings (
+    screen_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    current_package_version_id TEXT NOT NULL,
+    previous_package_version_id TEXT,
+    binding_generation INTEGER NOT NULL CHECK (binding_generation >= 1),
+    updated_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    updated_at REAL NOT NULL,
+    UNIQUE (tenant_id, deployment_id, screen_id),
+    FOREIGN KEY (tenant_id, deployment_id, site_id, screen_id)
+        REFERENCES screen_instances(tenant_id, deployment_id, site_id, screen_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, site_id, current_package_version_id)
+        REFERENCES avatar_package_versions(
+            tenant_id, deployment_id, site_id, package_version_id
+        ) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, site_id, previous_package_version_id)
+        REFERENCES avatar_package_versions(
+            tenant_id, deployment_id, site_id, package_version_id
+        ) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, updated_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE avatar_prefetch_records (
+    prefetch_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    screen_id TEXT NOT NULL,
+    package_version_id TEXT NOT NULL,
+    expected_content_hash TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('READY', 'FAILED')),
+    failure_code TEXT,
+    requested_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    CHECK (
+        (outcome = 'READY' AND failure_code IS NULL)
+        OR (outcome = 'FAILED' AND failure_code IS NOT NULL)
+    ),
+    FOREIGN KEY (tenant_id, deployment_id, site_id, screen_id)
+        REFERENCES screen_instances(tenant_id, deployment_id, site_id, screen_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, site_id, package_version_id)
+        REFERENCES avatar_package_versions(
+            tenant_id, deployment_id, site_id, package_version_id
+        ) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, requested_by_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_avatar_prefetch_screen_version
+    ON avatar_prefetch_records(
+        tenant_id, deployment_id, screen_id, package_version_id, created_at DESC
+    );
+
+CREATE TABLE avatar_switch_records (
+    switch_id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    deployment_id TEXT NOT NULL,
+    site_id TEXT NOT NULL,
+    screen_id TEXT NOT NULL,
+    from_package_version_id TEXT,
+    to_package_version_id TEXT NOT NULL,
+    operation TEXT NOT NULL CHECK (operation IN ('PUBLISH', 'ROLLBACK')),
+    outcome TEXT NOT NULL CHECK (outcome = 'SUCCEEDED'),
+    binding_generation INTEGER NOT NULL CHECK (binding_generation >= 1),
+    reason TEXT NOT NULL,
+    actor_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+    created_at REAL NOT NULL,
+    FOREIGN KEY (tenant_id, deployment_id, site_id, screen_id)
+        REFERENCES screen_instances(tenant_id, deployment_id, site_id, screen_id)
+        ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, site_id, to_package_version_id)
+        REFERENCES avatar_package_versions(
+            tenant_id, deployment_id, site_id, package_version_id
+        ) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, site_id, from_package_version_id)
+        REFERENCES avatar_package_versions(
+            tenant_id, deployment_id, site_id, package_version_id
+        ) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, deployment_id, actor_user_id)
+        REFERENCES users(tenant_id, deployment_id, user_id)
+        ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_avatar_switch_screen
+    ON avatar_switch_records(tenant_id, deployment_id, screen_id, created_at DESC);
+
+CREATE TRIGGER avatar_packages_no_update
+BEFORE UPDATE ON avatar_packages
+BEGIN
+    SELECT RAISE(ABORT, 'avatar packages are immutable');
+END;
+
+CREATE TRIGGER avatar_packages_no_delete
+BEFORE DELETE ON avatar_packages
+BEGIN
+    SELECT RAISE(ABORT, 'avatar packages are immutable');
+END;
+
+CREATE TRIGGER avatar_package_versions_no_update
+BEFORE UPDATE ON avatar_package_versions
+BEGIN
+    SELECT RAISE(ABORT, 'avatar package versions are immutable');
+END;
+
+CREATE TRIGGER avatar_package_versions_no_delete
+BEFORE DELETE ON avatar_package_versions
+BEGIN
+    SELECT RAISE(ABORT, 'avatar package versions are immutable');
+END;
+
+CREATE TRIGGER avatar_package_resources_no_update
+BEFORE UPDATE ON avatar_package_resources
+BEGIN
+    SELECT RAISE(ABORT, 'avatar package resources are immutable');
+END;
+
+CREATE TRIGGER avatar_package_resources_no_delete
+BEFORE DELETE ON avatar_package_resources
+BEGIN
+    SELECT RAISE(ABORT, 'avatar package resources are immutable');
+END;
+
+CREATE TRIGGER screen_avatar_bindings_scope_no_update
+BEFORE UPDATE OF screen_id, tenant_id, deployment_id, site_id
+ON screen_avatar_bindings
+BEGIN
+    SELECT RAISE(ABORT, 'avatar binding ownership is immutable');
+END;
+
+CREATE TRIGGER avatar_prefetch_records_no_update
+BEFORE UPDATE ON avatar_prefetch_records
+BEGIN
+    SELECT RAISE(ABORT, 'avatar prefetch records are immutable');
+END;
+
+CREATE TRIGGER avatar_prefetch_records_no_delete
+BEFORE DELETE ON avatar_prefetch_records
+BEGIN
+    SELECT RAISE(ABORT, 'avatar prefetch records are immutable');
+END;
+
+CREATE TRIGGER avatar_switch_records_no_update
+BEFORE UPDATE ON avatar_switch_records
+BEGIN
+    SELECT RAISE(ABORT, 'avatar switch records are immutable');
+END;
+
+CREATE TRIGGER avatar_switch_records_no_delete
+BEFORE DELETE ON avatar_switch_records
+BEGIN
+    SELECT RAISE(ABORT, 'avatar switch records are immutable');
+END;
+"""
+
+MIGRATION_006_CHECKSUM_SHA256 = hashlib.sha256(RENDERER_AVATAR_SCHEMA_SQL.encode("utf-8")).hexdigest()
+
 MIGRATIONS = (
     (MIGRATION_001_VERSION, MIGRATION_001_CHECKSUM_SHA256, SCHEMA_SQL),
     (MIGRATION_002_VERSION, MIGRATION_002_CHECKSUM_SHA256, INVENTORY_SCHEMA_SQL),
@@ -1723,9 +1953,14 @@ MIGRATIONS = (
         MIGRATION_005_CHECKSUM_SHA256,
         CONTROLLED_QUERYING_SCHEMA_SQL,
     ),
+    (
+        MIGRATION_006_VERSION,
+        MIGRATION_006_CHECKSUM_SHA256,
+        RENDERER_AVATAR_SCHEMA_SQL,
+    ),
 )
-MIGRATION_VERSION = MIGRATION_005_VERSION
-MIGRATION_CHECKSUM_SHA256 = MIGRATION_005_CHECKSUM_SHA256
+MIGRATION_VERSION = MIGRATION_006_VERSION
+MIGRATION_CHECKSUM_SHA256 = MIGRATION_006_CHECKSUM_SHA256
 
 
 class ControlPlaneStore:
@@ -1801,6 +2036,8 @@ class ControlPlaneStore:
                         self._append_p21_migration_audit(connection, now)
                     if version == MIGRATION_005_VERSION:
                         self._append_p22_migration_audit(connection, now)
+                    if version == MIGRATION_006_VERSION:
+                        self._append_p3_migration_audit(connection, now)
                     connection.execute(
                         """
                         INSERT INTO schema_migrations(version, checksum_sha256, applied_at)
@@ -1811,6 +2048,7 @@ class ControlPlaneStore:
                 self.validate_schema_object_integrity(connection, MIGRATIONS)
                 self.validate_p21_schema_integrity(connection)
                 self.validate_p22_schema_integrity(connection)
+                self.validate_p3_schema_integrity(connection)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -1864,6 +2102,22 @@ class ControlPlaneStore:
         if registered is None:
             return
         if registered["checksum_sha256"] != MIGRATION_005_CHECKSUM_SHA256:
+            raise RuntimeError("Control-plane migration checksum mismatch")
+
+        ControlPlaneStore.validate_schema_object_integrity(connection, MIGRATIONS)
+
+    @staticmethod
+    def validate_p3_schema_integrity(connection: sqlite3.Connection) -> None:
+        registered = connection.execute(
+            """
+            SELECT checksum_sha256 FROM schema_migrations
+            WHERE version = ?
+            """,
+            (MIGRATION_006_VERSION,),
+        ).fetchone()
+        if registered is None:
+            return
+        if registered["checksum_sha256"] != MIGRATION_006_CHECKSUM_SHA256:
             raise RuntimeError("Control-plane migration checksum mismatch")
 
         ControlPlaneStore.validate_schema_object_integrity(connection, MIGRATIONS)
@@ -2325,6 +2579,73 @@ class ControlPlaneStore:
                 event_hash_schema_version, created_at
             ) VALUES (
                 ?, 'CONTROLLED_QUERY_SCHEMA_MIGRATED',
+                'LOCAL_MIGRATION', NULL, 'DEPLOYMENT', ?, 'SUCCESS',
+                'named forward migration', ?, ?, ?,
+                'p1_security_audit_event_hash_v1', ?
+            )
+            """,
+            (
+                event_id,
+                metadata["deployment_id"],
+                canonical_json(details),
+                previous_hash,
+                event_hash,
+                now,
+            ),
+        )
+
+    @staticmethod
+    def _append_p3_migration_audit(
+        connection: sqlite3.Connection,
+        now: float,
+    ) -> None:
+        metadata = connection.execute("SELECT * FROM control_plane_metadata WHERE singleton = 1").fetchone()
+        if metadata is None:
+            return
+        previous = connection.execute(
+            "SELECT event_hash FROM security_audit_events ORDER BY sequence DESC LIMIT 1"
+        ).fetchone()
+        previous_hash = previous["event_hash"] if previous else None
+        event_id = uuid7()
+        details = {
+            "migration_version": MIGRATION_006_VERSION,
+            "avatar_schema_version": "p3_avatar_package_v1",
+            "renderer_registry_version": "p3_renderer_registry_001",
+            "test_only": True,
+            "preserved_screen_count": connection.execute(
+                """
+                SELECT COUNT(*) AS count FROM screen_instances
+                WHERE tenant_id = ? AND deployment_id = ?
+                """,
+                (metadata["tenant_id"], metadata["deployment_id"]),
+            ).fetchone()["count"],
+        }
+        payload = canonical_json(
+            {
+                "event_id": event_id,
+                "event_type": "RENDERER_AVATAR_SCHEMA_MIGRATED",
+                "actor_type": "LOCAL_MIGRATION",
+                "actor_id": None,
+                "target_type": "DEPLOYMENT",
+                "target_id": metadata["deployment_id"],
+                "outcome": "SUCCESS",
+                "reason": "named forward migration",
+                "details": details,
+                "previous_event_hash": previous_hash,
+                "created_at": now,
+            }
+        )
+        event_hash = hashlib.sha256(
+            b"shuziren:p1:security-audit-event:v1\0" + payload.encode("utf-8")
+        ).hexdigest()
+        connection.execute(
+            """
+            INSERT INTO security_audit_events(
+                event_id, event_type, actor_type, actor_id, target_type, target_id,
+                outcome, reason, details_json, previous_event_hash, event_hash,
+                event_hash_schema_version, created_at
+            ) VALUES (
+                ?, 'RENDERER_AVATAR_SCHEMA_MIGRATED',
                 'LOCAL_MIGRATION', NULL, 'DEPLOYMENT', ?, 'SUCCESS',
                 'named forward migration', ?, ?, ?,
                 'p1_security_audit_event_hash_v1', ?

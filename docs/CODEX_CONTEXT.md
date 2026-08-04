@@ -4,7 +4,7 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: standard product target and current execution state
-- Last reviewed: 2026-07-29
+- Last reviewed: 2026-08-04
 - Historical context: [archive/poc-v1/root-snapshots/CODEX_CONTEXT_FULL_HISTORY.md](archive/poc-v1/root-snapshots/CODEX_CONTEXT_FULL_HISTORY.md)
 
 ## Product
@@ -15,7 +15,7 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P2.3 Accepted; P2.4 Blocked By External Gate`.
+Current phase: `Productization P3 Active; P2.4 Deferred And Blocked By External Gate`.
 G0 and P1.0 through P2.3 are explicitly accepted. P1.1 proves local
 identity/device trust, P1.2 three-screen inventory, P1.3
 draft/release/recovery and P2.1 per-screen capability profiles. P2.2
@@ -28,7 +28,9 @@ resilience drill for equivalent fallback versus terminal no-fallback, bounded
 backpressure observability and a deployment-local capacity measurement, with
 no schema migration. Its automated, browser, capacity, Compose, rollback and
 independent-review gates passed, and the user accepted it without conditions
-on 2026-07-29. P2.4 remains blocked by the FineReport plugin external gate.
+on 2026-07-29. The user activated P3 on 2026-08-04; it is not yet implemented
+or accepted and is limited to the test-only Renderer / AvatarPackage safe
+switching result. P2.4 remains blocked and in product scope.
 
 ## Frozen Product Boundaries
 
@@ -64,9 +66,7 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 Accepted behavior is recorded under [acceptance/productization](acceptance/productization).
 P2.1/P2.2 target boundaries remain under [product/contracts](product/contracts);
 the accepted P2.2 facts and limitations are under
-[acceptance/productization/P2.2](acceptance/productization/P2.2). P2.3 is
-active with its result card frozen at
-[acceptance/productization/P2.3/ACCEPTANCE_CARD.md](acceptance/productization/P2.3/ACCEPTANCE_CARD.md).
+[acceptance/productization/P2.2](acceptance/productization/P2.2). P3 is active with its result card frozen at [acceptance/productization/P3/ACCEPTANCE_CARD.md](acceptance/productization/P3/ACCEPTANCE_CARD.md).
 
 ## Non-Negotiable Rules
 

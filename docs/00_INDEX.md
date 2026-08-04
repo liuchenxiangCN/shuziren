@@ -36,6 +36,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [acceptance/productization/P2.1](acceptance/productization/P2.1) | Acceptance evidence | Accepted P2.1 capability-profile result and decision |
 | [acceptance/productization/P2.2](acceptance/productization/P2.2) | Acceptance evidence | Accepted P2.2 controlled-query result and decision |
 | [acceptance/productization/P2.3](acceptance/productization/P2.3) | Acceptance evidence | Accepted P2.3 resilience-certification result and decision |
+| [acceptance/productization/P3](acceptance/productization/P3) | Acceptance evidence | Active P3 test-only Renderer and safe AvatarPackage switching candidate; decision pending |
 
 ## Product Target
 
@@ -54,6 +55,7 @@ The root `AGENTS.md` is stable Codex policy and the root `README.md` is stable p
 | [decisions/ADR-0029-p2-1-capability-profile-sidecars.md](decisions/ADR-0029-p2-1-capability-profile-sidecars.md) | Accepted ADR | P2.1 immutable capability-profile sidecars accepted with P2.1 |
 | [decisions/ADR-0030-p2-2-controlled-query-sidecar.md](decisions/ADR-0030-p2-2-controlled-query-sidecar.md) | Accepted ADR | P2.2 controlled-querying sidecar accepted with P2.2 |
 | [decisions/ADR-0031-p2-3-resilience-drill-and-observability.md](decisions/ADR-0031-p2-3-resilience-drill-and-observability.md) | Accepted ADR | P2.3 resilience drill, queue observability and capacity measurement accepted with P2.3 |
+| [decisions/ADR-0032-p3-test-renderer-and-avatar-switching.md](decisions/ADR-0032-p3-test-renderer-and-avatar-switching.md) | Proposed ADR | P3 test-only Renderer, immutable AvatarPackage and screen-bound safe switching candidate |
 
 ## Implemented POC Baseline
 

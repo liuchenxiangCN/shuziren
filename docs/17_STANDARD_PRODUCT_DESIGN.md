@@ -398,6 +398,10 @@ FineReportAiPluginAskProvider
 - 画布比例、透明背景和安全区域。
 - 许可证、版权方、有效期和使用范围。
 
+`avatar_type=test` 只用于 P3 的内置声明式测试 Renderer，始终标记为
+`TEST_ONLY` 且不可作为生产形象。它验证接口、预取、按屏切换和回滚，
+不扩大上述真实形象类型与格式承诺。
+
 支持格式按已验证 Renderer Adapter 的兼容矩阵开放。透明视频、序列帧、Live2D / Spine、glTF / GLB / VRM 等仅是未来候选，不属于 V1 已承诺格式。具体格式必须经过渲染器、浏览器、显卡和授权验证后才标记为“产品支持”。
 
 ### 10.3 发布流程

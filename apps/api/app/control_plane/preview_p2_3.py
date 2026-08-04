@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import base64
 import getpass
+import hashlib
 import io
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -86,6 +88,135 @@ def _login(app: FastAPI, username: str, password: str) -> tuple[TestClient, str]
 
 def _mutation_headers(csrf: str, **extra: str) -> dict[str, str]:
     return {"Origin": ORIGIN, "X-CSRF-Token": csrf, **extra}
+
+
+def _test_avatar_payload(
+    site_id: str, version: str, label: str, background: str, accent: str
+) -> dict[str, Any]:
+    preview = {
+        "schema_version": "p3_test_avatar_preview_v1",
+        "label": label,
+        "background": background,
+        "accent": accent,
+    }
+    content = json.dumps(preview, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+    digest = hashlib.sha256(content).hexdigest()
+    return {
+        "site_id": site_id,
+        "manifest": {
+            "schema_version": "p3_avatar_package_v1",
+            "avatar_id": "test-guide",
+            "version": version,
+            "display_name": "P3 test guide",
+            "avatar_type": "test",
+            "renderer_type": "test_card",
+            "renderer_version_range": "^1.0.0",
+            "entry_asset": "avatar.json",
+            "resources": [
+                {
+                    "path": "avatar.json",
+                    "media_type": "application/vnd.shuziren.test-avatar+json",
+                    "size_bytes": len(content),
+                    "sha256": digest,
+                }
+            ],
+            "states": {
+                "idle": "avatar.json",
+                "listening": "avatar.json",
+                "thinking": "avatar.json",
+                "speaking": "avatar.json",
+                "error": "avatar.json",
+            },
+            "lip_sync_mode": "volume",
+            "requirements": {
+                "browser": "test-contract",
+                "gpu": "not-required",
+                "vram_mb": 0,
+                "memory_mb": 64,
+            },
+            "canvas": {
+                "aspect_ratio": "1:1",
+                "transparent_background": False,
+                "safe_area_percent": 8,
+            },
+            "license": {
+                "kind": "TEST_ONLY",
+                "rights_holder": "Generated P3 preview fixture",
+                "expires_at": None,
+                "usage_scope": "DEVELOPMENT_PREVIEW",
+            },
+        },
+        "files": [
+            {
+                "path": "avatar.json",
+                "content_base64": base64.b64encode(content).decode("ascii"),
+            }
+        ],
+    }
+
+
+def _seed_p3_avatar_assets(
+    implementation: TestClient,
+    csrf: str,
+    screens: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    plans = (
+        ("1.0.0", "P3 teal test guide", "#E8F5F0", "#147D64"),
+        ("2.0.0", "P3 gold test guide", "#FFF5D8", "#A56A00"),
+    )
+    versions = []
+    for index, (version, label, background, accent) in enumerate(plans, start=1):
+        created = implementation.post(
+            "/api/v1/control-plane/avatar-packages",
+            headers=_mutation_headers(
+                csrf,
+                **{"Idempotency-Key": f"p3-preview-avatar-create-{index}"},
+            ),
+            json=_test_avatar_payload(screens[0]["site_id"], version, label, background, accent),
+        )
+        if created.status_code != 201:
+            raise SystemExit(f"P3 preview avatar creation failed: {created.text}")
+        versions.append(created.json())
+
+    def prefetch_and_publish(screen: dict[str, Any], version: dict[str, Any], suffix: str) -> None:
+        screen_id = screen["screen_id"]
+        prefetched = implementation.post(
+            f"/api/v1/control-plane/screen-instances/{screen_id}/"
+            f"avatar-package-versions/{version['package_version_id']}:prefetch",
+            headers=_mutation_headers(
+                csrf,
+                **{"Idempotency-Key": f"p3-preview-avatar-prefetch-{suffix}"},
+            ),
+            json={"expected_content_hash": version["content_hash"]},
+        )
+        if prefetched.status_code != 200 or prefetched.json()["outcome"] != "READY":
+            raise SystemExit(f"P3 preview avatar prefetch failed: {prefetched.text}")
+        binding = implementation.get(f"/api/v1/control-plane/screen-instances/{screen_id}/avatar-binding")
+        if binding.status_code != 200:
+            raise SystemExit(f"P3 preview avatar binding fetch failed: {binding.text}")
+        current = binding.json()
+        published = implementation.post(
+            f"/api/v1/control-plane/screen-instances/{screen_id}/avatar-publications",
+            headers=_mutation_headers(
+                csrf,
+                **{
+                    "Idempotency-Key": f"p3-preview-avatar-publish-{suffix}",
+                    "If-Match": current["etag"],
+                },
+            ),
+            json={
+                "package_version_id": version["package_version_id"],
+                "expected_binding_generation": current["binding_generation"],
+                "reason": f"publish P3 preview avatar {suffix}",
+            },
+        )
+        if published.status_code != 200:
+            raise SystemExit(f"P3 preview avatar publication failed: {published.text}")
+
+    prefetch_and_publish(screens[0], versions[0], "screen-one-v1")
+    prefetch_and_publish(screens[1], versions[0], "screen-two-v1")
+    prefetch_and_publish(screens[1], versions[1], "screen-two-v2")
+    return versions
 
 
 def _request_action(
@@ -516,6 +647,11 @@ def main() -> int:
         "--container-backup-root",
         default="/app/data/control-plane-p2-3-backups",
     )
+    parser.add_argument(
+        "--seed-p3",
+        action="store_true",
+        help="Also seed the test-only P3 AvatarPackage switching fixture.",
+    )
     args = parser.parse_args()
 
     env_path = Path(args.env_file).resolve()
@@ -539,9 +675,13 @@ def main() -> int:
         screen_id=args.screen_id,
         identities=identities,
     )
-    status = service.status()
-    if status["migration_version"] != MIGRATION_005_VERSION:
-        raise SystemExit("P2.3 preview did not reach migration 005")
+    with service.store.connect() as connection:
+        migration_005 = connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE version = ?",
+            (MIGRATION_005_VERSION,),
+        ).fetchone()
+    if migration_005 is None:
+        raise SystemExit("P2.3 preview did not preserve migration 005")
 
     app = FastAPI()
     app.state.control_plane_service = service
@@ -623,6 +763,8 @@ def main() -> int:
             }
         )
 
+    avatar_versions = _seed_p3_avatar_assets(implementation, csrf_impl, screens) if args.seed_p3 else []
+
     env_path.write_text(
         "\n".join(
             (
@@ -654,6 +796,11 @@ def main() -> int:
         )
     for item in published:
         print(f"Screen ID: {item['screen_id']} ({item['profile_name']}, preset={item['preset']})")
+    if avatar_versions:
+        print(
+            "P3 test-only AvatarPackage versions seeded: "
+            + ", ".join(version["version"] for version in avatar_versions)
+        )
     print("All three screens are published and acknowledged; the fallback screen resolves")
     print("tts drills through mock_tts -> browser_text_fallback (permission-equivalent).")
     print("Passwords and root key were not written to stdout.")

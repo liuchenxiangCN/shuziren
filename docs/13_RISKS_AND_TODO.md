@@ -4,7 +4,7 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: active standard-product risks and current external blockers
-- Last reviewed: 2026-07-29
+- Last reviewed: 2026-08-04
 - Historical POC risks: [archive/poc-v1/root-snapshots/RISKS_AND_TODO_FULL_HISTORY.md](archive/poc-v1/root-snapshots/RISKS_AND_TODO_FULL_HISTORY.md)
 
 Customer-specific and POC现场 issues are not tracked here. They remain in customer documents or the archive.
@@ -26,7 +26,7 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product State And Blockers
 
-### P2.3 Accepted; P2.4 Blocked By External Gate
+### P3 Active; P2.4 Deferred And Blocked By External Gate
 
 The user explicitly accepted P2.3 without conditions on 2026-07-29. Candidate
 `a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
@@ -34,6 +34,11 @@ The user explicitly accepted P2.3 without conditions on 2026-07-29. Candidate
 Accepted P2.2 candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4` remains
 the P2.3 product rollback target; P2.3 added no migration, so no data
 reversal is required.
+
+The user activated P3 on 2026-08-04 while explicitly leaving P2.4 deferred.
+P3 must keep R-049 visible: only the test Renderer and test AvatarPackage
+contract may be accepted. No real 2D/3D file format, SDK, asset, browser/GPU
+combination or supplier compatibility may be inferred from P3 evidence.
 
 - P2.2 automated, browser, real-database, migration/recovery, Docker,
   Secret-scan and accepted-P2.1 rollback evidence passes; final independent

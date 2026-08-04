@@ -4,12 +4,12 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: exactly one active result batch
-- Last reviewed: 2026-07-29
+- Last reviewed: 2026-08-04
 - Historical tasks: [archive/poc-v1/root-snapshots/NEXT_ACTIONS_FULL_HISTORY.md](archive/poc-v1/root-snapshots/NEXT_ACTIONS_FULL_HISTORY.md)
 
 ## Current Phase
 
-`Productization P2.3 Accepted; P2.4 Blocked By External Gate`.
+`Productization P3 Active; P2.4 Deferred And Blocked By External Gate`.
 
 G0 and P1.0 through P2.3 are explicitly accepted. The user accepted P2.3
 without conditions or scope reduction through `通过` on 2026-07-29. Candidate
@@ -23,18 +23,22 @@ smoke, accepted-P2.2 rollback and independent review pass; reviewer Faraday
 reported zero blocking findings and seven non-blocking findings with N1–N3
 closed before candidate binding.
 
-Accepted P2.2 candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-`aaa499de416b522e21c02f41119024296fc2c3a0`, remains the product rollback
-target for P2.3; P2.3 added no migration, so no data reversal is required.
+On 2026-08-04 the user explicitly instructed `开始P3`. This defers P2.4
+without removing it from product scope and activates exactly one result batch:
+`P3 Renderer Extension Mechanism`. The accepted P2.3 candidate remains the
+base and rollback target while P3 is active.
 
 ## Next Task
 
-Await an explicit user instruction for the next batch. P2.4
-`FineReport Official Plugin` remains blocked by its external gate: official
-API, authentication, session, permission-inheritance and upgrade-stability
-evidence must exist before P2.4 activation.
+Implement and verify the frozen
+[P3 acceptance card](acceptance/productization/P3/ACCEPTANCE_CARD.md): a
+test-only Renderer catalog and versioned AvatarPackage contract, safe package
+validation, management preview, screen prefetch, atomic screen-bound switch,
+failure retention and rollback. P3 must not claim support for any real 2D or
+3D format, supplier SDK or licensed asset.
 
-Acceptance of P2.3 does not activate P2.4.
+P2.4 `FineReport Official Plugin` remains queued and blocked by its external
+gate. Starting P3 neither passes nor removes P2.4.
 
 ### Accepted P2.3 Baseline
 

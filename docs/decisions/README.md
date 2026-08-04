@@ -4,7 +4,7 @@
 
 - Lifecycle: `AUTHORITATIVE_CURRENT`
 - Scope: ADR navigation and lifecycle
-- Last reviewed: 2026-07-29
+- Last reviewed: 2026-08-04
 
 ## Current Product Decisions
 
@@ -18,6 +18,10 @@
 - [ADR-0031](ADR-0031-p2-3-resilience-drill-and-observability.md): accepted
   screen-bound resilience drill, queue observability and deployment-local
   capacity measurement with no schema migration.
+- [ADR-0032](ADR-0032-p3-test-renderer-and-avatar-switching.md): proposed P3
+  built-in test Renderer, immutable declarative AvatarPackage and screen-bound
+  prefetch, switch and rollback contract; it remains proposed until P3 is
+  explicitly accepted.
 
 ## Implemented POC Decisions
 

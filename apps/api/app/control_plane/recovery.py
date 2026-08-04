@@ -32,6 +32,12 @@ from app.control_plane.p2_2 import (
     QUERY_SNAPSHOT_SCHEMA_VERSION,
     QUERY_VALIDATOR_VERSION,
 )
+from app.control_plane.p3 import (
+    AVATAR_SCHEMA_VERSION,
+    TEST_RENDERER_TYPE,
+    TEST_RENDERER_VERSION,
+    P3ControlPlane,
+)
 from app.control_plane.security import Ciphertext, PurposeKeyring, canonical_json
 from app.control_plane.store import LOGICAL_SCHEMA_VERSION, MIGRATIONS, ControlPlaneStore
 
@@ -288,7 +294,11 @@ class BackupManager:
     @contextmanager
     def staged_snapshot(self, bundle_name: str) -> Iterator[tuple[Path, VerifiedSnapshot]]:
         snapshot = self.load_verified_snapshot(bundle_name)
-        with tempfile.TemporaryDirectory(prefix="shuziren-p1-3-restore-") as directory:
+        live_parent = self.store.path.resolve().parent
+        with tempfile.TemporaryDirectory(
+            prefix=".shuziren-p1-3-restore-",
+            dir=live_parent,
+        ) as directory:
             path = Path(directory) / "staged-control-plane.db"
             path.write_bytes(snapshot.native_snapshot)
             yield path, snapshot
@@ -435,8 +445,10 @@ class BackupManager:
                     raise BackupIntegrityError("Backup migration registry is invalid")
                 try:
                     ControlPlaneStore.validate_p21_schema_integrity(connection)
+                    ControlPlaneStore.validate_p22_schema_integrity(connection)
+                    ControlPlaneStore.validate_p3_schema_integrity(connection)
                 except RuntimeError as exc:
-                    raise BackupIntegrityError("Backup P2.1 schema object verification failed") from exc
+                    raise BackupIntegrityError("Backup schema object verification failed") from exc
                 releases = connection.execute(
                     """
                     SELECT release_target_id, canonical_effective_config_json, content_hash
@@ -451,6 +463,7 @@ class BackupManager:
                         raise BackupIntegrityError("Backup release hash verification failed")
                 BackupManager._validate_p21_capability_data(connection)
                 BackupManager._validate_p22_query_data(connection)
+                BackupManager._validate_p3_avatar_data(connection)
                 BackupManager._validate_audit_chain(connection)
                 tables = [
                     row["name"]
@@ -1706,6 +1719,167 @@ class BackupManager:
                 or not BackupManager._is_sha256(execution["parameter_digest"])
             ):
                 raise BackupIntegrityError("Controlled-query execution metadata changed")
+
+    @staticmethod
+    def _validate_p3_avatar_data(connection: sqlite3.Connection) -> None:
+        required_tables = {
+            "avatar_packages",
+            "avatar_package_versions",
+            "avatar_package_resources",
+            "screen_avatar_bindings",
+            "avatar_prefetch_records",
+            "avatar_switch_records",
+        }
+        present = {
+            row["name"]
+            for row in connection.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name IN (
+                    'avatar_packages',
+                    'avatar_package_versions',
+                    'avatar_package_resources',
+                    'screen_avatar_bindings',
+                    'avatar_prefetch_records',
+                    'avatar_switch_records'
+                )
+                """
+            ).fetchall()
+        }
+        if present != required_tables:
+            raise BackupIntegrityError("Avatar package table set is incomplete")
+
+        packages = {
+            row["package_id"]: row for row in connection.execute("SELECT * FROM avatar_packages").fetchall()
+        }
+        validator = object.__new__(P3ControlPlane)
+        versions: dict[str, sqlite3.Row] = {}
+        for row in connection.execute("SELECT * FROM avatar_package_versions").fetchall():
+            package = packages.get(row["package_id"])
+            resources = connection.execute(
+                """
+                SELECT * FROM avatar_package_resources
+                WHERE package_version_id = ? ORDER BY resource_path
+                """,
+                (row["package_version_id"],),
+            ).fetchall()
+            try:
+                manifest = json.loads(row["canonical_manifest_json"])
+                files = [
+                    {
+                        "path": resource["resource_path"],
+                        "content_base64": base64.b64encode(bytes(resource["content_blob"])).decode("ascii"),
+                    }
+                    for resource in resources
+                ]
+                validated = validator._validate_package(manifest, files)
+            except (ControlPlaneError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise BackupIntegrityError("Avatar package content is invalid") from exc
+            stored_resources = [
+                {
+                    "path": resource["resource_path"],
+                    "media_type": resource["media_type"],
+                    "size_bytes": resource["size_bytes"],
+                    "sha256": resource["sha256"],
+                }
+                for resource in resources
+            ]
+            validated_resources = [
+                {key: resource[key] for key in ("path", "media_type", "size_bytes", "sha256")}
+                for resource in validated["resources"]
+            ]
+            if (
+                package is None
+                or row["tenant_id"] != package["tenant_id"]
+                or row["deployment_id"] != package["deployment_id"]
+                or row["site_id"] != package["site_id"]
+                or validated["manifest"]["avatar_id"] != package["avatar_id"]
+                or validated["manifest"]["display_name"] != package["display_name"]
+                or row["version"] != validated["manifest"]["version"]
+                or row["schema_version"] != AVATAR_SCHEMA_VERSION
+                or row["renderer_type"] != TEST_RENDERER_TYPE
+                or row["renderer_contract_version"] != TEST_RENDERER_VERSION
+                or row["avatar_type"] != "test"
+                or row["canonical_manifest_json"] != validated["canonical_manifest"]
+                or row["manifest_hash"] != validated["manifest_hash"]
+                or row["content_hash"] != validated["content_hash"]
+                or row["canonical_preview_json"] != canonical_json(validated["preview"])
+                or row["total_bytes"] != validated["total_bytes"]
+                or stored_resources != validated_resources
+            ):
+                raise BackupIntegrityError("Avatar package registry binding or hash changed")
+            versions[row["package_version_id"]] = row
+
+        screens = {
+            row["screen_id"]: row for row in connection.execute("SELECT * FROM screen_instances").fetchall()
+        }
+        bindings = connection.execute("SELECT * FROM screen_avatar_bindings").fetchall()
+        for binding in bindings:
+            screen = screens.get(binding["screen_id"])
+            current = versions.get(binding["current_package_version_id"])
+            previous = (
+                versions.get(binding["previous_package_version_id"])
+                if binding["previous_package_version_id"]
+                else None
+            )
+            latest = connection.execute(
+                """
+                SELECT * FROM avatar_switch_records
+                WHERE screen_id = ? ORDER BY binding_generation DESC LIMIT 1
+                """,
+                (binding["screen_id"],),
+            ).fetchone()
+            if (
+                screen is None
+                or current is None
+                or binding["binding_generation"] < 1
+                or current["site_id"] != screen["site_id"]
+                or current["tenant_id"] != screen["tenant_id"]
+                or current["deployment_id"] != screen["deployment_id"]
+                or (previous is not None and previous["site_id"] != screen["site_id"])
+                or latest is None
+                or latest["binding_generation"] != binding["binding_generation"]
+                or latest["to_package_version_id"] != binding["current_package_version_id"]
+                or latest["from_package_version_id"] != binding["previous_package_version_id"]
+            ):
+                raise BackupIntegrityError("Avatar screen binding is inconsistent")
+
+        for prefetch in connection.execute("SELECT * FROM avatar_prefetch_records").fetchall():
+            screen = screens.get(prefetch["screen_id"])
+            version = versions.get(prefetch["package_version_id"])
+            exact_hash = version is not None and prefetch["expected_content_hash"] == version["content_hash"]
+            if (
+                screen is None
+                or version is None
+                or version["site_id"] != screen["site_id"]
+                or prefetch["site_id"] != screen["site_id"]
+                or prefetch["tenant_id"] != screen["tenant_id"]
+                or prefetch["deployment_id"] != screen["deployment_id"]
+                or (prefetch["outcome"] == "READY") != exact_hash
+                or (prefetch["outcome"] == "READY" and prefetch["failure_code"] is not None)
+                or (prefetch["outcome"] == "FAILED" and prefetch["failure_code"] != "CONTENT_HASH_MISMATCH")
+            ):
+                raise BackupIntegrityError("Avatar prefetch evidence is inconsistent")
+
+        for switch in connection.execute("SELECT * FROM avatar_switch_records").fetchall():
+            screen = screens.get(switch["screen_id"])
+            target = versions.get(switch["to_package_version_id"])
+            source = (
+                versions.get(switch["from_package_version_id"]) if switch["from_package_version_id"] else None
+            )
+            if (
+                screen is None
+                or target is None
+                or target["site_id"] != screen["site_id"]
+                or switch["site_id"] != screen["site_id"]
+                or switch["tenant_id"] != screen["tenant_id"]
+                or switch["deployment_id"] != screen["deployment_id"]
+                or switch["operation"] not in {"PUBLISH", "ROLLBACK"}
+                or switch["outcome"] != "SUCCEEDED"
+                or switch["binding_generation"] < 1
+                or (source is not None and source["site_id"] != screen["site_id"])
+            ):
+                raise BackupIntegrityError("Avatar switch history is inconsistent")
 
     @staticmethod
     def _is_sha256(value: Any) -> bool:
