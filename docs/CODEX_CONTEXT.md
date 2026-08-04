@@ -15,22 +15,21 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P3 Active; P2.4 Deferred And Blocked By External Gate`.
+Current phase: `Productization P3 Active — Candidate Ready For User Decision; P2.4 Deferred And Blocked By External Gate`.
 G0 and P1.0 through P2.3 are explicitly accepted. P1.1 proves local
-identity/device trust, P1.2 three-screen inventory, P1.3
-draft/release/recovery and P2.1 per-screen capability profiles. P2.2
-implements the frozen local controlled-querying result. P2.3 candidate
-`a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
-`8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, is the accepted integrated
-resilience certification: three-screen concurrent correctness with distinct
-capability profiles, single-source/provider failure isolation, a screen-bound
-resilience drill for equivalent fallback versus terminal no-fallback, bounded
-backpressure observability and a deployment-local capacity measurement, with
-no schema migration. Its automated, browser, capacity, Compose, rollback and
-independent-review gates passed, and the user accepted it without conditions
-on 2026-07-29. The user activated P3 on 2026-08-04; it is not yet implemented
-or accepted and is limited to the test-only Renderer / AvatarPackage safe
-switching result. P2.4 remains blocked and in product scope.
+identity/device trust, P1.2 three-screen inventory, P1.3 draft/release/recovery,
+P2.1 per-screen capability profiles and P2.2 controlled querying. Accepted
+P2.3 candidate `a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
+`8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, certifies three-screen concurrent
+correctness, failure isolation, equivalent fallback versus terminal
+no-fallback, bounded backpressure and deployment-local capacity without a
+schema migration. Its gates passed and the user accepted it without
+conditions on 2026-07-29. The user activated P3 on 2026-08-04. Candidate
+`0b37f7c0917441543735c0b4a08d15e27a27f98c`, tree
+`48498864ea4c87e11e035b5439478d6c9b610046`, verifies the test-only Renderer /
+AvatarPackage safe-switching result; all automated and independent-review
+gates pass with zero blocking findings. It requires explicit user acceptance.
+P2.4 remains blocked and in product scope.
 
 ## Frozen Product Boundaries
 
@@ -58,6 +57,11 @@ reproducible deployment-local capacity harness. Accepted P2.2 commit
 target with no data reversal required. External Providers and FVS remain
 `UNVERIFIED`, and production readiness is not claimed.
 
+The unaccepted P3 candidate adds forward-only migration
+`006_renderer_avatar_packages`; its product-code rollback target is accepted
+P2.3 serving a verified pre-P3 database while P3 data is retained for forward
+restoration.
+
 Implemented POC contracts remain authoritative for the original POC namespaces:
 
 - [06_API_CONTRACT.md](06_API_CONTRACT.md)
@@ -82,19 +86,15 @@ the accepted P2.2 facts and limitations are under
 
 ## Required Reading
 
-For every task:
-
-1. [NEXT_ACTIONS.md](NEXT_ACTIONS.md)
-2. [13_RISKS_AND_TODO.md](13_RISKS_AND_TODO.md)
-3. [RESULT_ACCEPTANCE_STANDARD.md](RESULT_ACCEPTANCE_STANDARD.md)
+For every task, read [NEXT_ACTIONS.md](NEXT_ACTIONS.md),
+[13_RISKS_AND_TODO.md](13_RISKS_AND_TODO.md) and
+[RESULT_ACCEPTANCE_STANDARD.md](RESULT_ACCEPTANCE_STANDARD.md).
 
 Read [17_STANDARD_PRODUCT_DESIGN.md](17_STANDARD_PRODUCT_DESIGN.md) when changing product behavior, scope, domain models, contracts or acceptance. Read [05_DEVELOPMENT_PLAN.md](05_DEVELOPMENT_PLAN.md) when changing phase scope. Read current POC contracts only when touching implemented APIs or shared structures. Historical documents are evidence, not executable instructions.
 
 ## Resume Protocol
 
-1. Confirm the single current phase and single next task in `NEXT_ACTIONS.md`.
-2. Freeze the result card before implementation.
-3. Implement one vertical result batch only.
-4. Run automated gates and an independent Codex review.
-5. Deliver a preview and evidence pack for user result acceptance.
-6. Update current docs only after the result and verification are factual.
+1. Confirm the single current phase/task and freeze its result card.
+2. Implement one vertical result batch and run automated gates plus review.
+3. Deliver a preview and evidence pack for explicit user acceptance.
+4. Update current documents only after results and verification are factual.

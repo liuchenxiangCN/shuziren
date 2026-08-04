@@ -10,8 +10,8 @@
 - Base accepted runtime commit: `a124f63b8f3b5e499b6c561e78199a26f860edc9`
 - Base accepted tree: `8a2f4e36ca0751b6106a174f7dae63be9299ad5b`
 - Base acceptance record: `6488044ae731a5f4928874896452254897de5b5e`
-- Candidate commit: `TBD`
-- Candidate tree: `TBD`
+- Candidate commit: `0b37f7c0917441543735c0b4a08d15e27a27f98c`
+- Candidate tree: `48498864ea4c87e11e035b5439478d6c9b610046`
 - Logical schema: `p1_control_plane_001`
 - Latest migration: `006_renderer_avatar_packages`; additive and recoverable
 - Target behavior: `P3 Renderer Extension Mechanism` in

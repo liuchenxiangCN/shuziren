@@ -9,7 +9,7 @@
 
 ## Current Phase
 
-`Productization P3 Active; P2.4 Deferred And Blocked By External Gate`.
+`Productization P3 Active — Candidate Ready For User Decision; P2.4 Deferred And Blocked By External Gate`.
 
 G0 and P1.0 through P2.3 are explicitly accepted. The user accepted P2.3
 without conditions or scope reduction through `通过` on 2026-07-29. Candidate
@@ -28,14 +28,22 @@ without removing it from product scope and activates exactly one result batch:
 `P3 Renderer Extension Mechanism`. The accepted P2.3 candidate remains the
 base and rollback target while P3 is active.
 
+P3 candidate `0b37f7c0917441543735c0b4a08d15e27a27f98c`, tree
+`48498864ea4c87e11e035b5439478d6c9b610046`, fingerprint
+`6FFC13F6905122BBDC5B07B238821494F4A6C874C6216E7121CE1E4FBD54C058`
+over 29 files is now bound. Its backend, frontend, contract, browser, Secret,
+recovery, rollback, Compose smoke and independent-review gates pass with zero
+blocking review findings. It remains unaccepted until the user explicitly
+reviews and decides.
+
 ## Next Task
 
-Implement and verify the frozen
-[P3 acceptance card](acceptance/productization/P3/ACCEPTANCE_CARD.md): a
-test-only Renderer catalog and versioned AvatarPackage contract, safe package
-validation, management preview, screen prefetch, atomic screen-bound switch,
-failure retention and rollback. P3 must not claim support for any real 2D or
-3D format, supplier SDK or licensed asset.
+Review the runnable result and bound evidence in the frozen
+[P3 acceptance card](acceptance/productization/P3/ACCEPTANCE_CARD.md), then
+record an explicit user decision: accept, request changes or reject. Do not
+advance another batch on silence. P3 proves only the test-only Renderer /
+AvatarPackage extension and safe screen switching contract; it does not claim
+any real 2D/3D format, supplier SDK or licensed asset.
 
 P2.4 `FineReport Official Plugin` remains queued and blocked by its external
 gate. Starting P3 neither passes nor removes P2.4.

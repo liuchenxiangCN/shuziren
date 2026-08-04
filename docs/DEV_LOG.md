@@ -36,9 +36,15 @@
   3 skipped), proving the product-code rollback target against a pre-P3
   database. Migration 006 remains forward-only; rollback retains P3 data and
   serves P2.3 from a verified pre-P3 database copy.
-- Docker Compose configuration passed, but the container smoke remains
-  `Blocked` because Docker Desktop is not running. Candidate binding,
-  final independent review and user decision remain pending.
+- Docker Compose built and started the candidate images; API/Web health and
+  all five Mock demo cases passed with zero errors and three expected warnings
+  for deliberately unconfigured external RAGFlow.
+- Bound candidate `0b37f7c0917441543735c0b4a08d15e27a27f98c`, tree
+  `48498864ea4c87e11e035b5439478d6c9b610046`, has fingerprint
+  `6FFC13F6905122BBDC5B07B238821494F4A6C874C6216E7121CE1E4FBD54C058`
+  over 29 files. Reviewer Gibbs independently reran the candidate and returned
+  `PASS` with zero blocking and two non-blocking findings. The P3 candidate is
+  ready for explicit user decision; it is not accepted by this gate result.
 
 ## 2026-07-29
 

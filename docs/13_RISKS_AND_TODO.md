@@ -26,7 +26,7 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product State And Blockers
 
-### P3 Active; P2.4 Deferred And Blocked By External Gate
+### P3 Candidate Ready For User Decision; P2.4 Deferred And Blocked By External Gate
 
 The user explicitly accepted P2.3 without conditions on 2026-07-29. Candidate
 `a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
@@ -36,7 +36,9 @@ the P2.3 product rollback target; P2.3 added no migration, so no data
 reversal is required.
 
 The user activated P3 on 2026-08-04 while explicitly leaving P2.4 deferred.
-P3 must keep R-049 visible: only the test Renderer and test AvatarPackage
+The bound P3 candidate passed its automated gates and second independent
+review with zero blocking findings; explicit user acceptance is still
+pending. R-049 remains visible: only the test Renderer and test AvatarPackage
 contract may be accepted. No real 2D/3D file format, SDK, asset, browser/GPU
 combination or supplier compatibility may be inferred from P3 evidence.
 

@@ -6,7 +6,7 @@
 - State: ACTIVE_CANDIDATE
 - Logical schema: p1_control_plane_001
 - Latest migration: 006_renderer_avatar_packages
-- Candidate commit: TBD
+- Candidate commit: `0b37f7c0917441543735c0b4a08d15e27a27f98c`
 
 Migration 006 is additive. It preserves all accepted P1 and P2 tables and
 adds six P3 sidecar tables.

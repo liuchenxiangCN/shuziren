@@ -4,7 +4,7 @@
 
 - Lifecycle: ACCEPTANCE_EVIDENCE
 - State: ACTIVE_CANDIDATE
-- Candidate commit: TBD
+- Candidate commit: `0b37f7c0917441543735c0b4a08d15e27a27f98c`
 - User decision: pending
 
 ## Frozen Limits
@@ -30,6 +30,17 @@
 - The browser workflow is local and Mock/test-only. No external provider,
   licensed asset, FineReport/FVS combination or customer environment is
   certified.
+- Docker Compose and the Mock demo smoke pass. External RAGFlow was
+  deliberately unconfigured, so the dependency aggregate remains a warning;
+  this is not real-provider evidence.
+- The full repository Ruff command still reports 12 format files and 27 lint
+  findings in untouched POC-era files. All P3 candidate Python files pass
+  format/check; the historical baseline is not silently reformatted in this
+  batch.
+- The historical P2.3 validator intentionally requires migration head 005 and
+  therefore is not a forward-compatible P3 validator. P3 uses its own
+  head-006 contract and complete backend regression instead of weakening the
+  accepted P2.3 invariant.
 - P2.4 remains deferred and Blocked by its independent official-plugin
   evidence gate.
 

@@ -2,8 +2,8 @@
   "schema_version": 1,
   "batch": "P3",
   "lifecycle": "ACCEPTANCE_EVIDENCE",
-  "generated_at": "2026-08-04T00:00:00Z",
-  "gate_summary": "IN_PROGRESS",
+  "generated_at": "2026-08-04T11:04:54Z",
+  "gate_summary": "PASS",
   "acceptance_state": "PENDING_USER_DECISION",
   "base_accepted": {
     "commit": "a124f63b8f3b5e499b6c561e78199a26f860edc9",
@@ -11,28 +11,66 @@
     "acceptance_record": "6488044ae731a5f4928874896452254897de5b5e"
   },
   "candidate": {
-    "commit": "TBD",
-    "tree": "TBD",
-    "branch": "TBD",
-    "fingerprint_sha256": "TBD",
-    "fingerprint_file_count": 0
+    "commit": "0b37f7c0917441543735c0b4a08d15e27a27f98c",
+    "tree": "48498864ea4c87e11e035b5439478d6c9b610046",
+    "branch": "codex/p3-renderer-avatar-packages",
+    "fingerprint_sha256": "6FFC13F6905122BBDC5B07B238821494F4A6C874C6216E7121CE1E4FBD54C058",
+    "fingerprint_file_count": 29
   },
   "database": {
     "logical_schema_version": "p1_control_plane_001",
     "latest_migration": "006_renderer_avatar_packages",
-    "migration_checksum_sha256": "TBD",
+    "migration_checksum_sha256": "9f451bae205920edbe8858455a1fc416cac3df9c4ba99c8c680f1a93f48020e2",
     "migration_change": "ADDITIVE"
   },
-  "evidence_root": "TBD",
-  "gates": [],
-  "independent_reviews": [],
-  "independent_review_status": "PENDING",
+  "evidence_root": "logs/productization/P3-20260804-180919",
+  "raw_evidence_manifest": {
+    "path": "logs/productization/P3-20260804-180919/evidence-manifest.json",
+    "sha256": "74412948edf538ce95f76407e5d28646f243fdb81919bc90d46ad00df14d7bb9",
+    "file_count": 12
+  },
+  "manifest_verification": {
+    "path": "logs/productization/P3-20260804-180919/verification/manifest-verification.json",
+    "sha256": "46d5bea3513fba6bfd5fe7b7dc5d60234df7b048000ec23823a5e3eaa39f7ab4",
+    "missing": 0,
+    "unexpected": 0,
+    "mismatched": 0
+  },
+  "gates": [
+    {"name": "candidate_scoped_ruff", "status": "PASS"},
+    {"name": "api_import", "status": "PASS"},
+    {"name": "backend_full", "status": "PASS", "detail": "95 passed, 3 skipped"},
+    {"name": "backend_p3", "status": "PASS", "detail": "18 passed"},
+    {"name": "frontend_build", "status": "PASS"},
+    {"name": "p3_contract", "status": "PASS", "detail": "85 checks"},
+    {"name": "p3_contract_self_test", "status": "PASS", "detail": "9 cases"},
+    {"name": "browser_1280x720", "status": "PASS"},
+    {"name": "secret_scan", "status": "PASS", "detail": "77 files, 3 exact values, 0 findings"},
+    {"name": "accepted_p2_3_rollback", "status": "PASS", "detail": "77 passed, 3 skipped"},
+    {"name": "doc_lifecycle", "status": "PASS", "detail": "446 checks, 191 links"},
+    {"name": "git_diff_check", "status": "PASS"},
+    {"name": "docker_compose_config", "status": "PASS"},
+    {"name": "docker_compose_smoke", "status": "PASS", "detail": "0 errors; 3 expected unconfigured-RAGFlow warnings; 5/5 Mock demo cases"}
+  ],
+  "independent_reviews": [
+    {
+      "reviewer": "Gibbs",
+      "status": "PASS",
+      "blocking_findings": 0,
+      "nonblocking_findings": 2,
+      "evidence": "logs/productization/P3-20260804-180919/review/independent-review-gibbs.md"
+    }
+  ],
+  "independent_review_status": "PASS",
   "rollback": {
-    "status": "IN_PROGRESS",
+    "status": "PASS",
     "target_commit": "a124f63b8f3b5e499b6c561e78199a26f860edc9",
     "target_tree": "8a2f4e36ca0751b6106a174f7dae63be9299ad5b",
     "data_reversal": "FORBIDDEN; retain P3 database and serve P2.3 from a verified pre-P3 database copy",
-    "evidence": []
+    "evidence": [
+      "accepted P2.3 unchanged suite: 77 passed, 3 skipped",
+      "P3 backup/restore test in test-results/backend-p3.xml"
+    ]
   },
   "user_decision": {
     "status": "PENDING",

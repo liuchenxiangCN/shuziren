@@ -4,7 +4,7 @@
 
 - Lifecycle: ACCEPTANCE_EVIDENCE
 - State: ACTIVE_CANDIDATE
-- Candidate commit: TBD
+- Candidate commit: `0b37f7c0917441543735c0b4a08d15e27a27f98c`
 - API version: v1
 - Production use: forbidden; test-only Renderer evidence
 
@@ -26,7 +26,9 @@ RBAC and Tenant/Deployment/Site/screen ownership checks.
   body is site_id, manifest and files; validation completes before the single
   storage transaction.
 - GET /api/v1/control-plane/avatar-package-versions/{version_id}/preview
-  returns the verified product-rendered preview model and hashes.
+  returns the verified product-rendered preview model, Renderer compatibility,
+  manifest/content hashes and each resource path, media type, byte count and
+  SHA-256.
 - POST /api/v1/control-plane/screen-instances/{screen_id}/
   avatar-package-versions/{version_id}:prefetch requires config.preview and
   Idempotency-Key. It records READY only when expected_content_hash exactly
