@@ -4,7 +4,9 @@
 
 - Lifecycle: `ACCEPTANCE_EVIDENCE`
 - Batch: `P3 Renderer Extension Mechanism`
-- State: `ACTIVE_RESULT_CARD_FROZEN`
+- State: `ACCEPTED`
+- Result-card freeze: `ACTIVE_RESULT_CARD_FROZEN` before implementation;
+  accepted scope is unchanged
 - Activated by: explicit user instruction `开始P3`
 - Activated at: 2026-08-04
 - Base accepted runtime commit: `a124f63b8f3b5e499b6c561e78199a26f860edc9`
@@ -17,7 +19,7 @@
 - Target behavior: `P3 Renderer Extension Mechanism` in
   [05_DEVELOPMENT_PLAN.md](../../../05_DEVELOPMENT_PLAN.md) and section 10 of
   [17_STANDARD_PRODUCT_DESIGN.md](../../../17_STANDARD_PRODUCT_DESIGN.md)
-- User decision: pending runnable-result review
+- User decision: `通过` without conditions or scope reduction on 2026-08-04
 
 ## User-Visible Outcome
 

@@ -2,11 +2,10 @@
 
 ## Status
 
-Proposed
+Accepted
 
-P3 is an active candidate awaiting explicit user acceptance. This ADR becomes
-Accepted only with that candidate; automation success alone does not change
-its status.
+The user explicitly accepted P3 on 2026-08-04 after the bound candidate,
+automated evidence, limitations and independent review were presented.
 
 ## Date
 

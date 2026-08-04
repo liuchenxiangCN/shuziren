@@ -4,7 +4,7 @@
   "lifecycle": "ACCEPTANCE_EVIDENCE",
   "generated_at": "2026-08-04T11:04:54Z",
   "gate_summary": "PASS",
-  "acceptance_state": "PENDING_USER_DECISION",
+  "acceptance_state": "ACCEPTED",
   "base_accepted": {
     "commit": "a124f63b8f3b5e499b6c561e78199a26f860edc9",
     "tree": "8a2f4e36ca0751b6106a174f7dae63be9299ad5b",
@@ -73,8 +73,10 @@
     ]
   },
   "user_decision": {
-    "status": "PENDING",
-    "decision": null,
-    "date": null
-  }
+    "status": "RECORDED",
+    "decision": "通过",
+    "date": "2026-08-04",
+    "conversation_reference": "Current Codex task; explicit user reply 通过，commit&push after the P3 acceptance prompt"
+  },
+  "accepted_at": "2026-08-04"
 }

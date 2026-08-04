@@ -3,14 +3,14 @@
 ## Status
 
 - Lifecycle: ACCEPTANCE_EVIDENCE
-- State: CANDIDATE_BOUND
+- State: `ACCEPTED`
 - Candidate commit: `0b37f7c0917441543735c0b4a08d15e27a27f98c`
 - Candidate tree: `48498864ea4c87e11e035b5439478d6c9b610046`
 - Candidate fingerprint: `6FFC13F6905122BBDC5B07B238821494F4A6C874C6216E7121CE1E4FBD54C058`
   over 29 files
 - Automated gates: `PASS`
 - Independent review: `PASS` (Gibbs; zero blocking findings)
-- User decision: pending
+- User decision: `通过` without conditions or scope reduction on 2026-08-04
 
 ## Verified Results
 
@@ -58,5 +58,5 @@ The second review returned `PASS` with zero blocking and two non-blocking
 observations: the historical P2.3 validator is intentionally pinned to
 migration 005, and the unrelated full-tree Ruff debt remains visible.
 
-Bound evidence is under `logs/productization/P3-20260804-180919`. The candidate
-is ready for an explicit user decision; silence is not acceptance.
+Bound evidence is under `logs/productization/P3-20260804-180919`. The user
+explicitly accepted this candidate on 2026-08-04.

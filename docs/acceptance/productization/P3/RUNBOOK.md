@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: ACCEPTANCE_EVIDENCE
-- State: ACTIVE_CANDIDATE
+- State: `ACCEPTED`
 - Scope: local P3 test-only preview
 - Production use: forbidden
 - Candidate: `0b37f7c0917441543735c0b4a08d15e27a27f98c`

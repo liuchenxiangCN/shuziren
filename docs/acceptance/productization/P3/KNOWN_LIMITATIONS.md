@@ -3,9 +3,9 @@
 ## Status
 
 - Lifecycle: ACCEPTANCE_EVIDENCE
-- State: ACTIVE_CANDIDATE
+- State: `ACCEPTED`
 - Candidate commit: `0b37f7c0917441543735c0b4a08d15e27a27f98c`
-- User decision: pending
+- User decision: `通过` without conditions or scope reduction on 2026-08-04
 
 ## Frozen Limits
 

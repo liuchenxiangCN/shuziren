@@ -3,12 +3,12 @@
 ## Status
 
 - Lifecycle: ACCEPTANCE_EVIDENCE
-- State: ACTIVE_CANDIDATE
+- State: `ACCEPTED`
 - Candidate commit: `0b37f7c0917441543735c0b4a08d15e27a27f98c`
 - API version: v1
 - Production use: forbidden; test-only Renderer evidence
 
-This file describes only the P3 candidate implementation. It does not claim
+This file describes only the accepted P3 implementation. It does not claim
 support for a real 2D or 3D Renderer or asset format.
 
 ## Control-Plane Routes

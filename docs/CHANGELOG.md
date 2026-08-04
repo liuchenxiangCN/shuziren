@@ -11,7 +11,7 @@
 
 ### Added
 
-- Active P3 candidate with a fixed test-only Renderer registry, immutable
+- Accepted P3 result with a fixed test-only Renderer registry, immutable
   declarative AvatarPackage versions, safe preview, exact-hash per-screen
   prefetch, atomic publication, device-scoped current read and audited
   rollback. It does not claim real 2D/3D or production Renderer support.
@@ -76,15 +76,12 @@
 
 ### Changed
 
-- P3 is active and awaiting candidate evidence, independent review and an
-  explicit user decision. P2.4 is intentionally deferred and remains blocked
-  by its official-plugin evidence gate.
-- G0 and P1.0 through P2.3 are explicitly accepted. P2.3 candidate
-  `a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
-  `8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, is the accepted runtime
-  baseline. Accepted P2.2 candidate
-  `a75d3327fdc1ab4b83b0bba501d387af150353c4` remains the P2.3 product
-  rollback target with no data reversal required.
+- G0 and P1.0 through P3 are explicitly accepted. P3 candidate
+  `0b37f7c0917441543735c0b4a08d15e27a27f98c`, tree
+  `48498864ea4c87e11e035b5439478d6c9b610046`, is the accepted runtime
+  baseline. Accepted P2.3 remains the product-code rollback target using a
+  verified pre-P3 database because migration 006 is forward-only. P2.4 is
+  intentionally deferred and remains blocked by its official-plugin gate.
 - ADR-0030 is accepted with P2.2; its additive controlled-query sidecar
   decision does not activate P2.3 or certify a customer/version combination.
 - ADR-0029 is accepted with P2.1; its additive immutable capability-profile

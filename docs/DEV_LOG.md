@@ -9,6 +9,23 @@
 
 ## 2026-08-04
 
+### P3 User Acceptance
+
+#### Completed Facts
+
+- The user explicitly accepted P3 through `通过，commit&push` without
+  conditions or scope reduction after the runnable result, gates, limitations
+  and independent review were presented.
+- P3 runtime candidate `0b37f7c0917441543735c0b4a08d15e27a27f98c`, tree
+  `48498864ea4c87e11e035b5439478d6c9b610046`, schema
+  `p1_control_plane_001` and migration `006_renderer_avatar_packages` became
+  the accepted runtime baseline.
+- ADR-0032 became Accepted. Accepted P2.3 remains the product-code rollback
+  target using a verified pre-P3 database; migration history is never edited
+  backward and P3 data is retained for forward restoration.
+- P2.4 remains deferred and blocked. This acceptance does not activate P2.4,
+  P4.1 or any other queued result batch.
+
 ### P3 Renderer Extension Candidate Implementation
 
 #### Completed Facts

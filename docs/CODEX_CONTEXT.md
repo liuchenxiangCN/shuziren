@@ -15,8 +15,8 @@ The product reuses customer FineReport / FVS assets. It adds per-screen digital-
 
 ## Execution Snapshot
 
-Current phase: `Productization P3 Active — Candidate Ready For User Decision; P2.4 Deferred And Blocked By External Gate`.
-G0 and P1.0 through P2.3 are explicitly accepted. P1.1 proves local
+Current phase: `Productization P3 Accepted; P2.4 Deferred And Blocked By External Gate`.
+G0 and P1.0 through P3 are explicitly accepted. P1.1 proves local
 identity/device trust, P1.2 three-screen inventory, P1.3 draft/release/recovery,
 P2.1 per-screen capability profiles and P2.2 controlled querying. Accepted
 P2.3 candidate `a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
@@ -24,12 +24,12 @@ P2.3 candidate `a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
 correctness, failure isolation, equivalent fallback versus terminal
 no-fallback, bounded backpressure and deployment-local capacity without a
 schema migration. Its gates passed and the user accepted it without
-conditions on 2026-07-29. The user activated P3 on 2026-08-04. Candidate
+conditions on 2026-07-29. The user accepted P3 on 2026-08-04. Candidate
 `0b37f7c0917441543735c0b4a08d15e27a27f98c`, tree
 `48498864ea4c87e11e035b5439478d6c9b610046`, verifies the test-only Renderer /
 AvatarPackage safe-switching result; all automated and independent-review
-gates pass with zero blocking findings. It requires explicit user acceptance.
-P2.4 remains blocked and in product scope.
+gates passed with zero blocking findings. P2.4 remains deferred, blocked and
+in product scope; P4.1 is planned but inactive.
 
 ## Frozen Product Boundaries
 
@@ -45,22 +45,15 @@ P2.4 remains blocked and in product scope.
 
 ## Current As-Built Baseline
 
-The accepted runtime baseline is P2.3 commit
-`a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
-`8a2f4e36ca0751b6106a174f7dae63be9299ad5b`. It retains the original POC route
-meanings and accepted P1/P2.1/P2.2 controls, then adds screen-bound
-metadata-only execution listing, queue-status observability, an audited
-in-process resilience drill over the accepted fallback contract and a
-reproducible deployment-local capacity harness. Accepted P2.2 commit
-`a75d3327fdc1ab4b83b0bba501d387af150353c4`, tree
-`aaa499de416b522e21c02f41119024296fc2c3a0`, remains the P2.3 product rollback
-target with no data reversal required. External Providers and FVS remain
-`UNVERIFIED`, and production readiness is not claimed.
-
-The unaccepted P3 candidate adds forward-only migration
-`006_renderer_avatar_packages`; its product-code rollback target is accepted
-P2.3 serving a verified pre-P3 database while P3 data is retained for forward
-restoration.
+The accepted runtime baseline is P3 commit
+`0b37f7c0917441543735c0b4a08d15e27a27f98c`, tree
+`48498864ea4c87e11e035b5439478d6c9b610046`, with forward-only migration
+`006_renderer_avatar_packages`. It preserves the accepted P1/P2 controls and
+adds only the test-only Renderer/AvatarPackage safe-switch result. Accepted
+P2.3 is the product-code rollback target, served with a verified pre-P3
+database while P3 data is retained for forward restoration. External
+Providers, FVS and real 2D/3D Renderers remain `UNVERIFIED`; production
+readiness is not claimed.
 
 Implemented POC contracts remain authoritative for the original POC namespaces:
 
@@ -70,7 +63,8 @@ Implemented POC contracts remain authoritative for the original POC namespaces:
 Accepted behavior is recorded under [acceptance/productization](acceptance/productization).
 P2.1/P2.2 target boundaries remain under [product/contracts](product/contracts);
 the accepted P2.2 facts and limitations are under
-[acceptance/productization/P2.2](acceptance/productization/P2.2). P3 is active with its result card frozen at [acceptance/productization/P3/ACCEPTANCE_CARD.md](acceptance/productization/P3/ACCEPTANCE_CARD.md).
+[acceptance/productization/P2.2](acceptance/productization/P2.2). Accepted P3
+facts are under [acceptance/productization/P3](acceptance/productization/P3).
 
 ## Non-Negotiable Rules
 

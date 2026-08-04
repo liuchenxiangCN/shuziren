@@ -3,7 +3,7 @@
 ## Status
 
 - Lifecycle: ACCEPTANCE_EVIDENCE
-- State: ACTIVE_CANDIDATE
+- State: `ACCEPTED`
 - Logical schema: p1_control_plane_001
 - Latest migration: 006_renderer_avatar_packages
 - Candidate commit: `0b37f7c0917441543735c0b4a08d15e27a27f98c`

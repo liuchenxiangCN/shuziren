@@ -26,21 +26,19 @@ Customer-specific and POC现场 issues are not tracked here. They remain in cust
 
 ## Current Product State And Blockers
 
-### P3 Candidate Ready For User Decision; P2.4 Deferred And Blocked By External Gate
+### P3 Accepted; P2.4 Deferred And Blocked By External Gate
 
-The user explicitly accepted P2.3 without conditions on 2026-07-29. Candidate
-`a124f63b8f3b5e499b6c561e78199a26f860edc9`, tree
-`8a2f4e36ca0751b6106a174f7dae63be9299ad5b`, is the accepted runtime baseline.
-Accepted P2.2 candidate `a75d3327fdc1ab4b83b0bba501d387af150353c4` remains
-the P2.3 product rollback target; P2.3 added no migration, so no data
-reversal is required.
+The user explicitly accepted P3 without conditions on 2026-08-04. Candidate
+`0b37f7c0917441543735c0b4a08d15e27a27f98c`, tree
+`48498864ea4c87e11e035b5439478d6c9b610046`, is the accepted runtime baseline.
+Accepted P2.3 remains the product-code rollback target, served from a verified
+pre-P3 database because migration 006 is forward-only; P3 data is retained
+for forward restoration.
 
-The user activated P3 on 2026-08-04 while explicitly leaving P2.4 deferred.
-The bound P3 candidate passed its automated gates and second independent
-review with zero blocking findings; explicit user acceptance is still
-pending. R-049 remains visible: only the test Renderer and test AvatarPackage
-contract may be accepted. No real 2D/3D file format, SDK, asset, browser/GPU
-combination or supplier compatibility may be inferred from P3 evidence.
+R-049 remains visible after acceptance: P3 proves only the built-in test
+Renderer and test AvatarPackage contract. No real 2D/3D file format, SDK,
+asset, browser/GPU combination or supplier compatibility may be inferred from
+P3 evidence. P2.4 remains explicitly deferred and blocked.
 
 - P2.2 automated, browser, real-database, migration/recovery, Docker,
   Secret-scan and accepted-P2.1 rollback evidence passes; final independent
